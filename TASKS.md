@@ -68,22 +68,22 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 ## Phase 2: Core Components Implementation
 
 ### 4. LLM Factory Implementation
-- [ ] Create prompts/ directory with separate files for each prompt type
-  - [ ] text_intent_classification_prompt.txt
-  - [ ] text_to_sql_conversion_prompt.txt
-  - [ ] invoice_entity_extraction_prompt.txt
-  - [ ] file_validation_prompt.txt
-  - [ ] invoice_data_extraction_prompt.txt
-  - [ ] response_formatting_prompt.txt
-- [ ] Implement LLMFactory class in services/llm_factory.py
-  - [ ] Configure model name, temperature, and other parameters
-  - [ ] Add methods for loading prompts from files
-  - [ ] Implement caching for prompt templates
-- [ ] Configure GPT-4o-mini integration in services/openai_service.py
-- [ ] **Test:** Create mock LLM responses for testing without API calls
-- [ ] **Test:** Write unit tests for prompt loading and template rendering
-- [ ] **Test:** Test LLMFactory with different configurations
-- [ ] **Test:** Verify OpenAI service integration with mock responses
+- [x] Create prompts/ directory with separate files for each prompt type
+  - [x] text_intent_classification_prompt.txt
+  - [x] text_to_sql_conversion_prompt.txt
+  - [x] invoice_entity_extraction_prompt.txt
+  - [x] file_validation_prompt.txt
+  - [x] invoice_data_extraction_prompt.txt
+  - [x] response_formatting_prompt.txt
+- [x] Implement LLMFactory class in services/llm_factory.py
+  - [x] Configure model name, temperature, and other parameters
+  - [x] Add methods for loading prompts from files
+  - [x] Implement caching for prompt templates
+- [x] Configure GPT-4o-mini integration in services/openai_service.py
+- [x] **Test:** Create mock LLM responses for testing without API calls
+- [x] **Test:** Write unit tests for prompt loading and template rendering
+- [x] **Test:** Test LLMFactory with different configurations
+- [x] **Test:** Verify OpenAI service integration with mock responses
 
 ### 5. Router and Agent Implementation
 - [ ] Create BaseAgent class in utils/base_agent.py to ensure standardized agent interfaces

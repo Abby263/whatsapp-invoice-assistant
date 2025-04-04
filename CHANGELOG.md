@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+#### LLM Factory Implementation
+- Created prompt templates for all AI-driven tasks:
+  - Text intent classification for determining user intent
+  - Text to SQL conversion for database queries
+  - Invoice entity extraction from text inputs
+  - File validation for uploaded documents
+  - Invoice data extraction from document content
+  - Response formatting for consistent user experience
+- Implemented LLMFactory class for creating and managing LLM instances
+  - Template loading and caching system
+  - Task-specific configuration
+  - Provider-agnostic interface (OpenAI, Anthropic, Cohere)
+  - Token usage tracking
+- Integrated OpenAI service with GPT-4o-mini
+  - Automatic retry logic for API calls
+  - Structured entity extraction
+  - Classification capabilities
+  - Error handling and logging
+- Comprehensive test suite for LLM components
+  - Mock implementations for testing without API calls
+  - Tests for template loading and rendering
+  - Tests for different model configurations
+  - Tests for error handling and edge cases
+
 ## [0.1.0] - 2023-04-04
 
 ### Added
