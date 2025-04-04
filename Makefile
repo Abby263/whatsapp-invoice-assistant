@@ -1,4 +1,4 @@
-.PHONY: start stop restart db-clean install dev test lint format db-migrate db-revision db-downgrade db-history test-db db-seed
+.PHONY: start stop restart db-clean install dev test lint format db-migrate db-revision db-downgrade db-history test-db db-seed db-status
 
 # Application management
 start:
@@ -16,6 +16,11 @@ restart: stop start
 db-clean:
 	@echo "Cleaning database tables..."
 	@poetry run python -c "from database.schemas import Base; from database.connection import engine; Base.metadata.drop_all(engine); Base.metadata.create_all(engine)"
+	@echo "Database tables have been dropped and recreated."
+
+db-status:
+	@echo "Checking database status..."
+	@PYTHONPATH=. poetry run python db_status.py
 
 db-migrate:
 	@echo "Running database migrations..."

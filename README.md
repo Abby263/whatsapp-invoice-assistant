@@ -71,6 +71,15 @@ An AI-powered WhatsApp bot for processing and managing invoice data. The applica
    make db-seed
    ```
 
+4. Check the database status:
+   ```
+   make db-status
+   ```
+   This command shows information about:
+   - Tables and their counts
+   - Number of rows in each table
+   - Current migration version
+
 ### Configuration Management
 
 The application uses a centralized configuration system with multiple layers:
@@ -114,6 +123,11 @@ To manage database schema changes:
 4. View migration history:
    ```
    make db-history
+   ```
+
+5. Reset the database (drop and recreate all tables):
+   ```
+   make db-clean
    ```
 
 ## Project Structure
@@ -170,6 +184,9 @@ make db-clean
 
 # Apply migrations
 make db-migrate
+
+# Check database status (tables, row counts, migration version)
+make db-status
 
 # Create a new migration
 make db-revision description="Description of the change"
