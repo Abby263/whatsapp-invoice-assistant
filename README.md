@@ -251,6 +251,15 @@ Vector search is enabled through a special column:
 description_embedding VECTOR(1536)
 ```
 
+## 📝 TODO Tasks
+
+The following tasks are currently pending for implementation:
+
+- Set up Twilio account and WhatsApp sandbox
+- Implement WhatsApp messaging service
+- Create webhook endpoint for WhatsApp integration
+- Test WhatsApp integration with mock services
+
 ## 🛠️ Available Commands
 
 The Makefile provides numerous helpful commands:
@@ -318,7 +327,7 @@ The system integrates with WhatsApp via Twilio's API:
 
 ## 📝 License
 
-[Your License] - See the LICENSE file for details.
+[MIT License](LICENSE) - This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🤝 Contributing
 
