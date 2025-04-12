@@ -284,10 +284,10 @@ The Makefile provides numerous helpful commands:
 - `make lint` - Check code quality
 - `make format` - Format code with Black
 
-### Docker and Kubernetes
+### Docker
+- `make docker-build` - Build Docker image
 - `make docker-run` - Start with Docker
 - `make docker-stop` - Stop Docker containers
-- `make helm-install` - Deploy to Kubernetes with Helm
 
 ## 🧠 Semantic Search Implementation
 
