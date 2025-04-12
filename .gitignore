@@ -169,4 +169,4 @@ poetry.lock
 !README.md
 !TASKS.md
 !docker-run.sh
-!uploads/.gitkeep 
+!uploads/.gitkeep .env
