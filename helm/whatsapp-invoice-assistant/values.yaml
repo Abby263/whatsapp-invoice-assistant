@@ -1,0 +1,193 @@
+# Default values for whatsapp-invoice-assistant
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+image:
+  repository: whatsapp-invoice-assistant
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 5001
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources:
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Application configuration (aligned with config/env.yaml)
+app:
+  # Database Configuration
+  database:
+    url: "postgresql://postgres:postgres@whatsapp-invoice-assistant-db:5432/whatsapp_invoice_assistant"
+    pool_size: 10
+    max_overflow: 20
+    echo: false
+  
+  # OpenAI Configuration
+  openai:
+    model: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 1000
+    top_p: 1
+    presence_penalty: 0
+    frequency_penalty: 0
+    timeout: 60
+  
+  # Redis Configuration
+  redis:
+    url: "redis://redis:6379/0"
+    timeout: 10
+  
+  # Logging Configuration
+  logging:
+    level: "INFO"
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    file: "logs/app.log"
+    max_bytes: 10485760  # 10MB
+    backup_count: 5
+  
+  # Vector Database Configuration
+  vector_db:
+    enabled: true
+    extension_name: "vector"
+    index_type: "hnsw"  # Options: hnsw, ivfflat
+    ops_type: "vector_cosine_ops"
+  
+  # LLM Configuration
+  llm:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.3
+    max_tokens: 1000
+    embedding_model: "text-embedding-3-small"
+    embedding_dimension: 1536
+  
+  # Secret environment variables configuration
+  secretEnv:
+    enabled: true
+  
+  # Secret environment variables
+  secrets:
+    # Leave these blank, they will be set in a secret
+    OPENAI_API_KEY: ""
+    TWILIO_ACCOUNT_SID: ""
+    TWILIO_AUTH_TOKEN: ""
+    TWILIO_PHONE_NUMBER: ""
+    AWS_ACCESS_KEY_ID: ""
+    AWS_SECRET_ACCESS_KEY: ""
+    S3_BUCKET_NAME: ""
+    S3_REGION: "us-east-1"
+
+  # Persistent storage for uploads and logs
+  persistence:
+    enabled: true
+    uploads:
+      size: 5Gi
+      storageClass: ""
+    logs:
+      size: 1Gi
+      storageClass: ""
+
+# MongoDB configuration
+mongodb:
+  enabled: true
+  auth:
+    enabled: true
+    rootPassword: "password"
+    username: "whatsapp_invoice_assistant"
+    password: "password"
+    database: "whatsapp_invoice_assistant"
+  persistence:
+    enabled: true
+    size: 8Gi
+  service:
+    port: 27017
+  # Memory configuration, matching config/env.yaml
+  memory:
+    max_messages: 50
+    max_memory_age: 3600
+    message_window: 10
+    enable_context_window: true
+    persist_memory: true
+    ttl_seconds: 86400
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    username: "postgres"
+    password: "postgres"
+    database: "whatsapp_invoice_assistant"
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+  service:
+    port: 5432 

@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 WORKDIR /app
 
@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     gcc \
+    git \
+    curl \
+    postgresql-client \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -19,14 +22,38 @@ COPY pyproject.toml poetry.lock* ./
 # Configure Poetry to not use a virtual environment in the container
 RUN poetry config virtualenvs.create false
 
-# Install dependencies
-RUN poetry install --no-dev --no-interaction --no-ansi
+# Install dependencies - update the lock file first, then install without root project
+RUN poetry lock
+RUN poetry install --no-interaction --no-ansi --no-root
+
+# Add additional Python packages for vector support
+RUN pip install --no-cache-dir pgvector psycopg2-binary pymongo motor
+
+# Create necessary directories
+RUN mkdir -p uploads
+RUN mkdir -p logs
 
 # Copy application code
 COPY . .
 
-# Expose the port the app will run on
+# Ensure the upload directory is writable
+RUN chmod 777 uploads
+RUN chmod 777 logs
+
+# Expose the ports for the application
+EXPOSE 5001
 EXPOSE 8000
 
-# Command to run the application
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Environment variables
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+# Health check to verify the application is running correctly
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD curl -f http://localhost:5001/ || exit 1
+
+# Set entry point to ensure proper command execution
+ENTRYPOINT ["python"]
+
+# Default command to run the Flask UI test interface
+CMD ["ui/app.py", "--host", "0.0.0.0", "--port", "5001"] 

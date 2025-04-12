@@ -1,0 +1,162 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "whatsapp-invoice-assistant.fullname" . }}
+  labels:
+    {{- include "whatsapp-invoice-assistant.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "whatsapp-invoice-assistant.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "whatsapp-invoice-assistant.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "whatsapp-invoice-assistant.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            # Fixed environment variables
+            - name: PYTHONPATH
+              value: /app
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: IN_DOCKER
+              value: "true"
+            - name: DATABASE_URL
+              value: "{{ .Values.app.database.url }}"
+            - name: MONGODB_URI
+              value: "mongodb://{{ .Values.mongodb.auth.username }}:{{ .Values.mongodb.auth.password }}@{{ include "whatsapp-invoice-assistant.fullname" . }}-mongodb:{{ .Values.mongodb.service.port }}/{{ .Values.mongodb.auth.database }}"
+            - name: USE_MONGODB
+              value: "true"
+            
+            # Logging configuration
+            - name: LOG_LEVEL
+              value: "{{ .Values.app.logging.level }}"
+              
+            # Redis configuration
+            - name: REDIS_URL
+              value: "{{ .Values.app.redis.url }}"
+            
+            # MongoDB memory settings
+            - name: MONGODB_MAX_MESSAGES
+              value: "{{ .Values.mongodb.memory.max_messages }}"
+            - name: MONGODB_MAX_MEMORY_AGE
+              value: "{{ .Values.mongodb.memory.max_memory_age }}"
+            - name: MONGODB_MESSAGE_WINDOW
+              value: "{{ .Values.mongodb.memory.message_window }}"
+            - name: MONGODB_ENABLE_CONTEXT_WINDOW
+              value: "{{ .Values.mongodb.memory.enable_context_window }}"
+            - name: MONGODB_PERSIST_MEMORY
+              value: "{{ .Values.mongodb.memory.persist_memory }}"
+            
+            # Secret environment variables
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: OPENAI_API_KEY
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: S3_BUCKET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: S3_BUCKET_NAME
+            - name: S3_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: S3_REGION
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: TWILIO_ACCOUNT_SID
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: TWILIO_AUTH_TOKEN
+            - name: TWILIO_PHONE_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
+                  key: TWILIO_PHONE_NUMBER
+            
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.app.persistence.enabled }}
+            - name: uploads-volume
+              mountPath: /app/uploads
+            - name: logs-volume
+              mountPath: /app/logs
+            {{- end }}
+          command: ["python"]
+          args: ["ui/app.py", "--host", "0.0.0.0", "--port", "{{ .Values.service.port }}"]
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- if .Values.app.persistence.enabled }}
+        - name: uploads-volume
+          persistentVolumeClaim:
+            claimName: {{ include "whatsapp-invoice-assistant.fullname" . }}-uploads
+        - name: logs-volume
+          persistentVolumeClaim:
+            claimName: {{ include "whatsapp-invoice-assistant.fullname" . }}-logs
+        {{- end }} 

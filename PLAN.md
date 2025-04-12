@@ -1,1 +1,0 @@
-As you complete tasks and reference relevant files update this file as our memory to help with future tasks

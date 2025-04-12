@@ -1,0 +1,99 @@
+# Test values for the WhatsApp Invoice Assistant Helm chart
+# This file contains configuration suitable for testing and development environments
+
+replicaCount: 1
+
+# Use local image for testing
+image:
+  repository: whatsapp-invoice-assistant
+  tag: "dev"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 5001
+
+# Disable ingress for testing
+ingress:
+  enabled: false
+
+# Minimal resources for testing
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Disable autoscaling for testing
+autoscaling:
+  enabled: false
+
+# Application configuration for testing
+app:
+  env:
+    LOG_LEVEL: "DEBUG"
+    USE_MONGODB: "true"
+    REDIS_URL: "redis://redis:6379/0"
+  
+  # For testing, we'll use dummy secrets
+  # In a real environment, these would be set securely
+  secretEnv:
+    enabled: true
+  
+  # Secret values for testing
+  secrets:
+    OPENAI_API_KEY: "test-api-key"
+    TWILIO_ACCOUNT_SID: "test-sid"
+    TWILIO_AUTH_TOKEN: "test-token"
+    TWILIO_PHONE_NUMBER: "+1234567890"
+    AWS_ACCESS_KEY_ID: "test-access-key"
+    AWS_SECRET_ACCESS_KEY: "test-secret-key"
+    S3_BUCKET_NAME: "test-bucket"
+    S3_REGION: "us-east-1"
+
+  # Use smaller volumes for testing
+  persistence:
+    enabled: true
+    uploads:
+      size: 1Gi
+      storageClass: ""
+    logs:
+      size: 512Mi
+      storageClass: ""
+
+# MongoDB configuration for testing
+mongodb:
+  enabled: true
+  auth:
+    enabled: true
+    rootPassword: "test-password"
+    username: "whatsapp_invoice_assistant"
+    password: "test-password"
+    database: "whatsapp_invoice_assistant"
+  persistence:
+    enabled: true
+    size: 1Gi
+  service:
+    port: 27017
+
+# PostgreSQL configuration for testing
+postgresql:
+  enabled: true
+  auth:
+    username: "postgres"
+    password: "test-password"
+    database: "whatsapp_invoice_assistant"
+  primary:
+    persistence:
+      enabled: true
+      size: 1Gi
+  service:
+    port: 5432
+
+# Memory management configuration for testing
+memory:
+  expirationHours: 24
+  maxConversations: 100
+  cleanupSchedule: "0 * * * *"  # Hourly cleanup for testing 

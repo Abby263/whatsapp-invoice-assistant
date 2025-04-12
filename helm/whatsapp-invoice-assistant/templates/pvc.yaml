@@ -1,0 +1,34 @@
+{{- if .Values.app.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-uploads
+  labels:
+    {{- include "whatsapp-invoice-assistant.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.app.persistence.uploads.size }}
+  {{- if .Values.app.persistence.uploads.storageClass }}
+  storageClassName: {{ .Values.app.persistence.uploads.storageClass }}
+  {{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "whatsapp-invoice-assistant.fullname" . }}-logs
+  labels:
+    {{- include "whatsapp-invoice-assistant.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.app.persistence.logs.size }}
+  {{- if .Values.app.persistence.logs.storageClass }}
+  storageClassName: {{ .Values.app.persistence.logs.storageClass }}
+  {{- end }}
+{{- end }} 

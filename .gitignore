@@ -1,0 +1,172 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.env
+.venv
+env.bak/
+venv.bak/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+.mypy_cache/
+
+# Logs
+*.log
+logs/
+log/
+
+# Local development settings
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+app.db
+whatsapp_invoice_assistant.db
+
+# API keys and secrets
+.env
+secrets.yml
+secrets.yaml
+*.pem
+*.key
+
+# AWS
+.aws/
+aws.ini
+aws.yaml
+s3_credentials.json
+aws_credentials.json
+
+# User uploaded content
+uploads/
+media/
+!uploads/.gitkeep
+!media/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+
+# Generated invoice data
+invoice_data/
+invoices/
+pdfs/
+data/
+*.csv
+*.xlsx
+*.json.gz
+processed_data/
+
+# Model caches
+.cache/
+model_cache/
+*_cache/
+.vector_cache/
+
+# LLM specific files
+.embeddings/
+.langchain/
+.langchain.db
+*_openai_api_key.txt
+openai_api_key.txt
+anthropic_api_key.txt
+*_anthropic_api_key.txt
+
+# Demo/Development data
+demo_data/
+sample_data/
+test_data/
+
+# Generated documentation
+docs/_build/
+docs/auto_examples/
+docs/generated/
+
+# Distributed training
+.hydra/
+
+# File history logs
+file_changelog.log
+last_sql_query.log
+
+# Embeddings database
+.vector_db/
+pgvector_data/
+
+# Instance-specific files
+instance/
+
+# Project specific
+.whatsapp_invoice_assistant/
+whatsapp_temp/
+ui_users.json
+
+# Generated files during execution
+AgenticWorkflow.png
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Poetry
+poetry.lock
+
+# Pre-commit hooks
+.pre-commit-config.yaml
+
+# Don't ignore these files/directories (keep them in the repo)
+!.env.example
+!docker-compose.yml
+!docker/Dockerfile
+!.flake8
+!alembic.ini
+!README.md
+!TASKS.md
+!docker-run.sh
+!uploads/.gitkeep 

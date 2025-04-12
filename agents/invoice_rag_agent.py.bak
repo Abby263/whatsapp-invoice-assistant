@@ -1,0 +1,275 @@
+"""
+Invoice RAG Agent for WhatsApp Invoice Assistant.
+
+This module implements a specialized RAG (Retrieval Augmented Generation) agent 
+that performs vector similarity searches when regular database queries return no results.
+It leverages the embeddings stored in pgvector to find semantically similar content.
+"""
+
+import logging
+from typing import Dict, Any, List, Optional, Union
+import asyncio
+import traceback
+import time
+from datetime import datetime
+from sqlalchemy.orm import Session
+from sqlalchemy import text
+from constants.vector_search_configs import VECTOR_SIMILARITY_THRESHOLD
+
+from database.connection import get_db, db_session, SessionLocal
+from services.llm_factory import LLMFactory
+from utils.vector_utils import get_embedding_generator
+
+logger = logging.getLogger(__name__)
+
+class InvoiceRAGAgent:
+    """
+    Retrieval-Augmented Generation (RAG) agent for querying invoice data with vector similarity.
+    
+    This agent uses vector embeddings to find semantically similar invoices and items
+    when regular SQL queries don't return results.
+    """
+    
+    def __init__(self, llm_factory=None):
+        """
+        Initialize the InvoiceRAGAgent.
+        
+        Args:
+            llm_factory: Optional LLMFactory instance for generating completions
+        """
+        self.start_time = 0.0
+        self.llm_factory = llm_factory
+        logger.info("InvoiceRAGAgent initialized")
+        
+    async def process(self, query_text: str, user_id: Union[str, int], conversation_id: str = None, db_session=None, **kwargs) -> Dict[str, Any]:
+        """
+        Process a natural language query to retrieve invoice information using vector similarity search.
+        
+        Args:
+            query_text: The natural language query from the user.
+            user_id: The user ID to restrict the search to the user's data.
+            conversation_id: Optional conversation ID for tracking.
+            db_session: Optional database session to use instead of creating a new one.
+            
+        Returns:
+            A dictionary with the results.
+        """
+        self.start_time = time.time()
+        logger.info(f"[WORKFLOW STEP] Starting RAG process for query: {query_text}")
+        
+        try:
+            # Generate embedding for the query using the embedding generator
+            embedding_generator = get_embedding_generator()
+            query_embedding = embedding_generator.generate_embedding(query_text)
+            
+            if not query_embedding:
+                logger.error("[WORKFLOW STEP] Failed to generate embedding for query")
+                return {
+                    "success": False,
+                    "error": "Failed to generate embedding for query",
+                    "results": []
+                }
+                
+            logger.info(f"[WORKFLOW STEP] Generated embedding for query (length: {len(query_embedding)})")
+            
+            # Perform vector search using the item embeddings
+            results = await self._perform_vector_search(query_embedding, user_id, db_session)
+            
+            execution_time = time.time() - self.start_time
+            
+            if results:
+                # Log summary of results for UI workflow steps
+                vendors = set(item.get('vendor', 'Unknown') for item in results)
+                vendors_str = ', '.join(vendors)
+                dates = set(item.get('date', 'Unknown').split('T')[0] if item.get('date') else 'Unknown' for item in results)
+                dates_str = ', '.join(dates)
+                
+                logger.info(f"[WORKFLOW STEP] RAG search completed in {execution_time:.2f} seconds, found {len(results)} results")
+                logger.info(f"[WORKFLOW STEP] Found items from vendors: {vendors_str}")
+                logger.info(f"[WORKFLOW STEP] Dates of found invoices: {dates_str}")
+                
+                # Log the top 2 results with their similarity scores
+                if results:
+                    logger.info("[WORKFLOW STEP] Top results:")
+                    for i, result in enumerate(results[:2]):
+                        logger.info(f"[WORKFLOW STEP] Result {i+1}: {result.get('description', 'No description')} - Similarity: {result.get('similarity', 'N/A')}")
+            else:
+                logger.info("[WORKFLOW STEP] RAG search completed but found no results")
+            
+            return {
+                "success": True,
+                "results": results,
+                "execution_time": round(execution_time, 2),
+                "row_count": len(results),
+                "source": "vector_similarity"
+            }
+            
+        except Exception as e:
+            logger.error(f"[WORKFLOW STEP] Error processing RAG query: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "results": []
+            }
+    
+    async def _perform_vector_search(self, query_embedding: List[float], user_id: Union[str, int], db_session=None) -> List[Dict[str, Any]]:
+        """
+        Performs a vector search on invoice embeddings.
+        
+        Args:
+            query_embedding: The embedding of the query.
+            user_id: The user ID.
+            db_session: Optional database session to use instead of creating a new one.
+            
+        Returns:
+            A list of invoices with similarity scores.
+        """
+        try:
+            start_time = time.time()
+            if isinstance(user_id, str):
+                user_id = int(user_id)
+                
+            # Track if we created a new session or using an existing one
+            should_close_session = False
+            if db_session is None:
+                db_session = SessionLocal()
+                should_close_session = True
+                logger.debug("Created new database session for vector search")
+            else:
+                logger.debug("Using provided database session for vector search")
+            
+            # Format the embedding array for SQL
+            embedding_array = query_embedding  # Store original array
+            embedding_str = "[" + ",".join(str(x) for x in embedding_array) + "]"
+            logger.debug(f"Formatted embedding as PostgreSQL array (first 30 values): {embedding_str[:50]}...")
+            
+            logger.info(f"[WORKFLOW STEP] Executing vector similarity search against items table for user_id: {user_id}")
+            
+            # Use SQLAlchemy text construct for the query with direct embedding substitution
+            # This avoids issues with parameter binding for vector types
+            sql_query = f"""
+                SELECT 
+                    i.id AS invoice_id,
+                    i.invoice_number,
+                    i.vendor,
+                    i.invoice_date,
+                    i.total_amount,
+                    it.description,
+                    it.quantity,
+                    it.unit_price,
+                    it.total_price,
+                    l2_distance(it.description_embedding::vector, '{embedding_str}'::vector) AS similarity_score
+                FROM 
+                    items it
+                JOIN
+                    invoices i ON it.invoice_id = i.id
+                WHERE 
+                    i.user_id = :user_id
+                    AND it.description_embedding IS NOT NULL
+                    AND l2_distance(it.description_embedding::vector, '{embedding_str}'::vector) < {VECTOR_SIMILARITY_THRESHOLD}
+                ORDER BY 
+                    l2_distance(it.description_embedding::vector, '{embedding_str}'::vector)
+                LIMIT 5
+            """
+            
+            # Execute the query with user_id as a parameter
+            result = db_session.execute(text(sql_query), {"user_id": user_id})
+            
+            invoices = []
+            for row in result:
+                # Round similarity score for better readability
+                similarity = row.similarity_score
+                if similarity is not None:
+                    similarity = round(similarity, 3)
+                    
+                invoices.append({
+                    'invoice_id': str(row.invoice_id),
+                    'invoice_number': row.invoice_number,
+                    'vendor': row.vendor,
+                    'date': row.invoice_date.isoformat() if row.invoice_date else None,
+                    'total_amount': row.total_amount,
+                    'description': row.description,
+                    'quantity': row.quantity,
+                    'unit_price': row.unit_price,
+                    'total_price': row.total_price,
+                    'similarity': similarity
+                })
+                
+            # Only close the session if we created it
+            if should_close_session:
+                db_session.close()
+                logger.debug("Closed database session for vector search")
+            
+            end_time = time.time()
+            execution_time = round(end_time - start_time, 2)
+            
+            if invoices:
+                logger.info(f"[WORKFLOW STEP] Vector search found {len(invoices)} results in {execution_time} seconds")
+            else:
+                logger.info("[WORKFLOW STEP] Vector search completed but found no matching items")
+            
+            return invoices
+        except Exception as e:
+            logger.error(f"[WORKFLOW STEP] Error performing vector search on invoices: {e}")
+            return []
+    
+    async def _perform_item_vector_search(self, query_embedding: List[float], user_id: Union[str, int], db_session=None) -> List[Dict[str, Any]]:
+        """
+        This method is no longer needed since we are combining the invoice and item search
+        in the _perform_vector_search method.
+        
+        For backward compatibility, we'll just call _perform_vector_search.
+        
+        Args:
+            query_embedding: The embedding of the query.
+            user_id: The user ID.
+            db_session: Optional database session to use.
+        """
+        return await self._perform_vector_search(query_embedding, user_id, db_session)
+    
+    def _combine_results(self, invoice_results: List[Dict[str, Any]], item_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Combine and deduplicate results from different vector searches.
+        
+        Args:
+            invoice_results: Results from invoice embedding search
+            item_results: Results from item embedding search
+            
+        Returns:
+            Combined list of unique results
+        """
+        # Start with invoice results
+        combined = invoice_results.copy()
+        
+        # Track invoice IDs we've already seen
+        seen_invoice_ids = set(r.get('invoice_id') for r in combined if r.get('invoice_id'))
+        
+        # Add unique item results
+        for item in item_results:
+            if item.get('invoice_id') and item['invoice_id'] not in seen_invoice_ids:
+                combined.append(item)
+                seen_invoice_ids.add(item['invoice_id'])
+        
+        # Sort by similarity score
+        combined.sort(key=lambda x: x.get('similarity_score', float('inf')))
+        
+        # Log the combined results for workflow steps
+        if combined:
+            invoice_ids = set(item.get('invoice_id') for item in combined if item.get('invoice_id'))
+            vendors = set(item.get('vendor') for item in combined if item.get('vendor'))
+            
+            logger.info(f"[WORKFLOW STEP] Combined results: {len(combined)} unique items across {len(invoice_ids)} invoices")
+            logger.info(f"[WORKFLOW STEP] Vendors in combined results: {', '.join(vendors) if vendors else 'None'}")
+            
+            # Log top 2 results
+            if len(combined) > 0:
+                logger.info("[WORKFLOW STEP] Top combined results:")
+                for i, item in enumerate(combined[:2]):
+                    similarity = item.get('similarity', 'N/A')
+                    description = item.get('description', 'No description')
+                    vendor = item.get('vendor', 'Unknown vendor')
+                    logger.info(f"[WORKFLOW STEP] - Result {i+1}: {description} from {vendor} (similarity: {similarity})")
+        else:
+            logger.info("[WORKFLOW STEP] Combined results: No results found")
+        
+        return combined 

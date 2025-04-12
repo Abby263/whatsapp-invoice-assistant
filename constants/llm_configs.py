@@ -1,117 +1,114 @@
 """
-Configuration settings for Large Language Models used in the application.
+Configuration constants for LLM settings and models.
 
-This module contains settings and constants for different LLM configurations
-used throughout the application.
+This module defines the configuration constants for LLM settings,
+including model names, providers, temperature settings, and token limits.
 """
 from enum import Enum, auto
 
-class ModelProvider(Enum):
-    """Supported LLM providers."""
-    OPENAI = auto()
-    ANTHROPIC = auto()
-    COHERE = auto()
+# LLM Providers
+class ModelProvider(str, Enum):
+    """Enum for supported LLM providers."""
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    COHERE = "cohere"
 
+# Model Names
 class Models:
-    """Available models from different providers."""
+    """Available model names by provider."""
     # OpenAI models
-    GPT_4O_MINI = "gpt-4o-mini"
-    GPT_4O = "gpt-4o"
-    GPT_4_TURBO = "gpt-4-turbo"
+    GPT4 = "gpt-4"
+    GPT4_TURBO = "gpt-4-turbo-preview"
+    GPT4O_MINI = "gpt-4o-mini"
+    GPT35_TURBO = "gpt-3.5-turbo"
     
     # Anthropic models
-    CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
-    CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
+    CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
+    CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
     
     # Cohere models
     COHERE_COMMAND = "command"
     COHERE_COMMAND_LIGHT = "command-light"
-    COHERE_COMMAND_R = "command-r"
     
-    # Default model to use
-    DEFAULT = GPT_4O_MINI
+    # Default model
+    DEFAULT = GPT4O_MINI
 
+# Temperature Settings
 class TemperatureSettings:
     """Temperature settings for different tasks."""
-    # More deterministic tasks
-    CLASSIFICATION = 0.0
-    SQL_GENERATION = 0.0
-    ENTITY_EXTRACTION = 0.1
-    DATA_EXTRACTION = 0.1
-    VALIDATION = 0.1
-    
-    # More creative tasks
-    RESPONSE_FORMATTING = 0.3
-    CONVERSATION = 0.5
-    
-    # Default temperature
-    DEFAULT = 0.1
+    DEFAULT = 0.7
+    CLASSIFICATION = 0.3  # Lower temperature for more deterministic classifications
+    SQL_GENERATION = 0.1  # Very low temperature for deterministic SQL
+    ENTITY_EXTRACTION = 0.4  # Low-medium temperature for entity extraction
+    DATA_EXTRACTION = 0.2  # Low temperature for extracting structured data
+    VALIDATION = 0.0  # Zero temperature for validation tasks
+    RESPONSE_FORMATTING = 0.6  # Medium temperature for creative formatting
 
+# Token Limits
 class TokenLimits:
-    """Token limits for different models and contexts."""
-    # Input tokens (prompt)
-    MAX_INPUT_TOKENS_SHORT = 4000
-    MAX_INPUT_TOKENS_MEDIUM = 8000
-    MAX_INPUT_TOKENS_LONG = 16000
-    
-    # Output tokens (completion)
-    MAX_OUTPUT_TOKENS_SHORT = 1000
-    MAX_OUTPUT_TOKENS_MEDIUM = 2000
-    MAX_OUTPUT_TOKENS_LONG = 4000
-    
-    # Default limits
-    DEFAULT_MAX_INPUT_TOKENS = MAX_INPUT_TOKENS_MEDIUM
-    DEFAULT_MAX_OUTPUT_TOKENS = MAX_OUTPUT_TOKENS_MEDIUM
+    """Token limits for different operations."""
+    DEFAULT_MAX_OUTPUT_TOKENS = 1500
+    MAX_OUTPUT_TOKENS_SHORT = 500   # For short responses like classifications
+    MAX_OUTPUT_TOKENS_MEDIUM = 1500  # For medium-length responses like SQL or data extraction
+    MAX_OUTPUT_TOKENS_LONG = 4000   # For long responses like comprehensive summaries
 
-class PromptTemplateKeys:
-    """Keys for accessing prompt templates."""
-    TEXT_INTENT_CLASSIFICATION = "text_intent_classification"
-    TEXT_TO_SQL_CONVERSION = "text_to_sql_conversion"
-    INVOICE_ENTITY_EXTRACTION = "invoice_entity_extraction"
-    FILE_VALIDATION = "file_validation"
-    INVOICE_DATA_EXTRACTION = "invoice_data_extraction"
-    RESPONSE_FORMATTING = "response_formatting"
+# LLM Provider enum (backward compatibility)
+class LLMProvider(str, Enum):
+    """Enum for supported LLM providers."""
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    COHERE = "cohere"
+
+# Model Name enum (backward compatibility)
+class ModelName(str, Enum):
+    """Enum for available model names."""
+    GPT4 = "gpt-4"
+    GPT4_TURBO = "gpt-4-turbo-preview"
+    GPT4O_MINI = "gpt-4o-mini"
+    GPT35_TURBO = "gpt-3.5-turbo"
+    CLAUDE_3_OPUS = "claude-3-opus-20240229"
+    CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
+    CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
+    COHERE_COMMAND = "command"
+    COHERE_COMMAND_LIGHT = "command-light"
 
 # Default LLM configuration
 DEFAULT_LLM_CONFIG = {
     "provider": ModelProvider.OPENAI,
-    "model": Models.DEFAULT,
+    "model": Models.GPT4O_MINI,
     "temperature": TemperatureSettings.DEFAULT,
-    "max_input_tokens": TokenLimits.DEFAULT_MAX_INPUT_TOKENS,
-    "max_output_tokens": TokenLimits.DEFAULT_MAX_OUTPUT_TOKENS,
+    "max_output_tokens": TokenLimits.DEFAULT_MAX_OUTPUT_TOKENS
 }
 
 # Task-specific LLM configurations
 TASK_LLM_CONFIGS = {
-    "intent_classification": {
-        "model": Models.GPT_4O_MINI,
+    "classification": {
         "temperature": TemperatureSettings.CLASSIFICATION,
-        "max_output_tokens": 10,  # Very short output for classification
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_SHORT
     },
     "sql_generation": {
-        "model": Models.GPT_4O_MINI,
         "temperature": TemperatureSettings.SQL_GENERATION,
-        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM,
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM
     },
     "entity_extraction": {
-        "model": Models.GPT_4O_MINI,
         "temperature": TemperatureSettings.ENTITY_EXTRACTION,
-        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM,
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM
     },
     "data_extraction": {
-        "model": Models.GPT_4O,  # Using more powerful model for OCR extraction
         "temperature": TemperatureSettings.DATA_EXTRACTION,
-        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM,
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM
     },
-    "file_validation": {
-        "model": Models.GPT_4O_MINI,
+    "validation": {
         "temperature": TemperatureSettings.VALIDATION,
-        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_SHORT,
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_SHORT
     },
     "response_formatting": {
-        "model": Models.GPT_4O_MINI,
         "temperature": TemperatureSettings.RESPONSE_FORMATTING,
-        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM,
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM
     },
+    "response_validation": {
+        "temperature": TemperatureSettings.VALIDATION,
+        "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_SHORT
+    }
 } 

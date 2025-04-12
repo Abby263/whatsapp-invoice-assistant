@@ -1,0 +1,21 @@
+Analyze this image and determine if it contains a valid invoice or receipt. Be liberal in your interpretation - this is for a WhatsApp Invoice Assistant that helps users track their expenses.
+
+A valid invoice/receipt includes:
+1. ANY document showing a purchase transaction (store receipts, invoices, online order confirmations, etc.)
+2. Documents showing goods or services purchased with pricing
+3. Any payment confirmation with vendor and amount information
+
+IMPORTANT GUIDELINES:
+- Retail receipts, store receipts, and simple payment confirmations ARE valid invoice documents
+- If you can identify a vendor/merchant name and a total amount, it's likely a valid invoice/receipt
+- Documents don't need to have ALL formal invoice elements to be valid
+- When in doubt about borderline cases, classify as valid rather than invalid
+- Even simple receipts with just store name, date and total ARE valid for our purposes
+
+Respond with a JSON object with the following structure:
+{
+    "is_valid_invoice": true/false,
+    "confidence_score": 0.0-1.0,
+    "missing_elements": ["list of missing formal elements if any"],
+    "reasons": "detailed explanation for the decision"
+} 

@@ -1,214 +1,335 @@
 # WhatsApp Invoice Assistant
 
-An AI-powered WhatsApp bot for processing and managing invoice data. The application allows users to upload invoices via WhatsApp, receive AI-generated summaries, and ask questions about their invoices.
+An AI-powered WhatsApp bot for processing and managing invoice data. The application allows users to upload invoices via WhatsApp, receive AI-generated summaries, and ask questions about their invoices using natural language.
 
-## Features
+## 🌟 Features
 
-- Uploads and processes invoices from various formats (images, PDFs, Excel, CSV)
-- Extracts invoice data using AI (GPT-4o-mini)
-- Stores structured invoice data in PostgreSQL
-- Answers natural language queries about invoice data
-- Handles multiple types of user interactions through WhatsApp
+### Core Capabilities
+- **Invoice Processing**: Upload and extract data from invoices in multiple formats (PDF, images, Excel, CSV)
+- **Natural Language Queries**: Ask questions about your invoices in plain English
+- **Semantic Search**: Find information even when you don't know exact terms or item names
+- **WhatsApp Integration**: Interact with the system directly through WhatsApp
+- **Multi-user Support**: Handle multiple users with separate data stores
+- **Conversation Memory**: Remember context from previous interactions
 
-## Technology Stack
+### Technical Features
+- **Vector Embeddings**: Semantic understanding of invoice data using pgvector
+- **LangGraph Workflows**: Orchestrated AI agent workflows for different user intents
+- **Hybrid Search**: Combines vector similarity and keyword matching for optimal results
+- **Database Integration**: Structured storage with PostgreSQL and conversation memory with MongoDB
+- **Cloud Storage**: AWS S3 integration for file storage
+- **Containerization**: Docker and Kubernetes ready deployment
 
-- **Backend Framework**: FastAPI
-- **Database**: PostgreSQL with SQLAlchemy ORM and Alembic for migrations
-- **AI Model**: GPT-4o-mini via OpenAI API
-- **Workflow Orchestration**: LangGraph
-- **Agent Definition**: Pydantic models
-- **Asynchronous Tasks**: Celery with Redis
-- **File Storage**: Amazon S3
-- **WhatsApp Integration**: Twilio
-- **Containerization**: Docker and Kubernetes
+## 🛠️ System Architecture
 
-## Getting Started
+The WhatsApp Invoice Assistant is built using a modular, agent-based architecture:
+
+```
+┌───────────────┐     ┌───────────────┐     ┌───────────────┐
+│   WhatsApp    │     │   FastAPI     │     │   LangGraph   │
+│  Integration  │────▶│  Application  │────▶│   Workflow    │
+└───────────────┘     └───────────────┘     └───────────────┘
+                                                   │
+┌───────────────┐     ┌───────────────┐     ┌─────▼─────────┐
+│   MongoDB     │◀────│ AI Processing │◀────│   Agents &    │
+│   Memory      │     │    Nodes      │     │   Routers     │
+└───────────────┘     └───────────────┘     └───────────────┘
+                                                   │
+┌───────────────┐     ┌───────────────┐     ┌─────▼─────────┐
+│  PostgreSQL   │◀────│  Database     │◀────│   Response    │
+│  + pgvector   │     │   Services    │     │   Formatters  │
+└───────────────┘     └───────────────┘     └───────────────┘
+```
+
+![Agentic Workflow](images/AgenticWorkflow.png)
+
+## 📊 System Validation Summary
+
+The system has been validated with the following results:
+
+### Database Validation
+- **PostgreSQL Version**: 14.17 (Homebrew)
+- **pgvector Extension**: Installed and working (version 0.8.0)
+- **Database Tables**: 9 tables properly configured with relationships
+- **Vector Embeddings**:
+  - 28 items with 1536-dimensional vector embeddings (100% coverage)
+  - Vector columns in both `items` and `invoice_embeddings` tables
+  - Functional L2 distance queries for semantic search
+
+### Current Data
+- 1 user in the system
+- 5 invoices with metadata
+- 28 line items with embeddings
+- No conversations or messages yet
+- Vector search queries working as expected
+- Current migration: 6c0dda5c0543 (head)
+
+For comprehensive documentation about database schema and vector search implementation, refer to the docs directory.
+
+## 📚 Available Documentation
+
+Detailed documentation is available in the `docs/` directory:
+
+- **[DATABASE.md](docs/DATABASE.md)**: Database schema design and relationships
+- **[MONGODB_MEMORY.md](docs/MONGODB_MEMORY.md)**: Memory management with MongoDB
+- **[Query_Types.md](docs/Query_Types.md)**: Supported query types and processing flows
+- **[PostgresSQL_Storage_Query.md](docs/PostgresSQL_Storage_Query.md)**: Database storage and query details
+- **[TECH_STACK.md](docs/TECH_STACK.md)**: Complete technology stack overview
+- **[VECTOR_SEARCH.md](docs/VECTOR_SEARCH.md)**: Vector embedding generation and semantic search implementation
+- **[DOCKER.md](docs/DOCKER.md)**: Docker setup and configuration
+- **[CHANGELOG.md](docs/CHANGELOG.md)**: Version history and changes
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
 - Python 3.9+
-- PostgreSQL
-- Redis
+- PostgreSQL with pgvector extension
+- MongoDB (optional, for conversation memory)
 - OpenAI API key
+- AWS S3 bucket (optional, for file storage)
 - Twilio account with WhatsApp integration
-- AWS S3 bucket
 
 ### Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/yourusername/whatsapp-invoice-assistant.git
    cd whatsapp-invoice-assistant
    ```
 
-2. Set up environment variables:
+2. Install dependencies with Poetry:
+   ```bash
+   make install
    ```
+
+3. Set up environment variables in `.env` or use config/env.yaml:
+   ```bash
    cp .env.example .env
    # Edit .env with your credentials
    ```
 
-3. Install dependencies using Poetry:
-   ```
-   make install
+4. Set up the database:
+   ```bash
+   make db-migrate
    ```
 
-4. Start the development environment:
-   ```
-   make dev
+5. Start the application:
+   ```bash
+   make start
    ```
 
 ### Database Setup
 
-1. Ensure PostgreSQL is running and accessible with the credentials specified in your `.env` file.
+The WhatsApp Invoice Assistant uses two database systems for different purposes:
 
-2. Run database migrations to create the schema:
-   ```
-   make db-migrate
-   ```
+#### PostgreSQL
+- **Purpose**: Primary data storage for invoices, items, users, and vector embeddings
+- **Setup**: Uses Alembic migrations to create and update schema
+- **Setup Command**: `make db-migrate`
+- **Requirements**: 
+  - PostgreSQL 12+ with pgvector extension
+  - Connection string in `.env` file as `DATABASE_URL`
 
-3. (Optional) Seed the database with test data:
-   ```
-   make db-seed
-   ```
+The migration process:
+- Creates all necessary tables (users, invoices, items, conversations, etc.)
+- Attempts to install the pgvector extension for vector similarity search
+- Sets up proper relationships between tables
+- Applies any pending schema changes
 
-4. Check the database status:
-   ```
-   make db-status
-   ```
-   This command shows information about:
-   - Tables and their counts
-   - Number of rows in each table
-   - Current migration version
+#### MongoDB
+- **Purpose**: Conversation memory storage and context management
+- **Setup**: No migration needed; connects and creates collections dynamically
+- **Configuration**:
+  - Set `USE_MONGODB=true` in `.env` (default)
+  - Connection URI in `.env` as `MONGODB_URI` (defaults to `mongodb://localhost:27017/whatsapp_invoice_assistant`)
+- **Memory Settings**: Configurable in `config/env.yaml` under `mongodb.memory` section
 
-### Configuration Management
+MongoDB is only required if you need conversation history persistence. The system can run without it, but will use in-memory storage that doesn't persist between restarts.
 
-The application uses a centralized configuration system with multiple layers:
+### Running the Test UI
 
-1. **Environment Variables**: Core settings are loaded from `.env` file or system environment variables.
+For testing and development without WhatsApp integration:
 
-2. **YAML Configuration**: Extended settings are managed in `config/env.yaml`. The values in this file can reference environment variables.
+```bash
+make ui-run
+```
 
-3. **Runtime Configuration**: The `utils/config.py` module provides utilities to access all configuration settings.
+This will start a web interface at http://localhost:5001 where you can:
+- Send text messages to the assistant
+- Upload invoice files for processing
+- View conversation history
+- Monitor AI agent workflows in real-time
+- Check database and embedding statistics
 
-Example configuration usage:
+![Testing Interface](images/Testing_Interface.png)
+
+The Testing Interface provides a user-friendly way to interact with the assistant:
+- **Left Panel**: Chat interface for uploading invoices and asking questions
+- **Right Panel**: Agent flow monitoring with real-time updates on:
+  - User information and token usage
+  - Current intent recognition
+  - Workflow steps in progress
+  - Database status and statistics
+  - Vector embedding information
+
+All supporting documentation is available in the `docs/` folder, including detailed explanations of the database schema, vector search implementation, query types, memory management, and deployment instructions.
+
+## ⚙️ Configuration Options
+
+The WhatsApp Invoice Assistant is highly configurable through environment variables or the `config/env.yaml` file:
+
+### Core Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `OPENAI_API_KEY` | OpenAI API key for LLM access | Required |
+| `DATABASE_URL` | PostgreSQL connection string | Required |
+| `MONGODB_URI` | MongoDB connection string | mongodb://localhost:27017/whatsapp_invoice_assistant |
+| `USE_MONGODB` | Enable MongoDB for memory | true |
+| `S3_BUCKET_NAME` | AWS S3 bucket for file storage | - |
+
+### Vector Search Configuration
+
+Vector search uses pgvector with L2 distance metric. Key configurations in `constants/vector_search_configs.py`:
+
 ```python
-from utils.config import config
+# L2 distance threshold - higher values return more results
+# With L2 distance, lower values mean more similar items
+VECTOR_SIMILARITY_THRESHOLD = 1.3
 
-# Access a database setting
-db_host = config.get("database", "host")
-
-# Access the full database section
-db_config = config.get("database")
+# Search configuration
+DEFAULT_VECTOR_SEARCH_CONFIG = {
+    "similarity_threshold": VECTOR_SIMILARITY_THRESHOLD,
+    "max_results": 10,
+    "similarity_metric": "l2_distance",
+    "hybrid_search": True,
+    "boost_exact_matches": True
+}
 ```
 
-### Working with Migrations
+### LLM and Embedding Configuration
 
-To manage database schema changes:
-
-1. Create a new migration:
-   ```
-   make db-revision description="Add new column"
-   ```
-
-2. Apply pending migrations:
-   ```
-   make db-migrate
-   ```
-
-3. Downgrade to a previous migration:
-   ```
-   make db-downgrade
-   ```
-
-4. View migration history:
-   ```
-   make db-history
-   ```
-
-5. Reset the database (drop and recreate all tables):
-   ```
-   make db-clean
-   ```
-
-## Project Structure
-
-```
-project_root/
-│
-├── agents/                    # Agent-related code
-├── workflows/                 # Workflow definitions
-├── memory/                    # Memory management for state
-├── database/                  # Database models and operations
-│   ├── schemas.py            # SQLAlchemy ORM models
-│   ├── models.py             # Pydantic validation models
-│   ├── crud.py               # CRUD operations
-│   ├── connection.py         # Database connection utilities
-│   └── migrations/           # Alembic migration scripts
-├── storage/                   # S3 storage integration
-├── services/                  # External service integrations
-├── tasks/                     # Celery async tasks
-├── utils/                     # Utility functions
-│   ├── config.py             # Configuration utilities
-│   └── logging.py            # Logging setup
-├── constants/                 # Constant definitions
-├── prompts/                   # LLM prompt templates
-├── templates/                 # Response templates
-├── api/                       # FastAPI application
-├── tests/                     # Test suite
-│   ├── database/             # Database tests
-│   └── utils/                # Utility tests
-├── docker/                    # Docker configuration
-└── kubernetes/                # Kubernetes manifests
+```yaml
+# LLM Configuration (from config/env.yaml)
+llm:
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.3
+  max_tokens: 1000
+  embedding_model: "text-embedding-3-small"
+  embedding_dimension: 1536
 ```
 
-## Development
+### Memory Management
 
-### Running Tests
-
+```yaml
+# MongoDB Memory Configuration
+mongodb:
+  memory:
+    max_messages: 50  # Maximum messages per conversation
+    max_memory_age: 3600  # Maximum age in seconds (1 hour)
+    message_window: 10  # Context window size
+    enable_context_window: true
+    persist_memory: true
 ```
-# Run all tests
-make test
 
-# Run database-specific tests
-make test-db
+## 📊 Database Schema
 
-# Run specific test file
-poetry run pytest tests/database/test_models.py
+The system uses a relational database with the following core tables:
+
+- **Users**: Store user information and preferences
+- **Invoices**: Main invoice metadata (date, vendor, total)
+- **Items**: Line items from invoices with descriptions
+- **Conversations**: Track user conversation sessions
+- **Messages**: Store individual message content for context
+- **WhatsAppMessages**: Track delivery status of WhatsApp messages
+
+Vector search is enabled through a special column:
+```sql
+-- Items table includes a vector column for semantic search
+description_embedding VECTOR(1536)
 ```
+
+## 🛠️ Available Commands
+
+The Makefile provides numerous helpful commands:
+
+### Application Management
+- `make start` - Start the application
+- `make stop` - Stop running instances
+- `make restart` - Restart the application
+- `make ui-run` - Start the test UI
 
 ### Database Management
+- `make db-migrate` - Run database migrations
+- `make db-status` - Show database statistics
+- `make db-seed` - Seed test data
+- `make db-clean` - Reset the database
+- `make update-embeddings` - Update vector embeddings for items
 
+### Development Tools
+- `make install` - Install dependencies
+- `make dev` - Start development environment
+- `make test` - Run all tests
+- `make lint` - Check code quality
+- `make format` - Format code with Black
+
+### Docker and Kubernetes
+- `make docker-run` - Start with Docker
+- `make docker-stop` - Stop Docker containers
+- `make helm-install` - Deploy to Kubernetes with Helm
+
+## 🧠 Semantic Search Implementation
+
+The semantic search capability uses:
+
+1. **Embeddings Generation**: Each item description is converted to a vector embedding using OpenAI's text-embedding-3-small model or Sentence Transformers as fallback.
+
+2. **pgvector Extension**: PostgreSQL with pgvector stores and queries these vector embeddings efficiently.
+
+3. **L2 Distance Metric**: Measures similarity between query and stored vectors, with configurable threshold (currently 1.3).
+
+4. **Hybrid Approach**: Combines semantic search with keyword matching for optimal results.
+
+Example query:
+```sql
+SELECT 
+    description, 
+    l2_distance(description_embedding::vector, '[query_embedding]'::vector) AS similarity_score
+FROM 
+    items 
+WHERE 
+    l2_distance(description_embedding::vector, '[query_embedding]'::vector) < 1.3
+ORDER BY 
+    similarity_score
+LIMIT 5
 ```
-# Reset database (drop and recreate all tables)
-make db-clean
 
-# Apply migrations
-make db-migrate
+## 📱 WhatsApp Integration
 
-# Check database status (tables, row counts, migration version)
-make db-status
+The system integrates with WhatsApp via Twilio's API:
 
-# Create a new migration
-make db-revision description="Description of the change"
-```
+1. **Webhook Endpoint**: Receives messages from WhatsApp
+2. **Intent Classification**: Determines user intent (query, invoice upload, etc.)
+3. **File Handling**: Processes images and documents sent via WhatsApp
+4. **Response Formatting**: Formats AI responses for WhatsApp display
+5. **Media Support**: Handles both text and media responses
 
-### Code Formatting and Linting
+## 📝 License
 
-```
-make format
-make lint
-```
+[Your License] - See the LICENSE file for details.
 
-### Starting the Application
+## 🤝 Contributing
 
-```
-make start
-```
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## License
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-[Specify the license here]
+## 📞 Contact
 
-## Contributors
-
-[List the contributors here] 
+For questions or support, please open an issue on this repository.

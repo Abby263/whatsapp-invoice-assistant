@@ -1,0 +1,28 @@
+apiVersion: v2
+name: whatsapp-invoice-assistant
+description: A Helm chart for WhatsApp Invoice Assistant
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: WhatsApp Invoice Assistant Team
+keywords:
+  - whatsapp
+  - assistant
+  - invoice
+  - ai
+  - langchain
+  - langgraph
+  - mongodb
+home: https://github.com/username/whatsapp-invoice-assistant
+sources:
+  - https://github.com/username/whatsapp-invoice-assistant
+dependencies:
+  - name: mongodb
+    version: "^13.0.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: mongodb.enabled
+  - name: postgresql
+    version: "^12.0.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled 

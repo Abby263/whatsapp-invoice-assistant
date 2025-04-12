@@ -71,24 +71,29 @@ class ConfigLoader:
         config_str = os.path.expandvars(config_template)
         self.config = yaml.safe_load(config_str)
 
-    def get(self, section: str, key: Optional[str] = None) -> Any:
+    def get(self, section: str, key: Optional[str] = None, default: Any = None) -> Any:
         """
         Get a configuration value.
 
         Args:
             section: The section name in the config.
             key: The key within the section. If None, returns the entire section.
+            default: Default value to return if section or key not found.
 
         Returns:
             The configuration value or section.
         """
         if section not in self.config:
+            if default is not None:
+                return default
             raise KeyError(f"Section '{section}' not found in configuration")
 
         if key is None:
             return self.config[section]
 
         if key not in self.config[section]:
+            if default is not None:
+                return default
             raise KeyError(f"Key '{key}' not found in section '{section}'")
 
         return self.config[section][key]
@@ -168,7 +173,11 @@ def get_db_config() -> Dict[str, Any]:
     
     # Set default values if not present
     if "host" not in db_config:
-        db_config["host"] = "localhost"
+        # Check if we're running in Docker
+        if os.environ.get("PYTHONPATH") == "/app" or os.path.exists("/.dockerenv"):
+            db_config["host"] = "whatsapp-invoice-assistant-db"
+        else:
+            db_config["host"] = "localhost"
     if "port" not in db_config:
         db_config["port"] = "5432"  # Default PostgreSQL port
     if "username" not in db_config:

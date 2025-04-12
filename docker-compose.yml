@@ -1,68 +1,113 @@
-version: '3.8'
-
 services:
-  app:
+  ui:
     build:
       context: .
       dockerfile: docker/Dockerfile
+    container_name: whatsapp-invoice-assistant-ui
+    restart: unless-stopped
     volumes:
-      - .:/app
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
     ports:
-      - "8000:8000"
+      - "5001:5001"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db/whatsapp_invoice_assistant
-      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql://postgres:postgres@whatsapp-invoice-assistant-db:5432/whatsapp_invoice_assistant
+      - MONGODB_URI=mongodb://whatsapp-invoice-assistant-mongodb:27017/whatsapp_invoice_assistant
+      - USE_MONGODB=true
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET_NAME=${S3_BUCKET_NAME}
-      - S3_REGION=${S3_REGION}
-    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+      - S3_REGION=${S3_REGION:-us-east-1}
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - IN_DOCKER=true
+    networks:
+      - invoice-assistant-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    command: ui/app.py --host 0.0.0.0 --port 5001
+
+  mongodb:
+    image: mongo:6.0
+    container_name: whatsapp-invoice-assistant-mongodb
+    restart: unless-stopped
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27018:27017"
+    networks:
+      - invoice-assistant-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    environment:
+      - MONGO_INITDB_DATABASE=whatsapp_invoice_assistant
 
   db:
-    image: postgres:14
+    image: postgres:16-alpine
+    container_name: whatsapp-invoice-assistant-db
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=whatsapp_invoice_assistant
-    ports:
-      - "5432:5432"
+    networks:
+      - invoice-assistant-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    command: postgres
 
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-
-  celery_worker:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
-    volumes:
-      - .:/app
+  db-init:
+    image: postgres:14
+    container_name: whatsapp-invoice-assistant-db-init
     depends_on:
-      - app
-      - redis
-      - db
+      db:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db/whatsapp_invoice_assistant
-      - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
-      - S3_REGION=${S3_REGION}
-    command: celery -A tasks.celery_app worker --loglevel=info
+      - PGUSER=postgres
+      - PGPASSWORD=postgres
+      - PGHOST=whatsapp-invoice-assistant-db
+      - PGDATABASE=whatsapp_invoice_assistant
+    networks:
+      - invoice-assistant-network
+    command: >
+      bash -c "
+        echo 'Waiting for database to be ready...' &&
+        pg_isready -h whatsapp-invoice-assistant-db -U postgres &&
+        echo 'Creating pgvector extension...' &&
+        psql -h whatsapp-invoice-assistant-db -U postgres -d whatsapp_invoice_assistant -c 'CREATE EXTENSION IF NOT EXISTS vector;' &&
+        echo 'Database initialization completed successfully!'
+      "
+    restart: on-failure
 
 volumes:
-  postgres_data: 
+  postgres_data:
+    name: whatsapp-invoice-assistant-pgdata
+  mongodb_data:
+    name: whatsapp-invoice-assistant-mongodb-data
+
+networks:
+  invoice-assistant-network:
+    name: invoice-assistant-network
+    driver: bridge 

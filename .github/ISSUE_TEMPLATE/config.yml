@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: WhatsApp Invoice Assistant Discussions
+    url: https://github.com/yourusername/whatsapp-invoice-assistant/discussions
+    about: Please ask and answer questions here.
+  - name: WhatsApp Invoice Assistant Documentation
+    url: https://github.com/yourusername/whatsapp-invoice-assistant/tree/main/docs
+    about: Please check our documentation before creating an issue. 

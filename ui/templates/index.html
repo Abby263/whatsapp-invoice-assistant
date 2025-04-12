@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Invoice Assistant Test UI</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="chat-container">
+            <!-- Chat Header -->
+            <div class="chat-header">
+                <div class="user-info">
+                    <div class="avatar">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div class="info">
+                        <h3>Invoice Assistant</h3>
+                        <p>Testing Interface</p>
+                    </div>
+                </div>
+                <div class="actions">
+                    <button id="newConversationBtn" title="New Conversation">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button id="helpBtn" title="Help">
+                        <i class="fas fa-question-circle"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Chat Messages -->
+            <div class="chat-messages" id="chatMessages">
+                <div class="message system">
+                    <div class="message-content">
+                        <p>Welcome to the WhatsApp Invoice Assistant Testing UI.</p>
+                        <p>Type a message or upload an invoice file to get started.</p>
+                        <p>Type /help for available commands.</p>
+                    </div>
+                    <div class="message-time">Now</div>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input">
+                <form id="uploadForm" enctype="multipart/form-data" style="display:none">
+                    <input type="file" id="fileInput" name="file" accept=".pdf,.jpg,.jpeg,.png">
+                </form>
+                <button id="attachBtn" class="attach-btn">
+                    <i class="fas fa-paperclip"></i>
+                </button>
+                <div class="input-area">
+                    <input type="text" id="messageInput" placeholder="Type a message">
+                </div>
+                <button id="sendBtn" class="send-btn">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Agent Flow Panel -->
+        <div class="agent-panel">
+            <div class="panel-header">
+                <h3>Agent Flow</h3>
+                <button id="togglePanelBtn">
+                    <i class="fas fa-angle-right"></i>
+                </button>
+            </div>
+            <div class="panel-content">
+                <div class="panel-section">
+                    <h4>User Information</h4>
+                    <div class="db-status-container">
+                        <button class="full-width-btn" id="createUserBtn" title="Create New User">
+                            <i class="fas fa-user-plus"></i> Create New User
+                        </button>
+                        <div class="form-hint">Or select an existing user below</div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">User ID:</span>
+                            <span class="agent-panel-value" id="userIdDisplay">0</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">WhatsApp:</span>
+                            <div class="value-control">
+                                <select id="whatsappNumberSelect" class="whatsapp-select" title="Select WhatsApp number">
+                                    <option value="+1234567890">+1234567890</option>
+                                    <!-- More options will be loaded dynamically -->
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <h4>Current Intent</h4>
+                    <div class="db-status-container">
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Intent:</span>
+                            <span class="agent-panel-value" id="currentIntent">None</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <h4>Token Usage</h4>
+                    <div class="db-status-container">
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Input:</span>
+                            <span class="agent-panel-value" id="inputTokens">0</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Output:</span>
+                            <span class="agent-panel-value" id="outputTokens">0</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Total:</span>
+                            <span class="agent-panel-value" id="totalTokens">0</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <h4>Workflow Steps</h4>
+                    <div id="workflowSteps" class="workflow-steps">
+                        <div class="step waiting">
+                            <span class="step-dot"></span>
+                            <span>Waiting for input...</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-section">
+                    <h4>Database Status</h4>
+                    <div class="db-status-container">
+                        <div class="section-divider">
+                            <span>Global Statistics</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Total Invoices:</span>
+                            <span class="agent-panel-value" id="db-invoices-count">0</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Total Items:</span>
+                            <span class="agent-panel-value" id="db-items-count">0</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">DB Size:</span>
+                            <span class="agent-panel-value" id="db-size">-</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Tables Size:</span>
+                            <span class="agent-panel-value" id="tables-size">-</span>
+                        </div>
+
+                        <div class="section-divider">
+                            <span>Current User Statistics</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">User Invoices:</span>
+                            <span class="agent-panel-value" id="db-user-invoices-count">0</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">User Items:</span>
+                            <span class="agent-panel-value" id="db-user-items-count">0</span>
+                        </div>
+
+                        <h5>Connection Info</h5>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">PostgreSQL:</span>
+                            <span class="agent-panel-value" id="pg-connection">-</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">MongoDB:</span>
+                            <span class="agent-panel-value" id="mongo-connection">-</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel-subsection" id="vectorStatus">
+                    <h5>Vector Status</h5>
+                    <div class="agent-panel-item">
+                        <span class="agent-panel-label">pgvector:</span>
+                        <span class="agent-panel-value" id="pgvectorStatus">Unknown</span>
+                    </div>
+                    <div class="agent-panel-item">
+                        <span class="agent-panel-label">Embeddings:</span>
+                        <span class="agent-panel-value" id="embeddingsCount">0/0</span>
+                    </div>
+                    <div class="vector-actions">
+                        <button id="updateEmbeddings" class="action-btn" title="Update Vector Embeddings">
+                            <i class="fas fa-sync-alt"></i> Update Embeddings
+                        </button>
+                        <button id="forceUpdateEmbeddings" class="action-btn" title="Force Update All Embeddings">
+                            <i class="fas fa-bolt"></i> Force Update
+                        </button>
+                    </div>
+                </div>
+                <div class="panel-section" id="s3StorageSection" style="display: none;">
+                    <h4>S3 Storage</h4>
+                    <div class="db-status-container">
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">File Key:</span>
+                            <span class="agent-panel-value" id="s3FileKey">None</span>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">URL:</span>
+                            <div class="agent-panel-value" id="s3UrlContainer">
+                                <a href="#" id="s3Url" target="_blank">None</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Memory Configuration Section -->
+                <div class="panel-section">
+                    <h4>Memory Settings</h4>
+                    <div class="db-status-container">
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Max Messages:</span>
+                            <div class="value-control">
+                                <span class="agent-panel-value" id="maxMessagesValue">50</span>
+                                <button class="adjust-btn" id="editMaxMessages" title="Edit Max Messages">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Context Window:</span>
+                            <div class="value-control">
+                                <span class="agent-panel-value" id="messageWindowValue">10</span>
+                                <button class="adjust-btn" id="editMessageWindow" title="Edit Context Window Size">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Memory Age (s):</span>
+                            <div class="value-control">
+                                <span class="agent-panel-value" id="maxMemoryAgeValue">3600</span>
+                                <button class="adjust-btn" id="editMaxMemoryAge" title="Edit Max Memory Age">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Context Window:</span>
+                            <div class="value-control">
+                                <span class="agent-panel-value" id="enableContextWindowValue">Enabled</span>
+                                <button class="toggle-btn" id="toggleContextWindow" title="Toggle Context Window">
+                                    <i class="fas fa-toggle-on"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Persist Memory:</span>
+                            <div class="value-control">
+                                <span class="agent-panel-value" id="persistMemoryValue">Enabled</span>
+                                <button class="toggle-btn" id="togglePersistMemory" title="Toggle Memory Persistence">
+                                    <i class="fas fa-toggle-on"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="agent-panel-item">
+                            <span class="agent-panel-label">Using MongoDB:</span>
+                            <span class="agent-panel-value" id="useMongoDBValue">Yes</span>
+                        </div>
+                        <div class="memory-actions">
+                            <button id="refreshMemoryConfig" class="refresh-btn" title="Refresh Memory Configuration">
+                                <i class="fas fa-sync-alt"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Processing...</p>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html> 

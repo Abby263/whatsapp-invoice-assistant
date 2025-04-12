@@ -1,0 +1,53 @@
+Thank you for installing {{ .Chart.Name }} (version {{ .Chart.Version }})!
+
+Your WhatsApp Invoice Assistant has been deployed.
+
+{{- if .Values.ingress.enabled }}
+You can access the application via Ingress:
+{{- range $host := .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}
+{{- end }}
+{{- else }}
+You can access the application using port-forwarding:
+
+  kubectl port-forward service/{{ include "whatsapp-invoice-assistant.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+Then visit: http://localhost:{{ .Values.service.port }}
+{{- end }}
+
+{{- if not .Values.app.secretEnv.OPENAI_API_KEY }}
+
+IMPORTANT: The OPENAI_API_KEY is not set. You need to set this key for the application to function properly.
+Update the secret with:
+
+  kubectl create secret generic {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets \
+    --from-literal=OPENAI_API_KEY=<your-openai-api-key> \
+    --from-literal=AWS_ACCESS_KEY_ID=<your-aws-access-key> \
+    --from-literal=AWS_SECRET_ACCESS_KEY=<your-aws-secret-key> \
+    --from-literal=S3_BUCKET_NAME=<your-s3-bucket-name> \
+    --from-literal=S3_REGION=<your-s3-region> \
+    --from-literal=TWILIO_ACCOUNT_SID=<your-twilio-account-sid> \
+    --from-literal=TWILIO_AUTH_TOKEN=<your-twilio-auth-token> \
+    --from-literal=TWILIO_PHONE_NUMBER=<your-twilio-phone-number>
+
+Then restart the deployment:
+
+  kubectl rollout restart deployment {{ include "whatsapp-invoice-assistant.fullname" . }}
+{{- end }}
+
+MongoDB connection info:
+  Host: {{ include "whatsapp-invoice-assistant.fullname" . }}-mongodb
+  Port: {{ .Values.mongodb.service.port }}
+  Username: {{ .Values.mongodb.auth.username }}
+  Database: {{ .Values.mongodb.auth.database }}
+
+PostgreSQL connection info:
+  Host: {{ include "whatsapp-invoice-assistant.fullname" . }}-postgresql
+  Port: {{ .Values.postgresql.service.port }}
+  Username: {{ .Values.postgresql.auth.username }}
+  Database: {{ .Values.postgresql.auth.database }}
+
+For more information on configuring the application, check the README.md file in the chart directory.
+
+To get the logs from the application, run:
+  kubectl logs -f deployment/{{ include "whatsapp-invoice-assistant.fullname" . }} 

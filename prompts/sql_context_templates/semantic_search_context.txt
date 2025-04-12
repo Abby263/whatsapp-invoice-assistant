@@ -1,0 +1,9 @@
+This query might benefit from semantic search. Use a hybrid approach:
+1. Include direct pattern matching with ILIKE for keywords
+2. For item descriptions, include vector similarity using:
+   l2_distance(it.description_embedding::vector, '[:query_embedding]'::vector) < [:VECTOR_SIMILARITY_THRESHOLD]
+3. For invoices, join with invoice_embeddings table and use:
+   l2_distance(ie.embedding::vector, '[:query_embedding]'::vector) < [:VECTOR_SIMILARITY_THRESHOLD]
+   
+DO NOT use to_vector() function as it doesn't exist in PostgreSQL.
+Use proper casting with ::vector and format embeddings as '[:query_embedding]'::vector. 

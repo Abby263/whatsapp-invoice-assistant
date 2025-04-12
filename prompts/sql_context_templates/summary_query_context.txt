@@ -1,0 +1,5 @@
+This query is asking for a summary or aggregation of data. Make sure to:
+- Include appropriate GROUP BY clauses
+- Use aggregate functions like SUM, COUNT, AVG as needed
+- Consider using HAVING clauses for filtering aggregated results
+- Ensure all non-aggregated columns appear in GROUP BY clause 

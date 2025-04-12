@@ -1,3 +1,5 @@
+As you complete tasks and reference relevant files update this file as our memory to help with future tasks
+
 # WhatsApp Invoice Assistant: Implementation Tasks
 
 ## Overview
@@ -86,111 +88,143 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 - [x] **Test:** Verify OpenAI service integration with mock responses
 
 ### 5. Router and Agent Implementation
-- [ ] Create BaseAgent class in utils/base_agent.py to ensure standardized agent interfaces
-- [ ] Implement InputTypeRouter in utils/input_type_router.py for determining input type (text vs file)
-- [ ] Implement text_intent_classifier.py agent
-  - [ ] Integration with LLM for intent classification
-  - [ ] Memory integration for context retention
-  - [ ] Support for Greeting, General, InvoiceQuery, and InvoiceCreator intents
-- [ ] **Test:** Write unit tests for the text_intent_classifier with sample inputs
-- [ ] **Test:** Test classification accuracy with various input types
-- [ ] Implement file_validator.py agent
-  - [ ] File type validation (image, PDF, Excel, CSV)
-  - [ ] Integration with LLM to check if the file is a valid invoice
-  - [ ] Router capability to direct to appropriate processing path
-- [ ] **Test:** Create test fixtures with sample invoice files and non-invoice files
-- [ ] **Test:** Verify file validator correctly identifies valid invoices
-- [ ] Implement text_to_sql_conversion_agent.py for InvoiceQuery intents
-- [ ] **Test:** Test SQL conversion with various query types
-- [ ] **Test:** Verify SQL injection protection
-- [ ] Implement invoice_entity_extraction_agent.py for InvoiceCreator intents
-- [ ] **Test:** Test entity extraction with various input formats
-- [ ] Implement data_extractor.py agent for file processing
-  - [ ] Integration with GPT-4o-mini for data extraction
-  - [ ] Extraction of invoice details (vendor, date, amount, items)
-  - [ ] Mapping extracted data to database schema
-- [ ] **Test:** Test data extraction with sample invoice images
-- [ ] **Test:** Verify extraction accuracy against known values
-- [ ] Implement response_formatter.py agent
-  - [ ] Format responses using templates
-  - [ ] Add disclaimers and structure to all responses
-  - [ ] Handle different response types (text, files, templates)
-- [ ] **Test:** Verify response formatting with different template types
-- [ ] **Test:** Test edge cases like empty responses or error conditions
+- [x] Create BaseAgent class in utils/base_agent.py to ensure standardized agent interfaces
+- [x] Implement InputTypeRouter in utils/input_type_router.py for determining input type (text vs file)
+- [x] Implement text_intent_classifier.py agent
+  - [x] Integration with LLM for intent classification
+  - [x] Memory integration for context retention
+  - [x] Support for Greeting, General, InvoiceQuery, and InvoiceCreator intents
+- [x] **Test:** Write unit tests for the text_intent_classifier with sample inputs
+- [x] **Test:** Test classification accuracy with various input types
+- [x] Implement file_validator.py agent
+  - [x] File type validation (image, PDF, Excel, CSV)
+  - [x] Integration with LLM to check if the file is a valid invoice
+  - [x] Router capability to direct to appropriate processing path
+- [x] **Test:** Create test fixtures with sample invoice files and non-invoice files
+- [x] **Test:** Verify file validator correctly identifies valid invoices
+- [x] Implement text_to_sql_conversion_agent.py for InvoiceQuery intents
+- [x] **Test:** Test SQL conversion with various query types
+- [x] **Test:** Verify SQL injection protection
+- [x] Implement invoice_entity_extraction_agent.py for InvoiceCreator intents
+- [x] **Test:** Test entity extraction with various input formats
+- [x] Implement data_extractor.py agent for file processing
+  - [x] Integration with GPT-4o-mini for data extraction
+  - [x] Extraction of invoice details (vendor, date, amount, items)
+  - [x] Mapping extracted data to database schema
+- [x] **Test:** Test data extraction with sample invoice images
+- [x] **Test:** Verify extraction accuracy against known values
+- [x] Implement response_formatter.py agent
+  - [x] Format responses using templates
+  - [x] Add disclaimers and structure to all responses
+  - [x] Handle different response types (text, files, templates)
+- [x] **Test:** Verify response formatting with different template types
+- [x] **Test:** Test edge cases like empty responses or error conditions
 
-### 6. Memory and Context Management
-- [ ] Implement langgraph_memory.py for stateful conversations
-  - [ ] Storage for conversation history
-  - [ ] Context retention between user interactions
-  - [ ] Memory clearing/expiration mechanisms
-- [ ] Create context_manager.py to maintain conversation history
-  - [ ] Integration with database for persistence
-  - [ ] Support for retrieving past conversations
-- [ ] **Test:** Create test fixtures with sample conversation histories
-- [ ] **Test:** Test memory retrieval and context maintenance
-- [ ] **Test:** Verify memory expiration works as expected
-- [ ] **Test:** Test context manager with database integration
+### 6. RAG Implementation
+- [x] Implement invoice_rag_agent.py for semantic search
+  - [x] Add pgvector integration for vector storage and search
+  - [x] Create utility functions for generating and storing embeddings
+  - [x] Implement vector similarity search for invoice data
+  - [x] Add automatic embedding generation during invoice upload
+  - [x] Ensure proper formatting of vector data for PostgreSQL
+- [x] **Test:** Create test fixtures for vector search testing
+- [x] **Test:** Verify RAG search returns relevant results
+- [x] **Test:** Test edge cases like missing embeddings or malformed queries
+- [x] **Test:** Validate embedding generation during invoice upload
 
-### 7. Workflow Implementation
-- [ ] Create base_workflow.py with shared workflow logic
-- [ ] Implement main_workflow.py for orchestrating the entire flow
-  - [ ] Input type determination (text vs file)
-  - [ ] Routing based on input type and intent
-- [ ] **Test:** Test main workflow routing with different input types
-- [ ] Implement text_processing_workflow.py for handling text inputs
-  - [ ] Intent classification routing
-  - [ ] Processing for different intents
-- [ ] **Test:** Test text processing workflow with different intents
-- [ ] Implement invoice_query_workflow.py
-  - [ ] Text-to-SQL conversion
-  - [ ] Database query execution
-  - [ ] Result formatting
-- [ ] **Test:** Test invoice query workflow with sample queries
-- [ ] **Test:** Verify database query execution and result formatting
-- [ ] Implement invoice_creator_workflow.py
-  - [ ] Entity extraction
-  - [ ] Template population
-  - [ ] PDF generation
-- [ ] **Test:** Test invoice creation workflow with sample data
-- [ ] **Test:** Verify PDF generation works correctly
-- [ ] Implement general_response_workflow.py for Greeting and General intents
-- [ ] **Test:** Test general response workflow with greeting and general queries
-- [ ] Implement file_processing_workflow.py
-  - [ ] File validation
-  - [ ] Handling valid invoices
-  - [ ] Handling invalid files
-  - [ ] Handling unsupported formats
-- [ ] **Test:** Test file processing workflow with various file types
-- [ ] **Test:** Verify proper handling of valid and invalid files
-- [ ] **Test:** End-to-end test of entire workflow with sample inputs
+### 7. LangGraph Workflow Implementation
+- [x] Create langchain_app/ directory for LangGraph components
+- [x] Define workflow state schema in langchain_app/state.py
+  - [x] Include input data, classification results, and processing outputs
+  - [x] Use Pydantic models for type safety
+- [x] Implement workflow nodes in langchain_app/nodes.py
+  - [x] Create nodes for each processing step (classification, validation, extraction)
+  - [x] Ensure proper error handling and logging in each node
+- [x] Define workflow graph in langchain_app/workflow.py
+  - [x] Connect nodes with edges
+  - [x] Implement conditional routing based on input type and intent
+  - [x] Add visualization for debugging
+- [x] Create API interface in langchain_app/api.py
+  - [x] Handle text and file inputs
+  - [x] Process WhatsApp message format
+  - [x] Format responses for Twilio
+- [x] **Test:** Create end-to-end tests for the workflow
+- [x] **Test:** Verify handling of different input types
+- [x] **Test:** Test error handling and recovery
+
+### 8. Memory and Context Management
+- [x] Implement langgraph_memory.py for stateful conversations
+  - [x] Storage for conversation history
+  - [x] Context retention between user interactions
+  - [x] Memory clearing/expiration mechanisms
+- [x] Create context_manager.py to maintain conversation history
+  - [x] Integration with database for persistence
+  - [x] Support for retrieving past conversations
+- [x] **Test:** Create test fixtures with sample conversation histories
+- [x] **Test:** Test memory retrieval and context maintenance
+- [x] **Test:** Verify memory expiration works as expected
+- [x] **Test:** Test context manager with database integration
+
+### 9. Workflow Implementation
+- [x] Create base_workflow.py with shared workflow logic
+- [x] Implement main_workflow.py for orchestrating the entire flow
+  - [x] Input type determination (text vs file)
+  - [x] Routing based on input type and intent
+- [x] **Test:** Test main workflow routing with different input types
+- [x] Implement text_processing_workflow.py for handling text inputs
+  - [x] Intent classification routing
+  - [x] Processing for different intents
+- [x] **Test:** Test text processing workflow with different intents
+- [x] Implement invoice_query_workflow.py
+  - [x] Text-to-SQL conversion
+  - [x] Database query execution
+  - [x] Result formatting
+- [x] **Test:** Test invoice query workflow with sample queries
+- [x] **Test:** Verify database query execution and result formatting
+- [x] Implement invoice_creator_workflow.py
+  - [x] Entity extraction
+  - [x] Template population
+  - [x] PDF generation
+- [x] **Test:** Test invoice creation workflow with sample data
+- [x] **Test:** Verify PDF generation works correctly
+- [x] Implement general_response_workflow.py for Greeting and General intents
+- [x] **Test:** Test general response workflow with greeting and general queries
+- [x] Implement file_processing_workflow.py
+  - [x] File validation
+  - [x] Handling valid invoices
+  - [x] Handling invalid files
+  - [x] Handling unsupported formats
+- [x] **Test:** Test file processing workflow with various file types
+- [x] **Test:** Verify proper handling of valid and invalid files
+- [x] **Test:** End-to-end test of entire workflow with sample inputs
 
 ### Phase 2 Code Standards Check
-- [ ] Run code formatting with Black on all implemented modules
-- [ ] Run Flake8 to ensure PEP 8 compliance
-- [ ] Run MyPy to verify type annotations with focus on agent interfaces
-- [ ] Verify consistent error handling patterns across all agents
-- [ ] Check for proper dependency injection in agent implementations
-- [ ] Review prompt templates for consistency and standards
-- [ ] Verify test coverage of Phase 2 components is at least 80%
-- [ ] Check for proper exception handling and logging
-- [ ] Review agent interfaces for consistency
+- [x] Run code formatting with Black on all implemented modules
+- [x] Run Flake8 to ensure PEP 8 compliance
+- [x] Run MyPy to verify type annotations with focus on agent interfaces
+- [x] Verify consistent error handling patterns across all agents
+- [x] Check for proper dependency injection in agent implementations
+- [x] Review prompt templates for consistency and standards
+- [x] Verify test coverage of Phase 2 components is at least 80%
+- [x] Check for proper exception handling and logging
+- [x] Review agent interfaces for consistency
 
 ### Phase 2 Documentation Updates
-- [ ] Update README.md with Phase 2 implementation details
-  - [ ] LLM integration instructions
-  - [ ] Agent system architecture overview
-  - [ ] Workflow implementation details
-- [ ] Update Makefile with Phase 2 specific commands
-  - [ ] Commands for running specific workflows
-  - [ ] Commands for testing agents independently
-- [ ] Update CHANGELOG.md with Phase 2 changes
-  - [ ] LLM Factory implementation details
-  - [ ] Agent and router implementation
-  - [ ] Workflow architecture details
+- [x] Update README.md with Phase 2 implementation details
+  - [x] LLM integration instructions
+  - [x] Agent system architecture overview
+  - [x] Workflow implementation details
+- [x] Update Makefile with Phase 2 specific commands
+  - [x] Commands for running specific workflows
+  - [x] Commands for testing agents independently
+- [x] Update CHANGELOG.md with Phase 2 changes
+  - [x] LLM Factory implementation details
+  - [x] Agent and router implementation
+  - [x] Workflow architecture details
 
 ## Phase 3: External Services Integration
 
-### 8. WhatsApp Integration
+### 10. WhatsApp Integration
 - [ ] Set up Twilio account and WhatsApp sandbox
 - [ ] Implement twilio_service.py for WhatsApp messaging
   - [ ] Message sending functionality
@@ -205,17 +239,17 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 - [ ] **Test:** Verify file handling in webhook
 - [ ] **Test:** Integration test of webhook with main workflow
 
-### 9. Storage Implementation
-- [ ] Set up AWS S3 bucket for file storage
-- [ ] Implement s3_handler.py for file uploads and retrievals
-  - [ ] File upload functionality
-  - [ ] URL generation for stored files
-  - [ ] File retrieval for processing
-- [ ] **Test:** Create mock S3 service for testing uploads and retrievals
-- [ ] **Test:** Test file upload and URL generation
-- [ ] **Test:** Verify file retrieval works as expected
+### 11. Storage Implementation
+- [x] Set up AWS S3 bucket for file storage
+- [x] Implement s3_handler.py for file uploads and retrievals
+  - [x] File upload functionality
+  - [x] URL generation for stored files
+  - [x] File retrieval for processing
+- [x] **Test:** Create mock S3 service for testing uploads and retrievals
+- [x] **Test:** Test file upload and URL generation
+- [x] **Test:** Verify file retrieval works as expected
 
-### 10. Task Queue Setup
+### 12. Task Queue Setup
 - [ ] Configure Redis as message broker
 - [ ] Set up Celery for asynchronous task processing
 - [ ] Implement tasks/celery_app.py for Celery configuration
@@ -254,7 +288,7 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 
 ## Phase 4: Response Templates and Formatting
 
-### 11. Template Implementation
+### 13. Template Implementation
 - [ ] Create response templates in templates/ directory
 - [ ] Implement general_response_template.jinja
   - [ ] Welcome message
@@ -272,7 +306,7 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 - [ ] **Test:** Test response formatting with all templates
 - [ ] **Test:** Verify templates handle edge cases (missing data, long text)
 
-### 12. Constant Definitions
+### 14. Constant Definitions
 - [ ] Define fallback messages in constants/fallback_messages.py
   - [ ] Invalid invoice messages
   - [ ] Unsupported format messages
@@ -310,8 +344,8 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 
 ## Phase 5: API and Main Application
 
-### 13. FastAPI Implementation
-- [ ] Create main.py with FastAPI application setup
+### 15. FastAPI Implementation
+- [x] Create main.py with FastAPI application setup
 - [ ] Implement dependency injection in api/dependencies.py
   - [ ] Database session dependency
   - [ ] Workflow dependency
@@ -325,7 +359,7 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 - [ ] **Test:** Verify dependency injection works correctly
 - [ ] **Test:** Test error handling middleware
 
-### 14. Webhook Processing
+### 16. Webhook Processing
 - [ ] Implement file type detection logic in utils/file_utils.py
 - [ ] Set up input_router.py for initial routing
 - [ ] Create response handling and formatting pipeline
@@ -360,7 +394,7 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 
 ## Phase 6: Testing and Deployment
 
-### 15. Comprehensive Test Implementation
+### 17. Comprehensive Test Implementation
 - [ ] Create end-to-end test suite covering all flows
   - [ ] Test greeting flow
   - [ ] Test general query flow
@@ -373,58 +407,65 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 - [ ] Create automation for regression testing
 - [ ] Set up continuous integration testing pipelines
 
-### 16. Containerization and Deployment
-- [ ] Finalize Dockerfile for production
-- [ ] Create Kubernetes manifests for deployment
-  - [ ] Deployment configuration
-  - [ ] Service configuration
-  - [ ] Ingress configuration
-  - [ ] ConfigMap and Secret management
+### 18. Containerization and Deployment
+- [x] Finalize Dockerfile for production
+- [x] Create Kubernetes manifests for deployment
+  - [x] Deployment configuration
+  - [x] Service configuration
+  - [x] Ingress configuration
+  - [x] ConfigMap and Secret management
 - [ ] Set up CI/CD pipeline with GitHub Actions/GitLab CI
 - [ ] Configure logging and monitoring for production
-- [ ] **Test:** Verify Docker builds successfully
-- [ ] **Test:** Test Kubernetes deployment in staging environment
+- [x] **Test:** Verify Docker builds successfully
+- [x] **Test:** Test Kubernetes deployment in staging environment
 - [ ] **Test:** Perform load testing in production-like environment
 
 ### Phase 6 Code Standards Check
-- [ ] Run code formatting with Black on all implemented modules
-- [ ] Run Flake8 to ensure PEP 8 compliance
-- [ ] Run MyPy to verify type annotations
-- [ ] Review Dockerfile for best practices
-- [ ] Check Kubernetes manifests for security best practices
+- [x] Run code formatting with Black on all implemented modules
+- [x] Run Flake8 to ensure PEP 8 compliance
+- [x] Run MyPy to verify type annotations
+- [x] Review Dockerfile for best practices
+- [x] Check Kubernetes manifests for security best practices
 - [ ] Verify CI/CD pipeline configuration
 - [ ] Ensure test coverage of Phase 6 components is at least 80%
-- [ ] Review environment variable handling in Docker and Kubernetes
-- [ ] Check for hardcoded configuration that should be externalized
+- [x] Review environment variable handling in Docker and Kubernetes
+- [x] Check for hardcoded configuration that should be externalized
 
 ### Phase 6 Documentation Updates
-- [ ] Update README.md with Phase 6 testing and deployment details
-  - [ ] Testing strategy and coverage
-  - [ ] Deployment instructions for various environments
+- [x] Update README.md with Phase 6 testing and deployment details
+  - [x] Testing strategy and coverage
+  - [x] Deployment instructions for various environments
   - [ ] CI/CD pipeline setup guide
-- [ ] Update Makefile with Phase 6 specific commands
-  - [ ] Commands for building and deploying containers
+- [x] Update Makefile with Phase 6 specific commands
+  - [x] Commands for building and deploying containers
   - [ ] Commands for running comprehensive tests
-- [ ] Update CHANGELOG.md with Phase 6 changes
+- [x] Update CHANGELOG.md with Phase 6 changes
   - [ ] Testing infrastructure improvements
-  - [ ] Containerization and deployment setup
+  - [x] Containerization and deployment setup
   - [ ] CI/CD pipeline implementation
 
 ## Phase 7: Documentation and Finalization
 
-### 17. Documentation
+### 19. Documentation
 - [x] Update README.md with setup and usage instructions
+- [x] Create workflow visualizations in docs/ directory
+  - [x] Text processing workflow diagram
+  - [x] File processing workflow diagram
+  - [x] Database schema diagram
+- [x] Setup LangGraph Studio for interactive workflow visualization
+- [x] Create vector search implementation documentation
+- [x] Validate and update database schema documentation
+  - [x] Confirm PostgreSQL and pgvector extension setup
+  - [x] Document actual table structures and relationships
+  - [x] Update DATABASE.md with validation results
+- [x] Add system validation summary to README.md
 - [ ] Generate API documentation using FastAPI's built-in tools
-- [ ] Create workflow visualizations in docs/ directory
-  - [ ] Text processing workflow diagram
-  - [ ] File processing workflow diagram
-  - [ ] Database schema diagram
 - [ ] Document configuration options and environment variables
 - [ ] Create user guide with example queries and responses
 - [ ] **Test:** Verify documentation is accurate by following setup instructions
 - [ ] **Test:** Test API documentation with example requests
 
-### 18. Security Review
+### 20. Security Review
 - [ ] Conduct security audit
 - [ ] Ensure proper environment variable handling
 - [ ] Review permissions and access controls
@@ -459,14 +500,70 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
   - [ ] Feature implementations by phase
   - [ ] Bug fixes and improvements
 
+## Phase 8: Test UI Implementation
+
+### 21. Core UI Development
+- [x] Create Flask-based UI for testing WhatsApp Invoice Assistant
+- [x] Implement the UI/app.py with appropriate API endpoints
+  - [x] Message sending endpoint (/api/message)
+  - [x] File upload endpoint (/api/upload)
+  - [x] Agent flow visualization endpoint (/api/agent-flow)
+  - [x] Database status endpoint (/api/db-status)
+  - [x] Workflow step log retrieval endpoint (/api/step-logs)
+- [x] Create HTML templates in ui/templates directory
+  - [x] Main index.html with responsive design
+  - [x] Chat interface for message simulation
+  - [x] File upload component
+  - [x] Workflow visualization panel
+- [x] **Test:** Test all API endpoints with sample requests
+- [x] **Test:** Verify UI correctly displays agent responses
+
+### 22. Frontend Implementation
+- [x] Develop UI static assets in ui/static directory
+  - [x] CSS styles for responsive design
+  - [x] JavaScript for dynamic content loading
+  - [x] Images and icons for UI elements
+- [x] Implement asynchronous API calls with proper error handling
+- [x] Create chat interface with message history
+- [x] Design responsive mobile-first layout
+- [x] Add file upload progress indicators
+- [x] Implement workflow visualization with clickable steps
+- [x] Add real-time database status updates
+- [x] **Test:** Test UI on various screen sizes
+- [x] **Test:** Verify all UI components function correctly
+
+### 23. UI Integration Testing
+- [x] Implement comprehensive UI error handling
+- [x] Fix "Event loop is closed" errors in Flask async operations
+- [x] Ensure proper handling of file uploads
+- [x] Resolve invoice creator validation errors
+- [x] Implement test mode for all agent workflows
+- [x] Add WhatsApp number simulation in message processing
+- [x] **Test:** Perform end-to-end testing of UI with backend
+- [x] **Test:** Verify all error cases are properly handled
+- [x] **Test:** Test UI performance with multiple requests
+
+### Phase 8 Code Standards Check
+- [x] Ensure UI code follows project style guide
+- [x] Implement proper logging in UI application
+- [x] Verify security of UI endpoints
+- [x] Review frontend code for best practices
+- [x] Ensure UI is accessible and user-friendly
+
+### Phase 8 Documentation Updates
+- [x] Update UI README.md with setup instructions
+- [x] Document UI API endpoints
+- [x] Create usage guide for the test interface
+- [x] Update main README.md with UI testing information
+
 ## Development and Error Handling Rules
 
 Throughout all phases of development, the following rules must be followed:
 
 ### Error Resolution Process
-- [ ] Fix errors by implementing necessary corrections
-- [ ] Validate all fixes by re-running the same query/operation that produced the error
-- [ ] Document the fix and the validation method used
+- [x] Fix errors by implementing necessary corrections
+- [x] Validate all fixes by re-running the same query/operation that produced the error
+- [x] Document the fix and the validation method used
 
 ### LLM Agent Usage
 - [ ] Delegate all text matching tasks to LLM agents instead of using regex or keyword matching
