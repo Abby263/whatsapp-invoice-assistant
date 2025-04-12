@@ -289,32 +289,6 @@ The Makefile provides numerous helpful commands:
 - `make docker-run` - Start with Docker
 - `make docker-stop` - Stop Docker containers
 
-## 🧠 Semantic Search Implementation
-
-The semantic search capability uses:
-
-1. **Embeddings Generation**: Each item description is converted to a vector embedding using OpenAI's text-embedding-3-small model or Sentence Transformers as fallback.
-
-2. **pgvector Extension**: PostgreSQL with pgvector stores and queries these vector embeddings efficiently.
-
-3. **L2 Distance Metric**: Measures similarity between query and stored vectors, with configurable threshold (currently 1.3).
-
-4. **Hybrid Approach**: Combines semantic search with keyword matching for optimal results.
-
-Example query:
-```sql
-SELECT 
-    description, 
-    l2_distance(description_embedding::vector, '[query_embedding]'::vector) AS similarity_score
-FROM 
-    items 
-WHERE 
-    l2_distance(description_embedding::vector, '[query_embedding]'::vector) < 1.3
-ORDER BY 
-    similarity_score
-LIMIT 5
-```
-
 ## 📱 WhatsApp Integration
 
 The system integrates with WhatsApp via Twilio's API:
@@ -324,6 +298,34 @@ The system integrates with WhatsApp via Twilio's API:
 3. **File Handling**: Processes images and documents sent via WhatsApp
 4. **Response Formatting**: Formats AI responses for WhatsApp display
 5. **Media Support**: Handles both text and media responses
+
+## 📄 Invoice Creation
+
+The system provides automated invoice creation capabilities:
+
+1. **Multiple Templates**: Supports 6 different invoice types:
+   - Service Invoice (DOCX)
+   - Invoice Document (DOCX)
+   - Billing Statement (XLSX)
+   - Credit Note (XLSX)
+   - Debit Note (XLSX)
+   - Time & Material Invoice (XLSX)
+
+2. **Template Selection**: The system automatically selects the appropriate template based on the user's request and invoice type.
+
+3. **Intelligent Information Collection**:
+   - Extracts needed information from user messages
+   - Remembers previously provided user details
+   - Prompts for missing required information
+   - Stores user-specific information in database for future use
+
+4. **Multi-format Output**:
+   - Generates completed invoices in both PDF and original format (DOCX/XLSX)
+   - Allows users to receive their preferred file format
+
+5. **Memory Integration**:
+   - Maintains context across the invoice creation process
+   - Remembers user preferences for future interactions
 
 ## 📝 License
 
