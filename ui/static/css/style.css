@@ -11,18 +11,67 @@
     --panel-bg: #F0F0F0;
     --shadow-color: rgba(0, 0, 0, 0.1);
     --border-radius: 8px;
-    --app-bg: #f4f6f8;
+    --app-bg: #eef2f6;
     --surface: #ffffff;
     --surface-muted: #f8fafc;
+    --surface-raised: #ffffff;
     --line: #d9e1e8;
     --ink: #16202a;
     --muted: #647386;
+    --muted-strong: #415063;
     --accent-blue: #2563eb;
     --accent-amber: #b7791f;
     --accent-rose: #be123c;
+    --header-bg: #123238;
+    --header-ink: #ffffff;
+    --on-teal: #ffffff;
+    --chat-surface: #f7f9fb;
+    --field-bg: #ffffff;
+    --soft-green: #e6f6f3;
+    --soft-blue: #eef2ff;
+    --soft-amber: #fff7ed;
+    --soft-rose: #fff1f2;
+    --shadow-elevated: 0 18px 45px rgba(22, 32, 42, 0.10);
+    --shadow-subtle: 0 8px 20px rgba(22, 32, 42, 0.06);
     --whatsapp-light-panel: #f8fafc;
     --text-dark: #16202a;
     --panel-border: #d9e1e8;
+}
+
+:root[data-theme="dark"] {
+    --whatsapp-green: #2dd4bf;
+    --whatsapp-teal: #5eead4;
+    --whatsapp-light-green: #14b8a6;
+    --incoming-bg: #1f2937;
+    --outgoing-bg: #123a34;
+    --system-bg: #1f2937;
+    --panel-bg: #111827;
+    --shadow-color: rgba(0, 0, 0, 0.35);
+    --app-bg: #0f141c;
+    --surface: #151c26;
+    --surface-muted: #1b2430;
+    --surface-raised: #202a36;
+    --line: #2c3848;
+    --ink: #ecf2f8;
+    --muted: #9aa8b8;
+    --muted-strong: #c7d2df;
+    --accent-blue: #60a5fa;
+    --accent-amber: #fbbf24;
+    --accent-rose: #fb7185;
+    --header-bg: #0b2a2f;
+    --header-ink: #f8fbfd;
+    --on-teal: #06252a;
+    --chat-surface: #101720;
+    --field-bg: #111827;
+    --soft-green: rgba(45, 212, 191, 0.14);
+    --soft-blue: rgba(96, 165, 250, 0.16);
+    --soft-amber: rgba(251, 191, 36, 0.16);
+    --soft-rose: rgba(251, 113, 133, 0.14);
+    --shadow-elevated: 0 20px 50px rgba(0, 0, 0, 0.36);
+    --shadow-subtle: 0 8px 24px rgba(0, 0, 0, 0.24);
+    --whatsapp-light-panel: #1b2430;
+    --text-dark: #ecf2f8;
+    --panel-border: #2c3848;
 }
 
 * {
@@ -36,6 +85,7 @@ body {
     background-color: var(--app-bg);
     color: var(--ink);
     line-height: 1.6;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 /* Container Layout */
@@ -43,7 +93,7 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    max-width: 1680px;
+    max-width: 1760px;
     margin: 0 auto;
     overflow: hidden;
     padding: 18px;
@@ -60,8 +110,8 @@ body {
     background: var(--surface);
     border: 1px solid var(--line);
     border-radius: var(--border-radius);
-    padding: 14px 18px;
-    box-shadow: 0 10px 25px rgba(22, 32, 42, 0.06);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-subtle);
 }
 
 .brand-block {
@@ -77,13 +127,13 @@ body {
     border-radius: 50%;
     display: grid;
     place-items: center;
-    background: #e6f6f3;
+    background: var(--soft-green);
     color: var(--whatsapp-teal);
     flex: 0 0 auto;
 }
 
 .brand-block h1 {
-    font-size: 20px;
+    font-size: 21px;
     line-height: 1.2;
     font-weight: 700;
     letter-spacing: 0;
@@ -93,6 +143,16 @@ body {
     color: var(--muted);
     font-size: 13px;
     line-height: 1.3;
+    max-width: 560px;
+}
+
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
 }
 
 .toolbar-status-grid {
@@ -100,7 +160,7 @@ body {
     grid-template-columns: repeat(3, minmax(115px, 1fr));
     gap: 10px;
     max-width: 520px;
-    width: 42%;
+    width: min(48vw, 520px);
 }
 
 .toolbar-status {
@@ -128,6 +188,121 @@ body {
     white-space: nowrap;
 }
 
+.theme-toggle {
+    flex: 0 0 auto;
+    min-height: 42px;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius);
+    background: var(--surface-muted);
+    color: var(--ink);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.theme-toggle:hover {
+    border-color: var(--whatsapp-teal);
+    color: var(--whatsapp-teal);
+}
+
+.app-overview {
+    flex: 0 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(420px, 0.9fr);
+    gap: 14px;
+    align-items: stretch;
+}
+
+.overview-copy,
+.pipeline-strip {
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-subtle);
+}
+
+.overview-copy {
+    padding: 16px 18px;
+}
+
+.eyebrow {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--whatsapp-teal);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.overview-copy h2 {
+    font-size: 22px;
+    line-height: 1.25;
+    letter-spacing: 0;
+    color: var(--ink);
+}
+
+.overview-copy p {
+    max-width: 820px;
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.pipeline-strip {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    overflow: hidden;
+}
+
+.pipeline-step {
+    min-width: 0;
+    padding: 14px 12px;
+    border-right: 1px solid var(--line);
+    background: var(--surface);
+}
+
+.pipeline-step:last-child {
+    border-right: none;
+}
+
+.pipeline-step span {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--soft-green);
+    color: var(--whatsapp-teal);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.pipeline-step strong {
+    display: block;
+    margin-top: 7px;
+    font-size: 13px;
+    color: var(--ink);
+}
+
+.pipeline-step small {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 .workspace {
     min-height: 0;
     flex: 1;
@@ -143,7 +318,7 @@ body {
     background-color: var(--surface);
     border-radius: var(--border-radius);
     overflow: hidden;
-    box-shadow: 0 10px 25px rgba(22, 32, 42, 0.06);
+    box-shadow: var(--shadow-elevated);
     border: 1px solid var(--line);
     margin: 0;
     min-width: 0;
@@ -155,8 +330,8 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 12px 18px;
-    background-color: #123238;
-    color: white;
+    background-color: var(--header-bg);
+    color: var(--header-ink);
 }
 
 .user-info {
@@ -187,12 +362,13 @@ body {
 .info p {
     font-size: 12px;
     opacity: 0.8;
+    max-width: 420px;
 }
 
 .actions button {
     background: none;
     border: none;
-    color: white;
+    color: var(--header-ink);
     font-size: 18px;
     margin-left: 15px;
     cursor: pointer;
@@ -233,17 +409,17 @@ body {
 }
 
 .metric-icon.capture {
-    background: #e6f6f3;
+    background: var(--soft-green);
     color: var(--whatsapp-teal);
 }
 
 .metric-icon.review {
-    background: #eef2ff;
+    background: var(--soft-blue);
     color: var(--accent-blue);
 }
 
 .metric-icon.automate {
-    background: #fff7ed;
+    background: var(--soft-amber);
     color: var(--accent-amber);
 }
 
@@ -285,7 +461,7 @@ body {
 
 .quick-action {
     border: 1px solid var(--line);
-    background: #fff;
+    background: var(--field-bg);
     color: var(--ink);
     border-radius: var(--border-radius);
     min-height: 36px;
@@ -301,7 +477,7 @@ body {
 
 .quick-action:hover {
     border-color: var(--whatsapp-teal);
-    background: #f0fdfa;
+    background: var(--soft-green);
     color: var(--whatsapp-teal);
 }
 
@@ -315,7 +491,7 @@ body {
     flex: 1;
     padding: 18px;
     overflow-y: auto;
-    background-color: #f7f9fb;
+    background-color: var(--chat-surface);
 }
 
 .message {
@@ -342,7 +518,7 @@ body {
 .message-content {
     padding: 11px 14px;
     border-radius: var(--border-radius);
-    box-shadow: 0 1px 2px rgba(22, 32, 42, 0.08);
+    box-shadow: 0 1px 2px var(--shadow-color);
     word-wrap: break-word;
 }
 
@@ -352,12 +528,12 @@ body {
 }
 
 .outgoing .message-content {
-    background-color: #e7f7ef;
+    background-color: var(--outgoing-bg);
     border-top-right-radius: 0;
 }
 
 .system .message-content {
-    background-color: #eef2f6;
+    background-color: var(--system-bg);
     border-radius: var(--border-radius);
     text-align: center;
     font-size: 14px;
@@ -374,7 +550,7 @@ body {
 
 .message-time {
     font-size: 11px;
-    color: #999;
+    color: var(--muted);
     margin-top: 4px;
     align-self: flex-end;
 }
@@ -388,7 +564,7 @@ body {
 .file-attachment {
     display: flex;
     align-items: center;
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--surface-muted);
     padding: 8px;
     border-radius: 4px;
     margin-top: 5px;
@@ -411,7 +587,7 @@ body {
 
 .file-attachment .file-size {
     font-size: 11px;
-    color: #666;
+    color: var(--muted);
 }
 
 /* PDF File Link Styles */
@@ -426,12 +602,12 @@ body {
 }
 
 .file-link:hover {
-    background-color: rgba(0, 0, 0, 0.08);
+    background-color: var(--surface-muted);
 }
 
 .view-file-btn {
     background-color: var(--whatsapp-green);
-    color: white;
+    color: #ffffff;
     border: none;
     border-radius: 50%;
     width: 30px;
@@ -472,17 +648,17 @@ body {
 }
 
 .attach-btn:hover, .send-btn:hover {
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--surface-raised);
 }
 
 .send-btn {
     background-color: var(--whatsapp-teal);
-    color: white;
+    color: var(--on-teal);
     border: none;
 }
 
 .send-btn:hover {
-    background-color: #123238;
+    background-color: var(--header-bg);
 }
 
 .input-area {
@@ -495,7 +671,8 @@ body {
     padding: 11px 15px;
     border: 1px solid var(--line);
     border-radius: var(--border-radius);
-    background-color: white;
+    background-color: var(--field-bg);
+    color: var(--ink);
     outline: none;
     font-size: 15px;
 }
@@ -510,7 +687,7 @@ body {
     width: 380px;
     background-color: var(--surface);
     border-radius: var(--border-radius);
-    box-shadow: 0 10px 25px rgba(22, 32, 42, 0.06);
+    box-shadow: var(--shadow-elevated);
     border: 1px solid var(--line);
     margin: 0;
     display: flex;
@@ -524,8 +701,8 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 14px 18px;
-    background-color: #123238;
-    color: white;
+    background-color: var(--header-bg);
+    color: var(--header-ink);
 }
 
 .panel-header h3 {
@@ -533,10 +710,17 @@ body {
     font-weight: 600;
 }
 
+.panel-header p {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 12px;
+    line-height: 1.25;
+    margin-top: 2px;
+}
+
 .panel-header button {
     background: none;
     border: none;
-    color: white;
+    color: var(--header-ink);
     font-size: 18px;
     cursor: pointer;
     transition: transform 0.3s;
@@ -567,12 +751,12 @@ body {
     font-size: 14px;
     font-weight: 600;
     margin: 12px 0 8px;
-    color: #555;
+    color: var(--muted-strong);
 }
 
 .intent-display {
     padding: 10px;
-    background-color: #FFF;
+    background-color: var(--field-bg);
     border-radius: 4px;
     border-left: 4px solid var(--whatsapp-teal);
     font-weight: 500;
@@ -590,17 +774,17 @@ body {
     align-items: center;
     padding: 8px 12px;
     border-radius: 4px;
-    background-color: #f9f9f9;
-    color: #555;
+    background-color: var(--field-bg);
+    color: var(--muted-strong);
     font-size: 14px;
     transition: all 0.2s;
     cursor: pointer;
     position: relative;
-    border-left: 3px solid #ccc;
+    border-left: 3px solid var(--line);
 }
 
 .step:hover {
-    background-color: #f0f0f0;
+    background-color: var(--surface-raised);
 }
 
 .step-dot {
@@ -629,12 +813,12 @@ body {
 }
 
 .step.waiting {
-    border-left-color: #999;
+    border-left-color: var(--muted);
     font-style: italic;
 }
 
 .step.waiting .step-dot {
-    background-color: #999;
+    background-color: var(--muted);
 }
 
 .step.error {
@@ -652,24 +836,24 @@ body {
 }
 
 .agent-response {
-    background-color: #FFF;
+    background-color: var(--field-bg);
     border-radius: 4px;
     overflow: hidden;
 }
 
 .response-header {
-    background-color: #F0F0F0;
+    background-color: var(--surface-muted);
     padding: 8px 12px;
     font-size: 13px;
     font-weight: 600;
-    color: #555;
-    border-bottom: 1px solid #E0E0E0;
+    color: var(--muted-strong);
+    border-bottom: 1px solid var(--line);
 }
 
 .response-content {
     padding: 10px 12px;
     font-size: 13px;
-    color: #333;
+    color: var(--ink);
     max-height: 200px;
     overflow-y: auto;
     white-space: pre-wrap;
@@ -690,7 +874,7 @@ body {
 
 .db-item .label {
     font-weight: 500;
-    color: #666;
+    color: var(--muted);
 }
 
 .db-item .value {
@@ -699,16 +883,18 @@ body {
 }
 
 .panel-subsection {
-    border-top: 1px solid #eee;
-    margin-top: 10px;
-    padding-top: 8px;
+    margin: 0 14px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius);
+    padding: 12px;
+    background: var(--surface-muted);
 }
 
 .panel-subsection h5 {
     margin-top: 0;
     margin-bottom: 8px;
     font-size: 0.9em;
-    color: #555;
+    color: var(--muted-strong);
 }
 
 .status-good {
@@ -785,9 +971,17 @@ body {
 @media (max-width: 1000px) {
     .container {
         padding: 10px;
+        height: auto;
+        min-height: 100vh;
+        overflow: visible;
     }
 
     .app-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .toolbar-actions {
         align-items: stretch;
         flex-direction: column;
     }
@@ -797,8 +991,25 @@ body {
         max-width: none;
     }
 
+    .app-overview {
+        grid-template-columns: 1fr;
+    }
+
+    .pipeline-strip {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .pipeline-step:nth-child(2) {
+        border-right: none;
+    }
+
+    .pipeline-step:nth-child(-n+2) {
+        border-bottom: 1px solid var(--line);
+    }
+
     .workspace {
         flex-direction: column;
+        overflow: visible;
     }
 
     .agent-panel {
@@ -827,6 +1038,37 @@ body {
 
     .toolbar-status-grid {
         grid-template-columns: 1fr;
+    }
+
+    .brand-block {
+        align-items: flex-start;
+    }
+
+    .brand-mark {
+        width: 38px;
+        height: 38px;
+    }
+
+    .brand-block h1,
+    .overview-copy h2 {
+        font-size: 18px;
+    }
+
+    .overview-copy {
+        padding: 14px;
+    }
+
+    .pipeline-strip {
+        grid-template-columns: 1fr;
+    }
+
+    .pipeline-step {
+        border-right: none;
+        border-bottom: 1px solid var(--line);
+    }
+
+    .pipeline-step:last-child {
+        border-bottom: none;
     }
 
     .quick-actions {
@@ -880,7 +1122,7 @@ body {
 }
 
 .modal-content {
-    background-color: white;
+    background-color: var(--surface);
     border-radius: 8px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     width: 90%;
@@ -897,7 +1139,7 @@ body {
     align-items: center;
     padding: 15px 20px;
     background-color: var(--whatsapp-teal);
-    color: white;
+    color: #ffffff;
 }
 
 .modal-header h3 {
@@ -909,7 +1151,7 @@ body {
 .close-modal {
     background: none;
     border: none;
-    color: white;
+    color: #ffffff;
     font-size: 24px;
     cursor: pointer;
     opacity: 0.8;
@@ -930,17 +1172,17 @@ body {
     white-space: pre-wrap;
     font-family: monospace;
     font-size: 13px;
-    background-color: #f5f5f5;
+    background-color: var(--surface-muted);
     padding: 15px;
     border-radius: 4px;
     max-height: 500px;
     overflow-y: auto;
-    color: #333;
+    color: var(--ink);
     line-height: 1.5;
 }
 
 .user-info-display {
-    background-color: #FFF;
+    background-color: var(--field-bg);
     border-radius: 4px;
     padding: 12px;
     margin-bottom: 10px;
@@ -959,7 +1201,7 @@ body {
 
 .user-info-item .label {
     font-weight: 500;
-    color: #555;
+    color: var(--muted);
 }
 
 .user-info-item .value {
@@ -969,7 +1211,7 @@ body {
 
 /* Enhanced step logs display */
 .step-logs-container {
-    background-color: #f5f5f5;
+    background-color: var(--surface-muted);
     border-radius: 4px;
     padding: 15px;
     margin-top: 15px;
@@ -982,7 +1224,7 @@ body {
 .log-entry {
     margin-bottom: 10px;
     padding-bottom: 10px;
-    border-bottom: 1px dashed #ddd;
+    border-bottom: 1px dashed var(--line);
 }
 
 .log-entry:last-child {
@@ -992,7 +1234,7 @@ body {
 }
 
 .log-timestamp {
-    color: #777;
+    color: var(--muted);
     font-size: 11px;
     margin-bottom: 3px;
 }
@@ -1027,8 +1269,8 @@ body {
 }
 
 .log-step-details {
-    background-color: #fff;
-    border: 1px solid #eee;
+    background-color: var(--field-bg);
+    border: 1px solid var(--line);
     border-radius: 4px;
     padding: 10px;
     margin-top: 5px;
@@ -1040,14 +1282,14 @@ body {
 
 .log-step-label {
     font-weight: bold;
-    color: #555;
+    color: var(--muted-strong);
     margin-right: 5px;
 }
 
 /* File storage section */
 .s3-storage-info {
     padding: 10px;
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--surface-muted);
     border-radius: 5px;
     margin-top: 10px;
 }
@@ -1060,17 +1302,17 @@ body {
 
 .storage-item .label {
     font-weight: 600;
-    color: #666;
+    color: var(--muted);
     margin-bottom: 3px;
 }
 
 .storage-item .value {
     flex: 1;
     font-family: monospace;
-    background-color: #f5f5f5;
+    background-color: var(--field-bg);
     padding: 4px 8px;
     border-radius: 3px;
-    border: 1px solid #eaeaea;
+    border: 1px solid var(--line);
     word-break: break-all;
 }
 
@@ -1111,7 +1353,7 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 4px 0;
-    border-bottom: 1px dashed #e0e0e0;
+    border-bottom: 1px dashed var(--line);
 }
 
 .memory-item:last-child {
@@ -1120,14 +1362,14 @@ body {
 
 .memory-item .label {
     font-size: 12px;
-    color: #555;
+    color: var(--muted);
     font-weight: 600;
 }
 
 .memory-item .value {
     font-size: 13px;
     font-family: monospace;
-    color: #333;
+    color: var(--ink);
 }
 
 .value-control {
@@ -1164,7 +1406,7 @@ body {
 
 .refresh-btn {
     background-color: var(--whatsapp-light-green);
-    color: white;
+    color: var(--header-bg);
     border: none;
     border-radius: 4px;
     padding: 5px 10px;
@@ -1194,7 +1436,7 @@ body {
 
 .agent-panel-label {
     font-weight: 500;
-    color: #555;
+    color: var(--muted);
     margin-right: 10px;
     flex-shrink: 0;
     white-space: nowrap;
@@ -1202,7 +1444,7 @@ body {
 
 .agent-panel-value {
     font-weight: 400;
-    color: #333;
+    color: var(--ink);
     text-align: right;
     word-break: normal;
     white-space: nowrap;
@@ -1242,7 +1484,7 @@ body {
 }
 
 .whatsapp-select option {
-    background-color: white;
+    background-color: var(--field-bg);
     color: var(--text-dark);
 }
 
@@ -1254,7 +1496,7 @@ body {
 
 .action-btn {
     background-color: var(--whatsapp-light-green);
-    color: white;
+    color: var(--header-bg);
     border: none;
     border-radius: 4px;
     padding: 5px 10px;
@@ -1281,7 +1523,7 @@ body {
 
 .refresh-btn {
     background-color: var(--whatsapp-light-green);
-    color: white;
+    color: var(--header-bg);
     border: none;
     border-radius: 4px;
     padding: 5px 10px;
@@ -1300,7 +1542,7 @@ body {
 /* Add button styling for create user */
 #createUserBtn {
     background-color: var(--whatsapp-teal);
-    color: white;
+    color: var(--on-teal);
     margin-bottom: 10px;
 }
 
@@ -1309,13 +1551,13 @@ body {
 }
 
 #companyProfileBtn {
-    background-color: #2196F3;
-    color: white;
+    background-color: var(--accent-blue);
+    color: #ffffff;
     margin-bottom: 15px;
 }
 
 #companyProfileBtn:hover {
-    background-color: #0b7dda;
+    background-color: var(--whatsapp-teal);
 }
 
 /* Full width button styling */
@@ -1324,8 +1566,8 @@ body {
     width: 100%;
     padding: 8px 12px;
     margin-bottom: 10px;
-    background-color: #4a90e2;
-    color: white;
+    background-color: var(--accent-blue);
+    color: #ffffff;
     border: none;
     border-radius: 4px;
     font-size: 14px;
@@ -1334,7 +1576,7 @@ body {
 }
 
 .full-width-btn:hover {
-    background-color: #3a80d2;
+    background-color: var(--whatsapp-teal);
 }
 
 .full-width-btn i {
@@ -1344,7 +1586,7 @@ body {
 /* Hint text */
 .form-hint {
     font-size: 12px;
-    color: #666;
+    color: var(--muted);
     margin-bottom: 12px;
     text-align: center;
 }
@@ -1364,16 +1606,16 @@ body {
     left: 0;
     right: 0;
     height: 1px;
-    background: #e0e0e0;
+    background: var(--line);
     z-index: 1;
 }
 
 .section-divider span {
     position: relative;
-    background: #f0f0f0;
+    background: var(--surface-muted);
     padding: 0 10px;
     font-size: 12px;
-    color: #777;
+    color: var(--muted);
     z-index: 2;
     font-weight: 500;
 }
@@ -1385,7 +1627,7 @@ body {
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
+    background-color: rgba(0, 0, 0, 0.58);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1393,7 +1635,7 @@ body {
 }
 
 .modal-content {
-    background-color: white;
+    background-color: var(--surface);
     border-radius: 5px;
     width: 400px;
     max-width: 90%;
@@ -1402,7 +1644,7 @@ body {
 
 .modal-header {
     padding: 15px;
-    border-bottom: 1px solid #e5e5e5;
+    border-bottom: 1px solid var(--line);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -1411,6 +1653,7 @@ body {
 .modal-header h4 {
     margin: 0;
     font-size: 18px;
+    color: var(--ink);
 }
 
 .close-btn {
@@ -1433,25 +1676,29 @@ body {
     display: block;
     margin-bottom: 5px;
     font-weight: 500;
+    color: var(--muted-strong);
 }
 
-.form-group input {
+.form-group input,
+.company-profile-modal textarea {
     width: 100%;
     padding: 8px;
-    border: 1px solid #ddd;
+    border: 1px solid var(--line);
     border-radius: 3px;
     font-size: 14px;
+    background: var(--field-bg);
+    color: var(--ink);
 }
 
 .modal-footer {
     padding: 15px;
-    border-top: 1px solid #e5e5e5;
+    border-top: 1px solid var(--line);
     text-align: right;
 }
 
 .action-btn {
-    background-color: #4a90e2;
-    color: white;
+    background-color: var(--accent-blue);
+    color: #ffffff;
     border: none;
     padding: 8px 15px;
     border-radius: 3px;
@@ -1460,9 +1707,9 @@ body {
 }
 
 .cancel-btn {
-    background-color: #f5f5f5;
-    color: #333;
-    border: 1px solid #ddd;
+    background-color: var(--surface-muted);
+    color: var(--ink);
+    border: 1px solid var(--line);
     padding: 7px 15px;
     border-radius: 3px;
     cursor: pointer;
@@ -1471,7 +1718,7 @@ body {
 }
 
 .action-btn:hover {
-    background-color: #3a80d2;
+    background-color: var(--whatsapp-teal);
 }
 
 .cancel-btn:hover {
@@ -1520,23 +1767,20 @@ body {
 .company-profile-modal .form-section h5 {
     margin-bottom: 15px;
     padding-bottom: 8px;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--line);
     color: var(--whatsapp-teal);
 }
 
 .company-profile-modal textarea {
-    width: 100%;
     padding: 8px 12px;
-    border: 1px solid #ddd;
     border-radius: 4px;
     font-family: inherit;
-    font-size: 14px;
     resize: vertical;
 }
 
 .company-profile-modal .form-hint {
     font-size: 12px;
-    color: #666;
+    color: var(--muted);
     margin-bottom: 15px;
     font-style: italic;
 }

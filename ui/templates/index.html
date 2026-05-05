@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Invoice Command Center</title>
     <link rel="icon" href="data:,">
+    <script>
+        const savedTheme = localStorage.getItem('invoice-ui-theme');
+        if (savedTheme) {
+            document.documentElement.dataset.theme = savedTheme;
+        }
+    </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,25 +25,61 @@
                     <i class="fas fa-receipt"></i>
                 </div>
                 <div>
-                    <h1>Invoice Command Center</h1>
-                    <p>WhatsApp receipt intake</p>
+                    <h1>Receipt Intelligence Workspace</h1>
+                    <p>WhatsApp invoice assistant for receipt capture, extraction, and finance Q&A</p>
                 </div>
             </div>
-            <div class="toolbar-status-grid">
-                <div class="toolbar-status">
-                    <span>Postgres</span>
-                    <strong id="dashboardDbStatus">Checking</strong>
+            <div class="toolbar-actions">
+                <div class="toolbar-status-grid">
+                    <div class="toolbar-status">
+                        <span>Postgres</span>
+                        <strong id="dashboardDbStatus">Checking</strong>
+                    </div>
+                    <div class="toolbar-status">
+                        <span>Storage</span>
+                        <strong id="dashboardStorageStatus">Ready</strong>
+                    </div>
+                    <div class="toolbar-status">
+                        <span>Vector</span>
+                        <strong id="dashboardVectorStatus">Checking</strong>
+                    </div>
                 </div>
-                <div class="toolbar-status">
-                    <span>Storage</span>
-                    <strong id="dashboardStorageStatus">Ready</strong>
-                </div>
-                <div class="toolbar-status">
-                    <span>Vector</span>
-                    <strong id="dashboardVectorStatus">Checking</strong>
-                </div>
+                <button id="themeToggleBtn" class="theme-toggle" type="button" aria-label="Switch to dark mode">
+                    <i id="themeToggleIcon" class="fas fa-moon"></i>
+                    <span id="themeToggleLabel">Dark</span>
+                </button>
             </div>
         </header>
+
+        <section class="app-overview" aria-label="Application overview">
+            <div class="overview-copy">
+                <span class="eyebrow">AI finance operations</span>
+                <h2>Turn WhatsApp receipts into searchable invoice intelligence.</h2>
+                <p>Upload a receipt, let the agent extract line items, store the original file, generate embeddings, and answer spend questions from the same workspace.</p>
+            </div>
+            <div class="pipeline-strip" aria-label="Receipt processing pipeline">
+                <div class="pipeline-step">
+                    <span>1</span>
+                    <strong>Capture</strong>
+                    <small>PDF or image</small>
+                </div>
+                <div class="pipeline-step">
+                    <span>2</span>
+                    <strong>Extract</strong>
+                    <small>Merchant, totals, items</small>
+                </div>
+                <div class="pipeline-step">
+                    <span>3</span>
+                    <strong>Store</strong>
+                    <small>Supabase files + Postgres</small>
+                </div>
+                <div class="pipeline-step">
+                    <span>4</span>
+                    <strong>Ask</strong>
+                    <small>Semantic finance search</small>
+                </div>
+            </div>
+        </section>
 
         <main class="workspace">
         <div class="chat-container">
@@ -48,8 +90,8 @@
                         <i class="fas fa-robot"></i>
                     </div>
                     <div class="info">
-                        <h3>Invoice Assistant</h3>
-                        <p>Testing Interface</p>
+                        <h3>Conversation Simulator</h3>
+                        <p>Upload receipts or ask questions as a WhatsApp user</p>
                     </div>
                 </div>
                 <div class="actions">
@@ -99,15 +141,15 @@
                 </button>
                 <button type="button" class="quick-action" data-prompt="What did I spend this month?">
                     <i class="fas fa-chart-line"></i>
-                    <span>Monthly spend</span>
+                    <span>Ask monthly spend</span>
                 </button>
                 <button type="button" class="quick-action" data-prompt="Show my latest uploaded receipts">
                     <i class="fas fa-clock-rotate-left"></i>
-                    <span>Latest receipts</span>
+                    <span>Search receipts</span>
                 </button>
                 <button type="button" class="quick-action" data-prompt="Create an invoice for a new client">
                     <i class="fas fa-file-invoice-dollar"></i>
-                    <span>Create invoice</span>
+                    <span>Draft invoice</span>
                 </button>
             </section>
 
@@ -115,7 +157,7 @@
             <div class="chat-messages" id="chatMessages">
                 <div class="message system">
                     <div class="message-content">
-                        <p>Workspace ready.</p>
+                        <p>Workspace ready. Capture a receipt or ask a finance question to start.</p>
                     </div>
                     <div class="message-time">Now</div>
                 </div>
@@ -141,7 +183,10 @@
         <!-- Agent Flow Panel -->
         <div class="agent-panel">
             <div class="panel-header">
-                <h3>Agent Flow</h3>
+                <div>
+                    <h3>System Inspector</h3>
+                    <p>Agent, storage, memory, and vector status</p>
+                </div>
                 <button id="togglePanelBtn">
                     <i class="fas fa-angle-right"></i>
                 </button>

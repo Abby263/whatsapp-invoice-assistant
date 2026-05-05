@@ -29,6 +29,9 @@ const dashboardDbStatus = document.getElementById('dashboardDbStatus');
 const dashboardStorageStatus = document.getElementById('dashboardStorageStatus');
 const dashboardVectorStatus = document.getElementById('dashboardVectorStatus');
 const storageProvider = document.getElementById('storageProvider');
+const themeToggleBtn = document.getElementById('themeToggleBtn');
+const themeToggleIcon = document.getElementById('themeToggleIcon');
+const themeToggleLabel = document.getElementById('themeToggleLabel');
 
 // Global variables
 let isProcessing = false;
@@ -75,6 +78,7 @@ function updateFileStorageInfo(storage) {
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
+    setupTheme();
     initializeApp();
     updateDatabaseCounts();
     loadUsers();
@@ -111,6 +115,41 @@ document.addEventListener('DOMContentLoaded', () => {
     // Set up event listeners
     setupEventListeners();
 });
+
+function setupTheme() {
+    const savedTheme = localStorage.getItem('invoice-ui-theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light');
+
+    applyTheme(initialTheme);
+
+    if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+            const currentTheme = document.documentElement.dataset.theme || 'light';
+            const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            applyTheme(nextTheme);
+            localStorage.setItem('invoice-ui-theme', nextTheme);
+        });
+    }
+}
+
+function applyTheme(theme) {
+    const normalizedTheme = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.dataset.theme = normalizedTheme;
+
+    if (themeToggleIcon) {
+        themeToggleIcon.className = normalizedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
+    }
+
+    setElementText(themeToggleLabel, normalizedTheme === 'dark' ? 'Light' : 'Dark');
+
+    if (themeToggleBtn) {
+        themeToggleBtn.setAttribute(
+            'aria-label',
+            normalizedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+        );
+    }
+}
 
 function setupCommandCenter() {
     document.querySelectorAll('[data-prompt]').forEach(button => {
@@ -190,6 +229,14 @@ function loadUsers() {
 
                     updateSelectedUser();
                     updateDatabaseCounts();
+                } else {
+                    const option = document.createElement('option');
+                    option.value = whatsappNumber;
+                    option.textContent = whatsappNumber;
+                    option.dataset.userId = userId;
+                    whatsappNumberSelect.appendChild(option);
+                    whatsappNumberSelect.value = whatsappNumber;
+                    updateSelectedUser();
                 }
             } else {
                 console.error('Failed to load users:', data.message);

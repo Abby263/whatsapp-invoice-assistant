@@ -1,389 +1,235 @@
 # WhatsApp Invoice Assistant
 
-An AI-powered WhatsApp bot for processing and managing invoice data. The application allows users to upload invoices via WhatsApp, receive AI-generated summaries, and ask questions about their invoices using natural language.
+Production-oriented AI workspace for capturing receipts from WhatsApp, extracting invoice data, storing original receipt files, generating vector embeddings, and answering finance questions in natural language.
 
-## 🌟 Features
+The application combines a WhatsApp webhook API, LangGraph agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for local testing and workflow inspection.
 
-### Core Capabilities
-- **Invoice Processing**: Upload and extract data from invoices in multiple formats (PDF, images, Excel, CSV)
-- **Natural Language Queries**: Ask questions about your invoices in plain English
-- **Semantic Search**: Find information even when you don't know exact terms or item names
-- **WhatsApp Integration**: Interact with the system directly through WhatsApp
-- **Multi-user Support**: Handle multiple users with separate data stores
-- **Conversation Memory**: Remember context from previous interactions
+## UI Demo
 
-### Technical Features
-- **Vector Embeddings**: Semantic understanding of invoice data using pgvector
-- **LangGraph Workflows**: Orchestrated AI agent workflows for different user intents
-- **Hybrid Search**: Combines vector similarity and keyword matching for optimal results
-- **Database Integration**: Structured storage with Supabase and conversation memory with MongoDB
-- **Cloud Storage**: Supabase Storage integration for receipt files
-- **Containerization**: Docker and Kubernetes ready deployment
+The repository includes a short UI demo video. If GitHub does not render the video inline, open the file directly.
 
-## 🛠️ System Architecture
+<video controls width="100%" src="docs/assets/invoice-command-center-demo.webm"></video>
 
-The WhatsApp Invoice Assistant is built using a modular, agent-based architecture:
+[Open demo video](docs/assets/invoice-command-center-demo.webm)
 
+### Light Mode
+
+![Receipt Intelligence Workspace light mode](docs/assets/ui-command-center-light.png)
+
+### Dark Mode
+
+![Receipt Intelligence Workspace dark mode](docs/assets/ui-command-center-dark.png)
+
+## What This Application Does
+
+- Captures invoice and receipt files from WhatsApp media messages or the local test UI.
+- Validates PDF and image uploads before processing.
+- Extracts merchant, invoice metadata, totals, taxes, and line items.
+- Stores original receipt files in Supabase Storage with signed URL access.
+- Persists normalized invoice and item data in Supabase Postgres.
+- Generates OpenAI embeddings and stores them in pgvector columns for semantic search.
+- Routes user messages through LangGraph agents for upload, query, and invoice-creation workflows.
+- Keeps conversation context in MongoDB when memory persistence is enabled.
+- Provides a browser UI to simulate WhatsApp conversations, inspect workflow steps, and monitor database, storage, memory, and vector status.
+
+## Use Case
+
+Small businesses and operators can send receipts through WhatsApp, then ask questions such as:
+
+- "What did I spend this month?"
+- "Show the latest uploaded receipts."
+- "How much did I spend on software subscriptions?"
+- "Create an invoice for a new client."
+
+The system is designed to preserve the original receipt file, normalize the extracted records, and make invoices searchable by both structured SQL and semantic similarity.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    W["WhatsApp user"] --> T["Twilio WhatsApp webhook"]
+    O["Operator / developer"] --> UI["Flask test UI :5001"]
+
+    T --> API["FastAPI application"]
+    UI --> UIF["Flask UI routes"]
+    UIF --> LAPI["LangChain app API"]
+    API --> LAPI
+
+    LAPI --> WF["LangGraph workflow"]
+    WF --> R["Input router"]
+    R -->|Text| IC["Intent classifier"]
+    R -->|File| FV["File validator"]
+
+    IC -->|Invoice query| SQL["Text-to-SQL + vector query agent"]
+    IC -->|Invoice creation| IE["Invoice entity extractor"]
+    IC -->|General| RF["Response formatter"]
+
+    FV --> DE["Receipt data extractor"]
+    DE --> ST["Supabase Storage private bucket"]
+    DE --> PG["Supabase Postgres"]
+    DE --> EMB["OpenAI embeddings"]
+    EMB --> VEC["pgvector columns"]
+
+    SQL --> PG
+    SQL --> VEC
+    IE --> RF
+    DE --> RF
+    RF --> T
+    RF --> UI
+
+    WF --> MEM["MongoDB memory optional"]
 ```
-┌───────────────┐     ┌───────────────┐     ┌───────────────┐
-│   WhatsApp    │     │   FastAPI     │     │   LangGraph   │
-│  Integration  │────▶│  Application  │────▶│   Workflow    │
-└───────────────┘     └───────────────┘     └───────────────┘
-                                                   │
-┌───────────────┐     ┌───────────────┐     ┌─────▼─────────┐
-│   MongoDB     │◀────│ AI Processing │◀────│   Agents &    │
-│   Memory      │     │    Nodes      │     │   Routers     │
-└───────────────┘     └───────────────┘     └───────────────┘
-                                                   │
-┌───────────────┐     ┌───────────────┐     ┌─────▼─────────┐
-│   Supabase    │◀────│  Database     │◀────│   Response    │
-│  + pgvector   │     │   Services    │     │   Formatters  │
-└───────────────┘     └───────────────┘     └───────────────┘
+
+### Runtime Components
+
+| Component | Purpose |
+| --- | --- |
+| FastAPI (`api/main.py`) | Production API surface and WhatsApp webhook endpoint. |
+| Flask UI (`ui/app.py`) | Local operator UI for receipt upload, chat simulation, and workflow inspection. |
+| LangGraph workflow (`langchain_app/`) | Routes text and files through specialized agent nodes. |
+| Agents (`agents/`) | Intent classification, file validation, extraction, SQL/vector query generation, response formatting. |
+| Supabase Postgres | Primary relational store for users, invoices, line items, messages, and embedding metadata. |
+| pgvector | Semantic search over item descriptions and invoice embeddings. |
+| Supabase Storage | Private receipt file storage with signed URLs generated on demand. |
+| OpenAI | LLM and embedding provider. |
+| MongoDB | Optional persistent conversation memory and LangGraph checkpoint storage. |
+| Redis/Celery | Background-work infrastructure hooks for production deployments. |
+
+## Receipt Upload Flow
+
+```mermaid
+sequenceDiagram
+    participant User as WhatsApp/User
+    participant API as API or UI
+    participant Graph as LangGraph
+    participant Storage as Supabase Storage
+    participant DB as Supabase Postgres
+    participant OpenAI as OpenAI Embeddings
+
+    User->>API: Send receipt PDF/image
+    API->>Graph: process_file_message
+    Graph->>Graph: Validate file and classify input
+    Graph->>Storage: Upload original receipt
+    Graph->>Graph: Extract invoice fields and line items
+    Graph->>DB: Store invoice and item records
+    Graph->>OpenAI: Generate embeddings
+    Graph->>DB: Store pgvector embeddings
+    Graph->>API: Return extraction summary and metadata
+    API->>User: Send assistant response
 ```
 
-![Agentic Workflow](images/AgenticWorkflow.png)
+## Natural Language Query Flow
 
-## 📊 System Validation Summary
+1. The user sends a finance question.
+2. The text workflow classifies the intent.
+3. Query intent is routed to the SQL and vector-search agent.
+4. The agent builds a scoped query for the current user.
+5. Supabase Postgres and pgvector return structured and semantic results.
+6. The response formatter turns the result into a WhatsApp-ready answer.
 
-The system has been validated with the following results:
+## Storage and Embeddings
 
-### Database Validation
-- **PostgreSQL Version**: 14.17 (Supabase)
-- **pgvector Extension**: Installed and working (version 0.8.0)
-- **Database Tables**: 9 tables properly configured with relationships
-- **Vector Embeddings**:
-  - 28 items with 1536-dimensional vector embeddings (100% coverage)
-  - Vector columns in both `items` and `invoice_embeddings` tables
-  - Functional L2 distance queries for semantic search
+This project uses Supabase Storage instead of S3 for receipt files because the application already depends on Supabase Postgres and pgvector. Supabase keeps receipt storage, signed URL generation, database records, and access policy management in one platform. The file handler stores only normalized metadata in Postgres and generates signed links when the UI or agent needs to display a file.
 
-### Current Data
-- 1 user in the system
-- 5 invoices with metadata
-- 28 line items with embeddings
-- No conversations or messages yet
-- Vector search queries working as expected
-- Current migration: 6c0dda5c0543 (head)
+Embeddings are generated with OpenAI `text-embedding-3-small` and stored in pgvector-enabled columns. The application should fail clearly when embedding generation is unavailable rather than silently writing fake vectors.
 
-For comprehensive documentation about database schema and vector search implementation, refer to the docs directory.
+## Quick Start
 
-## 📚 Available Documentation
-
-Detailed documentation is available in the `docs/` directory:
-
-- **[DATABASE.md](docs/DATABASE.md)**: Database schema design and relationships
-- **[MONGODB_MEMORY.md](docs/MONGODB_MEMORY.md)**: Memory management with MongoDB
-- **[Query_Types.md](docs/Query_Types.md)**: Supported query types and processing flows
-- **[PostgresSQL_Storage_Query.md](docs/PostgresSQL_Storage_Query.md)**: Database storage and query details
-- **[TECH_STACK.md](docs/TECH_STACK.md)**: Complete technology stack overview
-- **[VECTOR_SEARCH.md](docs/VECTOR_SEARCH.md)**: Vector embedding generation and semantic search implementation
-- **[DOCKER.md](docs/DOCKER.md)**: Docker setup and configuration
-- **[CHANGELOG.md](docs/CHANGELOG.md)**: Version history and changes
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- Python 3.9+
-- Supabase account (required)
-- MongoDB (optional, for conversation memory)
-- OpenAI API key
-- Supabase Storage bucket for receipt files
-- Twilio account with WhatsApp integration
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/whatsapp-invoice-assistant.git
-   cd whatsapp-invoice-assistant
-   ```
-
-2. Install dependencies with Poetry:
-   ```bash
-   make install
-   ```
-
-3. Set up environment variables in `.env` or use config/env.yaml:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your credentials
-   ```
-
-4. Set up the database:
-   ```bash
-   make db-migrate
-   ```
-
-5. Start the application:
-   ```bash
-   make start
-   ```
-
-### Database Setup
-
-The WhatsApp Invoice Assistant uses two database systems for different purposes:
-
-#### Supabase PostgreSQL
-- **Purpose**: Primary data storage for invoices, items, users, and vector embeddings
-- **Setup**: configure `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` in `.env`
-- **Requirements**:
-  - Supabase account and project
-  - Connection details in `.env` file (DATABASE_URL or component variables)
-  - pgvector extension enabled
-
-The migration process:
-- Creates all necessary tables (users, invoices, items, conversations, etc.)
-- Attempts to install the pgvector extension for vector similarity search
-- Sets up proper relationships between tables
-- Applies any pending schema changes
-
-> **Note**: Supabase is the only supported database for this application. Local PostgreSQL is not supported.
-
-#### MongoDB
-- **Purpose**: Conversation memory storage and context management
-- **Setup**: No migration needed; connects and creates collections dynamically
-- **Configuration**:
-  - Set `USE_MONGODB=true` in `.env` (default)
-  - Connection URI in `.env` as `MONGODB_URI` (defaults to `mongodb://localhost:27017/whatsapp_invoice_assistant`)
-- **Memory Settings**: Configurable in `config/env.yaml` under `mongodb.memory` section
-
-MongoDB is only required if you need conversation history persistence. The system can run without it, but will use in-memory storage that doesn't persist between restarts.
-
-### Running the Test UI
-
-For testing and development without WhatsApp integration:
+For full setup details, including where to get each environment variable, read [SETUP.md](SETUP.md).
 
 ```bash
+git clone https://github.com/Abby263/whatsapp-invoice-assistant.git
+cd whatsapp-invoice-assistant
+cp .env.example .env
+poetry install
+PYTHONPATH=. poetry run alembic upgrade head
+PYTHONPATH=. USE_MONGODB=false poetry run python ui/app.py --port 5001
+```
+
+Open `http://localhost:5001` for the operator UI.
+
+## Required Services
+
+| Service | Required | Used For |
+| --- | --- | --- |
+| Supabase project | Yes | Postgres, pgvector, receipt storage bucket, API keys. |
+| OpenAI API key | Yes | LLM reasoning and embeddings. |
+| Twilio WhatsApp sandbox or sender | Required for WhatsApp | Incoming WhatsApp text and media webhooks. |
+| MongoDB | Optional | Persistent memory and workflow checkpoints. |
+| Redis | Optional | Background task infrastructure. |
+| Docker | Optional | Local containerized runtime. |
+
+## Key Commands
+
+```bash
+# Install dependencies
+make install
+
+# Run database migrations
+make db-migrate
+
+# Start FastAPI webhook API
+make start
+
+# Start local UI
 make ui-run
+
+# Update embeddings
+make update-embeddings
+
+# Run tests
+make test
+
+# Start Docker stack
+make docker-run
 ```
 
-This will start a web interface at http://localhost:5001 where you can:
-- Send text messages to the assistant
-- Upload invoice files for processing
-- View conversation history
-- Monitor AI agent workflows in real-time
-- Check database and embedding statistics
+## Environment Summary
 
-![Testing Interface](images/Testing_Interface.png)
+The most important variables are:
 
-The Testing Interface provides a user-friendly way to interact with the assistant:
-- **Left Panel**: Chat interface for uploading invoices and asking questions
-- **Right Panel**: Agent flow monitoring with real-time updates on:
-  - User information and token usage
-  - Current intent recognition
-  - Workflow steps in progress
-  - Database status and statistics
-  - Vector embedding information
+| Variable | Description |
+| --- | --- |
+| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Supabase Postgres connection string. |
+| `SUPABASE_URL` | Supabase project URL. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
+| `SUPABASE_STORAGE_BUCKET` | Private receipt bucket name, default `receipts`. |
+| `OPENAI_API_KEY` | OpenAI API key. |
+| `OPENAI_API_MODEL` | Chat model, default in this repo is `gpt-4o-mini`. |
+| `TWILIO_ACCOUNT_SID` | Twilio account SID. |
+| `TWILIO_AUTH_TOKEN` | Twilio auth token. |
+| `TWILIO_PHONE_NUMBER` | Twilio WhatsApp-enabled sender. |
+| `MONGODB_URI` | Optional MongoDB connection string. |
+| `USE_MONGODB` | Set `true` for persistent memory, `false` for local UI-only testing. |
 
-All supporting documentation is available in the `docs/` folder, including detailed explanations of the database schema, vector search implementation, query types, memory management, and deployment instructions.
+See [SETUP.md](SETUP.md) for exact source locations in Supabase, OpenAI, and Twilio dashboards.
 
-## ⚙️ Configuration Options
+## Production Readiness Notes
 
-The WhatsApp Invoice Assistant is highly configurable through environment variables or the `config/env.yaml` file:
+- Keep Supabase service-role keys server-side only.
+- Use private Supabase Storage buckets and signed URLs for receipt access.
+- Restrict CORS in `api/main.py` before exposing the API publicly.
+- Use HTTPS for the WhatsApp webhook URL.
+- Run migrations before deploying a new app version.
+- Configure structured logging and log retention for API, agent, and storage failures.
+- Monitor failed extraction, storage upload, and embedding generation rates.
+- Back up Supabase Postgres and MongoDB if memory persistence is enabled.
+- Use queue workers for long-running extraction or embedding jobs at higher volume.
 
-### Core Configuration
+## Documentation
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for LLM access | Required |
-| `DATABASE_URL` | Supabase connection string | Required |
-| `SUPABASE_DATABASE_URL` | Alternative Supabase connection string | - |
-| `SUPABASE_URL` | Supabase project URL | - |
-| `SUPABASE_KEY` | Supabase project API key | - |
-| `SUPABASE_PROJECT_ID` | Supabase project ID | - |
-| `SUPABASE_DB_PASSWORD` | Supabase database password | - |
-| `MONGODB_URI` | MongoDB connection string | mongodb://localhost:27017/whatsapp_invoice_assistant |
-| `USE_MONGODB` | Enable MongoDB for memory | true |
-| `SUPABASE_STORAGE_BUCKET` | Supabase Storage bucket for receipt files | receipts |
+- [SETUP.md](SETUP.md): Full local and production setup guide.
+- [docs/DATABASE.md](docs/DATABASE.md): Database schema and relationships.
+- [docs/VECTOR_SEARCH.md](docs/VECTOR_SEARCH.md): pgvector search and embeddings.
+- [docs/MONGODB_MEMORY.md](docs/MONGODB_MEMORY.md): Conversation memory behavior.
+- [docs/TECH_STACK.md](docs/TECH_STACK.md): Technology stack.
+- [docs/DOCKER.md](docs/DOCKER.md): Docker setup.
+- [docs/Query_Types.md](docs/Query_Types.md): Supported query patterns.
 
-### Database Connection Options
+## Repository Status
 
-The application supports multiple ways to connect to Supabase:
+This repository is production-oriented but still requires real environment configuration before processing live WhatsApp traffic. The local UI can run in degraded mode without database connectivity so reviewers can inspect the workflow surface, but invoice upload, storage, semantic search, and WhatsApp responses require Supabase and OpenAI credentials.
 
-1. **Direct URL**: Set `DATABASE_URL` with a PostgreSQL connection string
-   ```
-   DATABASE_URL=postgresql://postgres:your_password@db.your-project-id.supabase.co:5432/postgres
-   ```
+## License
 
-2. **Connection Pooling**: Set `SUPABASE_DATABASE_URL` using either session or transaction pooling
-   ```
-   # Session pooling (port 5432)
-   SUPABASE_DATABASE_URL=postgresql://postgres.your-project-id:your_password@aws-0-us-east-1.pooler.supabase.com:5432/postgres
-
-   # Transaction pooling (port 6543)
-   SUPABASE_DATABASE_URL=postgresql://postgres.your-project-id:your_password@aws-0-us-east-1.pooler.supabase.com:6543/postgres
-   ```
-
-3. **Component-based Connection**: Set `SUPABASE_PROJECT_ID` and `SUPABASE_DB_PASSWORD` to have the application build the connection string
-   ```
-   SUPABASE_PROJECT_ID=your-project-id
-   SUPABASE_DB_PASSWORD=your-db-password
-   ```
-
-Connection priority is as follows:
-1. `DATABASE_URL` (if provided)
-2. `SUPABASE_DATABASE_URL` (if provided)
-3. Component-based connection (using project ID and password)
-
-> **Note**: All connection strings should use the `postgresql://` protocol prefix for compatibility.
-
-### Vector Search Configuration
-
-Vector search uses pgvector with L2 distance metric. Key configurations in `constants/vector_search_configs.py`:
-
-```python
-# L2 distance threshold - higher values return more results
-# With L2 distance, lower values mean more similar items
-VECTOR_SIMILARITY_THRESHOLD = 1.3
-
-# Search configuration
-DEFAULT_VECTOR_SEARCH_CONFIG = {
-    "similarity_threshold": VECTOR_SIMILARITY_THRESHOLD,
-    "max_results": 10,
-    "similarity_metric": "l2_distance",
-    "hybrid_search": True,
-    "boost_exact_matches": True
-}
-```
-
-### LLM and Embedding Configuration
-
-```yaml
-# LLM Configuration (from config/env.yaml)
-llm:
-  provider: "openai"
-  model: "gpt-4o-mini"
-  temperature: 0.3
-  max_tokens: 1000
-  embedding_model: "text-embedding-3-small"
-  embedding_dimension: 1536
-```
-
-### Memory Management
-
-```yaml
-# MongoDB Memory Configuration
-mongodb:
-  memory:
-    max_messages: 50  # Maximum messages per conversation
-    max_memory_age: 3600  # Maximum age in seconds (1 hour)
-    message_window: 10  # Context window size
-    enable_context_window: true
-    persist_memory: true
-```
-
-## 📊 Database Schema
-
-The system uses a relational database with the following core tables:
-
-- **Users**: Store user information and preferences
-- **Invoices**: Main invoice metadata (date, vendor, total)
-- **Items**: Line items from invoices with descriptions
-- **Conversations**: Track user conversation sessions
-- **Messages**: Store individual message content for context
-- **WhatsAppMessages**: Track delivery status of WhatsApp messages
-
-Vector search is enabled through a special column:
-```sql
--- Items table includes a vector column for semantic search
-description_embedding VECTOR(1536)
-```
-
-## 📝 TODO Tasks
-
-The following tasks are currently pending for implementation:
-
-- Set up Twilio account and WhatsApp sandbox
-- Implement WhatsApp messaging service
-- Create webhook endpoint for WhatsApp integration
-- Test WhatsApp integration with mock services
-
-## 🛠️ Available Commands
-
-The Makefile provides numerous helpful commands:
-
-### Application Management
-- `make start` - Start the application
-- `make stop` - Stop running instances
-- `make restart` - Restart the application
-- `make ui-run` - Start the test UI
-
-### Database Management
-- `make db-migrate` - Run database migrations
-- `make db-status` - Show database statistics
-- `make db-seed` - Seed test data
-- `make db-clean` - Reset the database
-- `make update-embeddings` - Update vector embeddings for items
-
-### Supabase Management
-- `make supabase-test` - Test Supabase connection
-- `make supabase-configure` - Configure Supabase connection
-- `make supabase-switch-connection` - Switch connection mode
-
-### Development Tools
-- `make install` - Install dependencies
-- `make dev` - Start development environment
-- `make test` - Run all tests
-- `make lint` - Check code quality
-- `make format` - Format code with Black
-
-### Docker
-- `make docker-build` - Build Docker image
-- `make docker-run` - Start with Docker
-- `make docker-stop` - Stop Docker containers
-
-## 📱 WhatsApp Integration
-
-The system integrates with WhatsApp via Twilio's API:
-
-1. **Webhook Endpoint**: Receives messages from WhatsApp
-2. **Intent Classification**: Determines user intent (query, invoice upload, etc.)
-3. **File Handling**: Processes images and documents sent via WhatsApp
-4. **Response Formatting**: Formats AI responses for WhatsApp display
-5. **Media Support**: Handles both text and media responses
-
-## 📄 Invoice Creation
-
-The system provides automated invoice creation capabilities:
-
-1. **Multiple Templates**: Supports 6 different invoice types:
-   - Service Invoice (DOCX)
-   - Invoice Document (DOCX)
-   - Billing Statement (XLSX)
-   - Credit Note (XLSX)
-   - Debit Note (XLSX)
-   - Time & Material Invoice (XLSX)
-
-2. **Template Selection**: The system automatically selects the appropriate template based on the user's request and invoice type.
-
-3. **Intelligent Information Collection**:
-   - Extracts needed information from user messages
-   - Remembers previously provided user details
-   - Prompts for missing required information
-   - Stores user-specific information in database for future use
-
-4. **Multi-format Output**:
-   - Generates completed invoices in both PDF and original format (DOCX/XLSX)
-   - Allows users to receive their preferred file format
-
-5. **Memory Integration**:
-   - Maintains context across the invoice creation process
-   - Remembers user preferences for future interactions
-
-## 📝 License
-
-[MIT License](LICENSE) - This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📞 Contact
-
-For questions or support, please open an issue on this repository.
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
