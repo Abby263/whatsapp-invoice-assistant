@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "AI-powered WhatsApp invoice assistant for processing and managing invoice data"
 authors = ["Your Name <your.email@example.com>"]
 readme = "README.md"
+license = "PolyForm-Noncommercial-1.0.0"
 
 [tool.poetry.dependencies]
 python = "^3.9"
