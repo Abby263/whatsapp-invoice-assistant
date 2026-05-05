@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp Invoice Assistant Test UI</title>
+    <title>Invoice Command Center</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,6 +13,33 @@
 </head>
 <body>
     <div class="container">
+        <header class="app-toolbar">
+            <div class="brand-block">
+                <div class="brand-mark">
+                    <i class="fas fa-receipt"></i>
+                </div>
+                <div>
+                    <h1>Invoice Command Center</h1>
+                    <p>WhatsApp receipt intake</p>
+                </div>
+            </div>
+            <div class="toolbar-status-grid">
+                <div class="toolbar-status">
+                    <span>Postgres</span>
+                    <strong id="dashboardDbStatus">Checking</strong>
+                </div>
+                <div class="toolbar-status">
+                    <span>Storage</span>
+                    <strong id="dashboardStorageStatus">Ready</strong>
+                </div>
+                <div class="toolbar-status">
+                    <span>Vector</span>
+                    <strong id="dashboardVectorStatus">Checking</strong>
+                </div>
+            </div>
+        </header>
+
+        <main class="workspace">
         <div class="chat-container">
             <!-- Chat Header -->
             <div class="chat-header">
@@ -34,13 +62,60 @@
                 </div>
             </div>
 
+            <section class="command-center" aria-label="Receipt workflow overview">
+                <div class="metric-card">
+                    <div class="metric-icon capture">
+                        <i class="fas fa-inbox"></i>
+                    </div>
+                    <div class="metric-copy">
+                        <span>Current user receipts</span>
+                        <strong id="dashboardReceiptCount">0</strong>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon review">
+                        <i class="fas fa-list-check"></i>
+                    </div>
+                    <div class="metric-copy">
+                        <span>Line items</span>
+                        <strong id="dashboardItemCount">0</strong>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon automate">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                    </div>
+                    <div class="metric-copy">
+                        <span>Intent</span>
+                        <strong id="dashboardIntent">None</strong>
+                    </div>
+                </div>
+            </section>
+
+            <section class="quick-actions" aria-label="Quick actions">
+                <button type="button" class="quick-action" data-upload-trigger>
+                    <i class="fas fa-cloud-arrow-up"></i>
+                    <span>Capture receipt</span>
+                </button>
+                <button type="button" class="quick-action" data-prompt="What did I spend this month?">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Monthly spend</span>
+                </button>
+                <button type="button" class="quick-action" data-prompt="Show my latest uploaded receipts">
+                    <i class="fas fa-clock-rotate-left"></i>
+                    <span>Latest receipts</span>
+                </button>
+                <button type="button" class="quick-action" data-prompt="Create an invoice for a new client">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                    <span>Create invoice</span>
+                </button>
+            </section>
+
             <!-- Chat Messages -->
             <div class="chat-messages" id="chatMessages">
                 <div class="message system">
                     <div class="message-content">
-                        <p>Welcome to the WhatsApp Invoice Assistant Testing UI.</p>
-                        <p>Type a message or upload an invoice file to get started.</p>
-                        <p>Type /help for available commands.</p>
+                        <p>Workspace ready.</p>
                     </div>
                     <div class="message-time">Now</div>
                 </div>
@@ -201,6 +276,10 @@
                     <h4>File Storage</h4>
                     <div class="db-status-container">
                         <div class="agent-panel-item">
+                            <span class="agent-panel-label">Provider:</span>
+                            <span class="agent-panel-value" id="storageProvider">Supabase</span>
+                        </div>
+                        <div class="agent-panel-item">
                             <span class="agent-panel-label">File Key:</span>
                             <span class="agent-panel-value" id="s3FileKey">None</span>
                         </div>
@@ -275,12 +354,13 @@
                 </div>
             </div>
         </div>
+        </main>
     </div>
 
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay hidden">
         <div class="spinner"></div>
-        <p>Processing...</p>
+        <p class="loading-text">Processing...</p>
     </div>
 
     <!-- Scripts -->
