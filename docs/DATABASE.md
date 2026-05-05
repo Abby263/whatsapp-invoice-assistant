@@ -274,7 +274,7 @@ Current Data Summary:
   - `invoice_id`: Links to the associated invoice (if processed).
   - `filename`: Storage-generated filename.
   - `original_filename`: User-provided filename (nullable).
-  - `file_path`: Storage path (e.g., S3).
+  - `file_path`: Object storage path.
   - `file_url`: Public access URL.
   - `file_size`: Size in bytes (nullable).
   - `content_type`: MIME type (e.g., "image/jpeg").

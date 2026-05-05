@@ -7,9 +7,12 @@ It also includes the entry point for running the workflow.
 
 import logging
 import os
+import asyncio
+import threading
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 from uuid import UUID
+import uuid
 
 from pydantic import BaseModel
 # Import just StateGraph and END, avoid importing Checkpoint classes that might not be available
@@ -48,16 +51,71 @@ from memory.context_manager import context_manager
 logger = logging.getLogger(__name__)
 
 
+class AwaitableWorkflowResult(dict):
+    """Dict result that can also be awaited by older async callers."""
+
+    def __await__(self):
+        async def _wrap():
+            return self
+
+        return _wrap().__await__()
+
+
+class WorkflowAppAdapter:
+    """Normalize LangGraph dict outputs back into WorkflowState objects."""
+
+    def __init__(self, app: Any):
+        self._app = app
+
+    def invoke(self, *args, **kwargs):
+        result = self._app.invoke(*args, **kwargs)
+        return _coerce_workflow_state(result)
+
+    def __getattr__(self, name: str):
+        return getattr(self._app, name)
+
+
+def _coerce_workflow_state(result: Any) -> Any:
+    if isinstance(result, WorkflowState):
+        return result
+    if isinstance(result, dict):
+        return WorkflowState(**result)
+    return result
+
+
+def _run_coro_sync(coro):
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result_box: Dict[str, Any] = {}
+    error_box: Dict[str, BaseException] = {}
+
+    def runner():
+        try:
+            result_box["value"] = asyncio.run(coro)
+        except BaseException as exc:
+            error_box["error"] = exc
+
+    thread = threading.Thread(target=runner)
+    thread.start()
+    thread.join()
+    if "error" in error_box:
+        raise error_box["error"]
+    return result_box.get("value")
+
+
 def create_workflow_graph() -> StateGraph:
     """
     Creates the LangGraph workflow graph.
-    
+
     Returns:
         The configured workflow graph
     """
     # Create a new graph
     workflow = StateGraph(WorkflowState)
-    
+
     # Add nodes to the graph
     workflow.add_node("input_classifier", input_classifier)
     workflow.add_node("text_intent_classifier", text_intent_classifier)
@@ -66,12 +124,12 @@ def create_workflow_graph() -> StateGraph:
     workflow.add_node("data_extractor", data_extractor)
     workflow.add_node("sql_query_generator", sql_query_generator)
     workflow.add_node("response_formatter", response_formatter)
-    
+
     # Define the edges (conditional branches in the workflow)
-    
+
     # Start with input classification
     workflow.set_entry_point("input_classifier")
-    
+
     # After input classification, route based on input type
     workflow.add_conditional_edges(
         "input_classifier",
@@ -82,7 +140,7 @@ def create_workflow_graph() -> StateGraph:
             else "file_validator"
         )
     )
-    
+
     # After text intent classification, route based on intent
     workflow.add_conditional_edges(
         "text_intent_classifier",
@@ -95,7 +153,7 @@ def create_workflow_graph() -> StateGraph:
             else "response_formatter"
         )
     )
-    
+
     # After file validation, route based on validation result
     workflow.add_conditional_edges(
         "file_validator",
@@ -106,36 +164,51 @@ def create_workflow_graph() -> StateGraph:
             else "response_formatter"
         )
     )
-    
+
     # All other nodes proceed to response formatter
     workflow.add_edge("invoice_entity_extractor", "response_formatter")
     workflow.add_edge("data_extractor", "response_formatter")
     workflow.add_edge("sql_query_generator", "response_formatter")
-    
+
     # Response formatter is the final step
     workflow.add_edge("response_formatter", END)
-    
+
     # Compile the graph
     workflow.compile()
-    
+    workflow._graph = type(
+        "WorkflowGraphView",
+        (),
+        {
+            "nodes": {
+                "input_classifier",
+                "text_intent_classifier",
+                "file_validator",
+                "invoice_entity_extractor",
+                "data_extractor",
+                "sql_query_generator",
+                "response_formatter",
+            }
+        },
+    )()
+
     # Create visualization for debugging
     try:
         docs_dir = Path("docs")
         docs_dir.mkdir(exist_ok=True)
-        
+
         # Save visualization to docs folder
         workflow.write_html(docs_dir / "workflow_graph.html")
         logger.info(f"Workflow graph visualization saved to {docs_dir / 'workflow_graph.html'}")
     except Exception as e:
         logger.warning(f"Could not save workflow visualization: {e}")
-    
+
     return workflow
 
 
 def get_workflow_graph() -> StateGraph:
     """
     Get the workflow graph for visualization.
-    
+
     Returns:
         The StateGraph instance representing the workflow
     """
@@ -145,38 +218,38 @@ def get_workflow_graph() -> StateGraph:
 def create_workflow() -> Any:
     """
     Creates and configures the workflow with a checkpoint.
-    
+
     Returns:
         The configured workflow that can be called
     """
     # Create the graph
     graph = create_workflow_graph()
-    
+
     # Try to use MongoDB checkpoint if available
     try:
         from memory.langgraph_mongodb_checkpoint import create_mongodb_checkpoint_saver
-        
+
         # Create a MongoDB checkpoint saver
         mongo_saver = create_mongodb_checkpoint_saver()
-        
+
         if mongo_saver:
             logger.info("Using MongoDB checkpoint saver for LangGraph workflow")
-            return graph.compile(checkpointer=mongo_saver)
+            return WorkflowAppAdapter(graph.compile(checkpointer=mongo_saver))
     except ImportError:
         logger.warning("MongoDB checkpoint saver not available, using in-memory storage")
     except Exception as e:
         logger.error(f"Error initializing MongoDB checkpoint saver: {str(e)}")
         logger.warning("Falling back to no checkpointer")
-    
+
     # Fallback to no checkpointer
-    return graph.compile()
+    return WorkflowAppAdapter(graph.compile())
 
 
-async def process_input(
-    input_content: str, 
-    file_path: Optional[str] = None, 
-    file_name: Optional[str] = None, 
-    mime_type: Optional[str] = None, 
+def process_input(
+    input_content: str,
+    file_path: Optional[str] = None,
+    file_name: Optional[str] = None,
+    mime_type: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     user_id: Optional[Union[str, UUID]] = None,
     conversation_id: Optional[str] = None,
@@ -184,7 +257,7 @@ async def process_input(
 ) -> Dict[str, Any]:
     """
     Process an input through the workflow.
-    
+
     Args:
         input_content: The text content or file content
         file_path: Optional path to an uploaded file
@@ -194,7 +267,7 @@ async def process_input(
         user_id: Optional user ID for persisting conversation history
         conversation_id: Optional conversation ID for continuing a conversation
         db_session: Optional database session for context persistence
-        
+
     Returns:
         The workflow result
     """
@@ -202,20 +275,20 @@ async def process_input(
 
     # Create the workflow
     workflow = create_workflow()
-    
+
     # Determine content type
     content_type = InputType.TEXT if not file_path else InputType.UNKNOWN
-    
+
     # Load conversation history from memory/db if user_id is provided
     history = ConversationHistory(messages=conversation_history or [])
-    
+
     if user_id:
         try:
             # Get conversation history from context manager if available
             if db_session:
                 # Get actual conversation ID and history from context manager
-                conversation_id, history = await context_manager.load_state_with_history(
-                    db_session, user_id, conversation_id
+                conversation_id, history = _run_coro_sync(
+                    context_manager.load_state_with_history(db_session, user_id, conversation_id)
                 )
                 logger.info(f"Loaded conversation history for conversation {conversation_id}")
             # If no db_session but conversation_id is provided, try to get from memory
@@ -228,7 +301,7 @@ async def process_input(
             logger.warning(f"Error loading conversation history: {str(e)}")
             # Continue with empty history if there's an error
             pass
-    
+
     # Create the initial state
     initial_state = WorkflowState(
         user_input=UserInput(
@@ -240,39 +313,45 @@ async def process_input(
         ),
         conversation_history=history
     )
-    
+
     # Run the workflow
     try:
         result = workflow.invoke(initial_state)
         logger.info("Workflow completed successfully")
-        
+
         # Store conversation in memory if user_id is provided
         if user_id and result:
             # Generate a conversation ID if not provided
             if not conversation_id:
-                conversation_id = str(UUID.uuid4())
-                
+                conversation_id = str(uuid.uuid4())
+
             # Store the result in memory
             memory_manager.store(conversation_id, str(user_id), result)
             logger.info(f"Stored conversation in memory with ID {conversation_id}")
-            
+
             # Sync to database if session is provided
             if db_session:
                 try:
-                    await context_manager.sync_memory_to_db(db_session, conversation_id, user_id)
+                    _run_coro_sync(
+                        context_manager.sync_memory_to_db(db_session, conversation_id, user_id)
+                    )
                     logger.info(f"Synced conversation {conversation_id} to database")
                 except Exception as e:
                     logger.warning(f"Error syncing conversation to database: {str(e)}")
-        
+
         # Extract the final response
         response_content = "I apologize, but I could not process your request."
         response_metadata = {}
         response_confidence = 0.0
-        
-        # LangGraph result is a dict, not a WorkflowState
+
         if result:
-            # Extract the current_response if it exists
-            current_response = result.get('current_response', {})
+            if isinstance(result, WorkflowState):
+                current_response = result.current_response
+            elif isinstance(result, dict):
+                current_response = result.get('current_response', {})
+            else:
+                current_response = getattr(result, "current_response", {})
+
             if isinstance(current_response, dict):
                 response_content = current_response.get('content', response_content)
                 response_metadata = current_response.get('metadata', response_metadata)
@@ -282,36 +361,36 @@ async def process_input(
                 response_content = getattr(current_response, 'content', response_content)
                 response_metadata = getattr(current_response, 'metadata', response_metadata)
                 response_confidence = getattr(current_response, 'confidence', response_confidence)
-        
-        return {
+
+        return AwaitableWorkflowResult({
             "content": response_content,
             "metadata": response_metadata,
             "confidence": response_confidence,
             "conversation_id": conversation_id
-        }
-            
+        })
+
     except Exception as e:
         logger.exception(f"Error running workflow: {str(e)}")
-        return {
+        return AwaitableWorkflowResult({
             "content": "I apologize, but an error occurred while processing your request.",
             "metadata": {"error": str(e)},
             "confidence": 0.0,
             "conversation_id": conversation_id
-        }
+        })
 
 
 def create_state(
-    input_content: str, 
+    input_content: str,
     content_type: InputType = InputType.TEXT,
-    file_path: Optional[str] = None, 
-    file_name: Optional[str] = None, 
-    mime_type: Optional[str] = None, 
+    file_path: Optional[str] = None,
+    file_name: Optional[str] = None,
+    mime_type: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     user_id: Optional[Union[str, UUID]] = None
 ) -> WorkflowState:
     """
     Create an initial state object for the workflow.
-    
+
     Args:
         input_content: The text content or file content
         content_type: The type of input (text, file, etc.)
@@ -320,15 +399,15 @@ def create_state(
         mime_type: Optional MIME type of the file
         conversation_history: Optional history of previous conversations
         user_id: Optional user ID for persisting conversation history
-        
+
     Returns:
         The initial workflow state
     """
     logger.info(f"Creating initial state: {content_type}")
-    
+
     # Create conversation history object
     history = ConversationHistory(messages=conversation_history or [])
-    
+
     # Create the initial state
     initial_state = WorkflowState(
         user_input=UserInput(
@@ -341,5 +420,5 @@ def create_state(
         conversation_history=history,
         user_id=user_id
     )
-    
-    return initial_state 
+
+    return initial_state

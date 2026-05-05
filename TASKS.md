@@ -9,7 +9,7 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 
 ### 1. Environment and Project Structure Setup
 - [x] Create project directory structure as defined in TECH_STACK.md
-- [x] Set up Poetry for dependency management 
+- [x] Set up Poetry for dependency management
 - [x] Create initial pyproject.toml file with required dependencies
 - [x] Set up pre-commit hooks for code quality (black, flake8, mypy)
 - [x] Create Makefile with basic commands (start, stop, restart, db-clean)
@@ -240,12 +240,12 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 - [ ] **Test:** Integration test of webhook with main workflow
 
 ### 11. Storage Implementation
-- [x] Set up AWS S3 bucket for file storage
-- [x] Implement s3_handler.py for file uploads and retrievals
+- [x] Configure Supabase Storage bucket for receipt storage
+- [x] Implement supabase_storage_handler.py for file uploads and signed URL retrievals
   - [x] File upload functionality
-  - [x] URL generation for stored files
+  - [x] Signed URL generation for stored files
   - [x] File retrieval for processing
-- [x] **Test:** Create mock S3 service for testing uploads and retrievals
+- [x] **Test:** Create mock storage service for testing uploads and retrievals
 - [x] **Test:** Test file upload and URL generation
 - [x] **Test:** Verify file retrieval works as expected
 
@@ -276,7 +276,7 @@ This document outlines the sequential tasks required to build the WhatsApp Invoi
 ### Phase 3 Documentation Updates
 - [ ] Update README.md with Phase 3 integration details
   - [ ] WhatsApp/Twilio setup instructions
-  - [ ] S3 bucket configuration guide
+  - [ ] Supabase Storage bucket configuration guide
   - [ ] Async task processing system overview
 - [ ] Update Makefile with Phase 3 specific commands
   - [ ] Commands for starting worker processes
@@ -618,4 +618,4 @@ Each phase should be completed sequentially, with each task marked as complete b
 - **Test Coverage**: Maintain minimum 80% test coverage
 - **Security**: Regularly scan for vulnerabilities
 - **Consistency**: Follow project-specific naming conventions
-- **Reviews**: Conduct code reviews after each phase completion 
+- **Reviews**: Conduct code reviews after each phase completion

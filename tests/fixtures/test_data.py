@@ -13,7 +13,7 @@ INVALID_INVOICES_DIR = DATA_DIR / "invalid_invoice"
 
 # Paths to invoice files
 VALID_INVOICE_PATH = VALID_INVOICES_DIR / "image.png"
-INVALID_INVOICE_PATH = INVALID_INVOICES_DIR / "image.png"
+INVALID_INVOICE_PATH = INVALID_INVOICES_DIR / "invoice.png"
 
 # Sample text inputs by intent type
 GREETING_INPUTS = [
@@ -118,8 +118,8 @@ SAMPLE_QUERY_RESULTS = [
 
 # Sample SQL query
 SAMPLE_SQL_QUERY = """
-SELECT id, vendor, date, total_amount, invoice_number 
-FROM invoices 
+SELECT id, vendor, date, total_amount, invoice_number
+FROM invoices
 WHERE vendor = 'Amazon' AND date >= '2023-03-01' AND date <= '2023-03-31'
 """
 
@@ -143,4 +143,4 @@ EXPECTED_RESPONSE_FORMATS = {
     "valid_invoice": {
         "contains": ["Invoice uploaded", "processed successfully", "Vendor", "Date", "Amount"]
     }
-} 
+}

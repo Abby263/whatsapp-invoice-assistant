@@ -17,16 +17,16 @@ print_header() {
 # Function to extract default values from config/env.yaml
 extract_config_defaults() {
     echo -e "${YELLOW}Extracting default configuration values...${NC}"
-    
+
     # Helper function to extract values using grep and sed
     extract_value() {
         local key="$1"
         local file="$2"
         local default="$3"
-        
+
         # Try to extract the value from the config file
         local value=$(grep -A 1 "$key:" "$file" | tail -n 1 | sed -E 's/^[ ]+//g' | grep -v "^\$" || echo "")
-        
+
         # If the value is empty or contains variable reference ${...}, use the default
         if [[ -z "$value" || "$value" == *"\${""*""}"* ]]; then
             echo "$default"
@@ -35,26 +35,26 @@ extract_config_defaults() {
             echo "$value" | sed -E 's/^"(.*)"$/\1/' | sed -E "s/^'(.*)'$/\1/"
         fi
     }
-    
+
     # Define the config file path
     CONFIG_FILE="config/env.yaml"
-    
+
     # Check if config file exists
     if [ ! -f "$CONFIG_FILE" ]; then
         echo -e "${YELLOW}Config file not found. Using default values.${NC}"
         return
     fi
-    
+
     # Extract database values
     DB_URL="postgresql://postgres:postgres@whatsapp-invoice-assistant-db:5432/whatsapp_invoice_assistant"
     MONGODB_URL="mongodb://whatsapp-invoice-assistant-mongodb:27017/whatsapp_invoice_assistant"
-    
+
     # Extract Redis URL
     REDIS_URL=$(extract_value "url:" "$CONFIG_FILE" "redis://localhost:6379/0")
-    
+
     # Extract logging level
     LOG_LEVEL=$(extract_value "level:" "$CONFIG_FILE" "INFO")
-    
+
     echo -e "${GREEN}Extracted configuration values successfully.${NC}"
 }
 
@@ -62,7 +62,7 @@ extract_config_defaults() {
 ensure_env_file() {
     # First extract defaults from config
     extract_config_defaults
-    
+
     if [ ! -f .env ]; then
         echo -e "${YELLOW}No .env file found. Creating a default one...${NC}"
         cat > .env << EOL
@@ -79,11 +79,10 @@ TWILIO_ACCOUNT_SID=your-twilio-account-sid
 TWILIO_AUTH_TOKEN=your-twilio-auth-token
 TWILIO_PHONE_NUMBER=your-twilio-phone-number
 
-# AWS Configuration
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-S3_BUCKET_NAME=your-s3-bucket-name
-S3_REGION=us-east-1
+# Supabase Storage Configuration
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+SUPABASE_STORAGE_BUCKET=receipts
 
 # Redis Configuration
 REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
@@ -100,7 +99,7 @@ EOL
     if grep -q "OPENAI_API_KEY=your-api-key" .env; then
         echo -e "${YELLOW}Warning: OPENAI_API_KEY is not set in .env file.${NC}"
         echo -e "${YELLOW}The application will not function correctly without this key.${NC}"
-        
+
         read -p "Would you like to enter your OpenAI API key now? (y/n) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -135,14 +134,14 @@ check_docker() {
         if ! pgrep -f "Docker Desktop" > /dev/null; then
             echo -e "${RED}Docker Desktop is not running on your Mac.${NC}"
             echo -e "${YELLOW}Please start Docker Desktop from Applications.${NC}"
-            
+
             read -p "Would you like to try opening Docker Desktop now? (y/n) " -n 1 -r
             echo
             if [[ $REPLY =~ ^[Yy]$ ]]; then
                 echo -e "${YELLOW}Attempting to open Docker Desktop...${NC}"
                 open -a "Docker Desktop"
                 echo -e "${YELLOW}Waiting for Docker Desktop to start (up to 30 seconds)...${NC}"
-                
+
                 for i in {1..30}; do
                     echo -n "."
                     sleep 1
@@ -150,7 +149,7 @@ check_docker() {
                         echo -e "\n${GREEN}Docker Desktop is now running!${NC}"
                         break
                     fi
-                    
+
                     if [ $i -eq 30 ]; then
                         echo -e "\n${YELLOW}Docker Desktop might need more time to start.${NC}"
                         echo -e "${YELLOW}Please run this script again after Docker Desktop is fully started.${NC}"
@@ -226,20 +225,20 @@ check_port_conflicts() {
 # Start containers
 start_containers() {
     echo -e "${YELLOW}Building and starting containers...${NC}"
-    
+
     # Export environment variables from .env
     if [ -f .env ]; then
         export $(grep -v '^#' .env | xargs)
     fi
-    
+
     # Build and start containers
     if ! $DOCKER_COMPOSE up -d --build; then
         echo -e "${RED}Failed to build and start containers.${NC}"
         exit 1
     fi
-    
+
     echo -e "${GREEN}Containers started successfully.${NC}"
-    
+
     # Wait for services to be healthy
     echo -e "${YELLOW}Waiting for services to be ready...${NC}"
     for i in {1..30}; do
@@ -249,10 +248,10 @@ start_containers() {
             echo -e "${GREEN}All services are ready!${NC}"
             break
         fi
-        
+
         echo -n "."
         sleep 2
-        
+
         if [ $i -eq 30 ]; then
             echo -e "\n${YELLOW}Timeout waiting for services to be ready.${NC}"
             echo -e "${YELLOW}Please check container logs with 'docker logs whatsapp-invoice-assistant-ui'${NC}"
@@ -266,10 +265,10 @@ show_connection_info() {
     echo -e "${GREEN}Web UI:${NC} http://localhost:5001"
     echo -e "${GREEN}MongoDB:${NC} mongodb://localhost:27018/whatsapp_invoice_assistant"
     echo -e "${GREEN}PostgreSQL:${NC} postgresql://postgres:postgres@localhost:5433/whatsapp_invoice_assistant"
-    
+
     echo -e "\n${YELLOW}To stop the containers, run:${NC}"
     echo -e "  ${BLUE}make docker-stop${NC}   or   ${BLUE}docker-compose down${NC}"
-    
+
     echo -e "\n${YELLOW}To view logs:${NC}"
     echo -e "  ${BLUE}docker logs whatsapp-invoice-assistant-ui${NC}"
 }
@@ -281,4 +280,4 @@ create_directories
 check_docker
 check_port_conflicts
 start_containers
-show_connection_info 
+show_connection_info

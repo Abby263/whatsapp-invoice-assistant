@@ -36,22 +36,22 @@ app:
     LOG_LEVEL: "DEBUG"
     USE_MONGODB: "true"
     REDIS_URL: "redis://redis:6379/0"
-  
+
   # For testing, we'll use dummy secrets
   # In a real environment, these would be set securely
   secretEnv:
     enabled: true
-  
+
   # Secret values for testing
   secrets:
     OPENAI_API_KEY: "test-api-key"
     TWILIO_ACCOUNT_SID: "test-sid"
     TWILIO_AUTH_TOKEN: "test-token"
     TWILIO_PHONE_NUMBER: "+1234567890"
-    AWS_ACCESS_KEY_ID: "test-access-key"
-    AWS_SECRET_ACCESS_KEY: "test-secret-key"
-    S3_BUCKET_NAME: "test-bucket"
-    S3_REGION: "us-east-1"
+    SUPABASE_URL: "https://example.supabase.co"
+    SUPABASE_KEY: "test-anon-key"
+    SUPABASE_SERVICE_ROLE_KEY: "test-service-role-key"
+    SUPABASE_STORAGE_BUCKET: "receipts"
 
   # Use smaller volumes for testing
   persistence:
@@ -96,4 +96,4 @@ postgresql:
 memory:
   expirationHours: 24
   maxConversations: 100
-  cleanupSchedule: "0 * * * *"  # Hourly cleanup for testing 
+  cleanupSchedule: "0 * * * *"  # Hourly cleanup for testing

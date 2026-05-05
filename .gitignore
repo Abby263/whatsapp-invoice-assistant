@@ -147,9 +147,6 @@ instance/
 whatsapp_temp/
 ui_users.json
 
-# Generated files during execution
-AgenticWorkflow.png
-
 # Docker
 .dockerignore
 docker-compose.override.yml
@@ -160,6 +157,10 @@ poetry.lock
 # Pre-commit hooks
 .pre-commit-config.yaml
 
+# Local backup files
+*.bak
+*.backup
+
 # Don't ignore these files/directories (keep them in the repo)
 !.env.example
 !docker-compose.yml
@@ -169,5 +170,4 @@ poetry.lock
 !README.md
 !TASKS.md
 !docker-run.sh
-!uploads/.gitkeep .env
-.env
+!uploads/.gitkeep

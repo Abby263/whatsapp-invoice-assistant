@@ -51,15 +51,15 @@ spec:
               value: "mongodb://{{ .Values.mongodb.auth.username }}:{{ .Values.mongodb.auth.password }}@{{ include "whatsapp-invoice-assistant.fullname" . }}-mongodb:{{ .Values.mongodb.service.port }}/{{ .Values.mongodb.auth.database }}"
             - name: USE_MONGODB
               value: "true"
-            
+
             # Logging configuration
             - name: LOG_LEVEL
               value: "{{ .Values.app.logging.level }}"
-              
+
             # Redis configuration
             - name: REDIS_URL
               value: "{{ .Values.app.redis.url }}"
-            
+
             # MongoDB memory settings
             - name: MONGODB_MAX_MESSAGES
               value: "{{ .Values.mongodb.memory.max_messages }}"
@@ -71,33 +71,33 @@ spec:
               value: "{{ .Values.mongodb.memory.enable_context_window }}"
             - name: MONGODB_PERSIST_MEMORY
               value: "{{ .Values.mongodb.memory.persist_memory }}"
-            
+
             # Secret environment variables
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
                   key: OPENAI_API_KEY
-            - name: AWS_ACCESS_KEY_ID
+            - name: SUPABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
-                  key: AWS_ACCESS_KEY_ID
-            - name: AWS_SECRET_ACCESS_KEY
+                  key: SUPABASE_URL
+            - name: SUPABASE_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
-                  key: AWS_SECRET_ACCESS_KEY
-            - name: S3_BUCKET_NAME
+                  key: SUPABASE_KEY
+            - name: SUPABASE_SERVICE_ROLE_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
-                  key: S3_BUCKET_NAME
-            - name: S3_REGION
+                  key: SUPABASE_SERVICE_ROLE_KEY
+            - name: SUPABASE_STORAGE_BUCKET
               valueFrom:
                 secretKeyRef:
                   name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
-                  key: S3_REGION
+                  key: SUPABASE_STORAGE_BUCKET
             - name: TWILIO_ACCOUNT_SID
               valueFrom:
                 secretKeyRef:
@@ -113,7 +113,7 @@ spec:
                 secretKeyRef:
                   name: {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets
                   key: TWILIO_PHONE_NUMBER
-            
+
           livenessProbe:
             httpGet:
               path: /
@@ -159,4 +159,4 @@ spec:
         - name: logs-volume
           persistentVolumeClaim:
             claimName: {{ include "whatsapp-invoice-assistant.fullname" . }}-logs
-        {{- end }} 
+        {{- end }}

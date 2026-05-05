@@ -34,12 +34,12 @@ You will be working with the following tables:
 - updated_at (DateTime): When the record was last updated
 
 ## Media Table
-- id (UUID): Primary key, automatically generated
-- user_id (UUID): Foreign key to users.id
-- invoice_id (UUID): Foreign key to invoices.id
+- id (Integer): Primary key, automatically generated
+- user_id (Integer): Foreign key to users.id
+- invoice_id (Integer): Foreign key to invoices.id
 - filename (String): Original name of the uploaded file
-- file_path (String): Path where the file is stored (e.g., S3 key)
-- mime_type (String): MIME type of the file
+- file_path (String): Object storage key/path where the file is stored
+- content_type (String): MIME type of the file
 - file_size (Integer): Size of the file in bytes
 - created_at (DateTime): When the record was created
 
@@ -72,4 +72,4 @@ The output should be a detailed status report on the database operation, includi
 - Any validation issues encountered
 - Appropriate error messages if needed
 
-Remember to maintain consistent formatting of data, handle edge cases gracefully, and ensure proper relationships between database tables. 
+Remember to maintain consistent formatting of data, handle edge cases gracefully, and ensure proper relationships between database tables.

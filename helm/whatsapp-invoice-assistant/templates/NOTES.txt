@@ -22,10 +22,10 @@ Update the secret with:
 
   kubectl create secret generic {{ include "whatsapp-invoice-assistant.fullname" . }}-secrets \
     --from-literal=OPENAI_API_KEY=<your-openai-api-key> \
-    --from-literal=AWS_ACCESS_KEY_ID=<your-aws-access-key> \
-    --from-literal=AWS_SECRET_ACCESS_KEY=<your-aws-secret-key> \
-    --from-literal=S3_BUCKET_NAME=<your-s3-bucket-name> \
-    --from-literal=S3_REGION=<your-s3-region> \
+    --from-literal=SUPABASE_URL=<your-supabase-url> \
+    --from-literal=SUPABASE_KEY=<your-supabase-anon-key> \
+    --from-literal=SUPABASE_SERVICE_ROLE_KEY=<your-supabase-service-role-key> \
+    --from-literal=SUPABASE_STORAGE_BUCKET=receipts \
     --from-literal=TWILIO_ACCOUNT_SID=<your-twilio-account-sid> \
     --from-literal=TWILIO_AUTH_TOKEN=<your-twilio-auth-token> \
     --from-literal=TWILIO_PHONE_NUMBER=<your-twilio-phone-number>
@@ -50,4 +50,4 @@ PostgreSQL connection info:
 For more information on configuring the application, check the README.md file in the chart directory.
 
 To get the logs from the application, run:
-  kubectl logs -f deployment/{{ include "whatsapp-invoice-assistant.fullname" . }} 
+  kubectl logs -f deployment/{{ include "whatsapp-invoice-assistant.fullname" . }}

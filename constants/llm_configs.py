@@ -18,19 +18,22 @@ class Models:
     """Available model names by provider."""
     # OpenAI models
     GPT4 = "gpt-4"
+    GPT_4 = GPT4
     GPT4_TURBO = "gpt-4-turbo-preview"
     GPT4O_MINI = "gpt-4o-mini"
+    GPT_4O = "gpt-4o"
+    GPT_4O_MINI = GPT4O_MINI
     GPT35_TURBO = "gpt-3.5-turbo"
-    
+
     # Anthropic models
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
     CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
     CLAUDE_3_HAIKU = "claude-3-haiku-20240307"
-    
+
     # Cohere models
     COHERE_COMMAND = "command"
     COHERE_COMMAND_LIGHT = "command-light"
-    
+
     # Default model
     DEFAULT = GPT4O_MINI
 
@@ -111,4 +114,4 @@ TASK_LLM_CONFIGS = {
         "temperature": TemperatureSettings.VALIDATION,
         "max_output_tokens": TokenLimits.MAX_OUTPUT_TOKENS_SHORT
     }
-} 
+}

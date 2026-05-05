@@ -6,9 +6,8 @@ and are used for request/response validation, serialization, and API documentati
 """
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Literal
-import uuid
 
-from pydantic import BaseModel, Field, validator, EmailStr
+from pydantic import BaseModel, Field, validator
 
 
 class UserBase(BaseModel):
@@ -36,7 +35,7 @@ class UserUpdate(BaseModel):
 
 class UserResponse(UserBase):
     """User response model with all fields including id and timestamps."""
-    id: uuid.UUID
+    id: int
     created_at: datetime
     updated_at: datetime
     is_active: bool
@@ -55,7 +54,7 @@ class ItemBase(BaseModel):
 
 class ItemCreate(ItemBase):
     """Invoice item creation model."""
-    invoice_id: uuid.UUID
+    invoice_id: int
 
 
 class ItemUpdate(ItemBase):
@@ -65,8 +64,8 @@ class ItemUpdate(ItemBase):
 
 class ItemResponse(ItemBase):
     """Invoice item response model."""
-    id: uuid.UUID
-    invoice_id: uuid.UUID
+    id: int
+    invoice_id: int
     created_at: datetime
     updated_at: datetime
 
@@ -75,11 +74,13 @@ class InvoiceBase(BaseModel):
     """Base invoice model."""
     invoice_number: Optional[str] = None
     invoice_date: Optional[datetime] = None
-    due_date: Optional[datetime] = None
     vendor: Optional[str] = None
     total_amount: Optional[float] = None
+    tax_amount: Optional[float] = None
     currency: Optional[str] = Field(None, min_length=3, max_length=3)
-    status: Optional[str] = Field("pending", pattern="^(pending|processed|error)$")
+    file_url: Optional[str] = None
+    file_content_type: Optional[str] = None
+    raw_data: Optional[Dict[str, Any]] = None
     notes: Optional[str] = None
 
     class Config:
@@ -88,7 +89,7 @@ class InvoiceBase(BaseModel):
 
 class InvoiceCreate(InvoiceBase):
     """Invoice creation model."""
-    user_id: uuid.UUID
+    user_id: int
     items: Optional[List[ItemCreate]] = []
 
 
@@ -99,8 +100,8 @@ class InvoiceUpdate(InvoiceBase):
 
 class InvoiceResponse(InvoiceBase):
     """Invoice response model."""
-    id: uuid.UUID
-    user_id: uuid.UUID
+    id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
     items: List[ItemResponse] = []
@@ -119,8 +120,8 @@ class MediaBase(BaseModel):
 
 class MediaCreate(MediaBase):
     """Media file creation model."""
-    user_id: uuid.UUID
-    invoice_id: Optional[uuid.UUID] = None
+    user_id: int
+    invoice_id: Optional[int] = None
 
 
 class MediaUpdate(BaseModel):
@@ -129,14 +130,14 @@ class MediaUpdate(BaseModel):
     file_path: Optional[str] = None
     mime_type: Optional[str] = None
     file_size: Optional[int] = None
-    invoice_id: Optional[uuid.UUID] = None
+    invoice_id: Optional[int] = None
 
 
 class MediaResponse(MediaBase):
     """Media file response model."""
-    id: uuid.UUID
-    user_id: uuid.UUID
-    invoice_id: Optional[uuid.UUID] = None
+    id: int
+    user_id: int
+    invoice_id: Optional[int] = None
     created_at: datetime
 
 
@@ -160,15 +161,15 @@ class MessageBase(BaseModel):
 
 class MessageCreate(MessageBase):
     """Message creation model."""
-    user_id: uuid.UUID
-    conversation_id: uuid.UUID
+    user_id: int
+    conversation_id: int
 
 
 class MessageResponse(MessageBase):
     """Message response model."""
-    id: uuid.UUID
-    user_id: uuid.UUID
-    conversation_id: uuid.UUID
+    id: int
+    user_id: int
+    conversation_id: int
     created_at: datetime
 
 
@@ -182,7 +183,7 @@ class ConversationBase(BaseModel):
 
 class ConversationCreate(ConversationBase):
     """Conversation creation model."""
-    user_id: uuid.UUID
+    user_id: int
 
 
 class ConversationUpdate(BaseModel):
@@ -192,8 +193,8 @@ class ConversationUpdate(BaseModel):
 
 class ConversationResponse(ConversationBase):
     """Conversation response model."""
-    id: uuid.UUID
-    user_id: uuid.UUID
+    id: int
+    user_id: int
     created_at: datetime
     updated_at: datetime
     messages: List[MessageResponse] = []
@@ -208,7 +209,7 @@ class WhatsAppMessageBase(BaseModel):
     class Config:
         from_attributes = True
         use_enum_values = True
-        
+
     @validator('status', pre=True)
     def validate_status(cls, v):
         """Validate and convert status to uppercase if needed."""
@@ -219,7 +220,7 @@ class WhatsAppMessageBase(BaseModel):
 
 class WhatsAppMessageCreate(WhatsAppMessageBase):
     """WhatsApp message creation model."""
-    message_id: uuid.UUID
+    message_id: int
 
 
 class WhatsAppMessageUpdate(BaseModel):
@@ -231,8 +232,8 @@ class WhatsAppMessageUpdate(BaseModel):
 
 class WhatsAppMessageResponse(WhatsAppMessageBase):
     """WhatsApp message response model."""
-    id: uuid.UUID
-    message_id: uuid.UUID
+    id: int
+    message_id: int
     created_at: datetime
     updated_at: datetime
 
@@ -249,11 +250,11 @@ class UsageBase(BaseModel):
 
 class UsageCreate(UsageBase):
     """Usage creation model."""
-    user_id: uuid.UUID
+    user_id: int
 
 
 class UsageResponse(UsageBase):
     """Usage response model."""
-    id: uuid.UUID
-    user_id: uuid.UUID
-    created_at: datetime 
+    id: int
+    user_id: int
+    created_at: datetime

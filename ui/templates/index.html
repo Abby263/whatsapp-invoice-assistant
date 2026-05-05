@@ -78,6 +78,9 @@
                         <button class="full-width-btn" id="createUserBtn" title="Create New User">
                             <i class="fas fa-user-plus"></i> Create New User
                         </button>
+                        <button class="full-width-btn" id="companyProfileBtn" title="Edit Company Profile">
+                            <i class="fas fa-building"></i> Company Profile
+                        </button>
                         <div class="form-hint">Or select an existing user below</div>
                         <div class="agent-panel-item">
                             <span class="agent-panel-label">User ID:</span>
@@ -195,7 +198,7 @@
                     </div>
                 </div>
                 <div class="panel-section" id="s3StorageSection" style="display: none;">
-                    <h4>S3 Storage</h4>
+                    <h4>File Storage</h4>
                     <div class="db-status-container">
                         <div class="agent-panel-item">
                             <span class="agent-panel-label">File Key:</span>
@@ -209,7 +212,7 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Memory Configuration Section -->
                 <div class="panel-section">
                     <h4>Memory Settings</h4>
@@ -283,4 +286,4 @@
     <!-- Scripts -->
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
-</html> 
+</html>

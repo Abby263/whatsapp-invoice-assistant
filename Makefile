@@ -1,4 +1,4 @@
-.PHONY: start stop restart db-clean install dev test lint format db-migrate db-revision db-downgrade db-history test-db db-seed db-status ui-run ui-install ui-test test-sql studio install-studio studio-direct graph-viz update-embeddings memory-cleanup memory-cleanup-dry docker-build docker-run docker-stop poetry-update helm-lint helm-template helm-install helm-upgrade helm-uninstall
+.PHONY: start stop restart db-clean install dev test lint format db-migrate db-revision db-downgrade db-history test-db db-seed db-status ui-run ui-install ui-test test-sql update-embeddings memory-cleanup memory-cleanup-dry docker-build docker-run docker-stop poetry-update helm-lint helm-template helm-install helm-upgrade helm-uninstall
 
 # Application management
 start:
@@ -27,7 +27,7 @@ db-clean:
 
 db-status:
 	@echo "Checking database status..."
-	@PYTHONPATH=. poetry run python db_status.py
+	@PYTHONPATH=. poetry run python -c "import asyncio; from database.connection import test_database_connection; print(asyncio.run(test_database_connection()))"
 
 db-migrate:
 	@echo "Running database migrations..."
@@ -87,14 +87,8 @@ ui-install:
 	poetry run pip install flask
 
 ui-run:
-	@echo "Starting UI application with MongoDB..."
-	@if lsof -i:5001 > /dev/null; then \
-		echo "Port 5001 is in use, using port 5002 instead"; \
-		PYTHONPATH=. USE_MONGODB=true MONGODB_URI="mongodb://localhost:27017/whatsapp_invoice_assistant" poetry run python -c "import sys; sys.path.insert(0, '.'); from ui.app import app; app.run(debug=False, host='0.0.0.0', port=5002, threaded=True)"; \
-	else \
-		echo "Using default port 5001"; \
-		PYTHONPATH=. USE_MONGODB=true MONGODB_URI="mongodb://localhost:27017/whatsapp_invoice_assistant" poetry run python -c "import sys; sys.path.insert(0, '.'); from ui.app import app; app.run(debug=False, host='0.0.0.0', port=5001, threaded=True)"; \
-	fi
+	@echo "Starting UI application..."
+	PYTHONPATH=. USE_MONGODB=false poetry run python ui/app.py --port 5001
 
 ui-test:
 	@echo "Running the interactive test from the command line..."
@@ -103,26 +97,6 @@ ui-test:
 test-sql:
 	@echo "Testing SQL query generation..."
 	@PYTHONPATH=. poetry run python tests/test_sql_generation.py
-
-# Run LangGraph Studio
-studio:
-	@echo "Starting LangGraph Studio..."
-	poetry run python run_studio.py
-
-# Run LangGraph Studio with direct installation
-studio-direct:
-	@echo "Starting LangGraph Studio with direct dependency installation..."
-	poetry run python run_studio_direct.py
-
-# Generate local graph visualization (works with Python 3.10)
-graph-viz:
-	@echo "Generating local graph visualization..."
-	poetry run python graph_visualize.py
-
-# Install studio dependencies
-install-studio:
-	@echo "Installing LangGraph Studio dependencies..."
-	poetry run pip install "langgraph-cli" --upgrade
 
 # Update embeddings for vector search
 update-embeddings:
@@ -179,4 +153,4 @@ helm-uninstall:
 	helm uninstall whatsapp-invoice-assistant
 
 # Default target
-all: install lint test 
+all: install lint test
