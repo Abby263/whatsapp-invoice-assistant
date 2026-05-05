@@ -14,7 +14,7 @@ The tech stack is carefully selected to meet the requirements of scalability, ef
 | **Agent Definition**     | Pydantic                     | Strongly typed models for agent inputs/outputs and data validation.         |
 | **Asynchronous Tasks**   | Celery                       | Offloads image processing and heavy tasks to maintain responsiveness.       |
 | **Message Broker**       | Redis                        | Message broker for Celery and caching for performance.                      |
-| **File Storage**         | Amazon S3                    | Scalable storage for invoice images and media files.                        |
+| **File Storage**         | Supabase Storage             | Scalable object storage for receipt and invoice media files.                |
 | **Containerization**     | Docker                       | Ensures consistency across development, testing, and production.            |
 | **Orchestration**        | Kubernetes                   | Manages container scaling, load balancing, and fault tolerance.             |
 | **Logging**              | Python `logging` + ELK/CloudWatch | Structured logging for debugging and production monitoring.                 |
@@ -104,7 +104,7 @@ Memory is a critical component for maintaining context across interactions:
 #### 3. **Coding Standards**
 The system enforces high-quality, maintainable code through structured design and tooling:
 - **Enforcement**: Configuration files like `.flake8`, `.pylintrc`, and `.pre-commit-config.yaml` ensure consistent formatting, linting, and type checking. Templates (`general_response_template.jinja`, `default_invoice_template.jinja`) standardize outputs.
-- **Modularity**: Code is organized into directories like `agents/`, `workflows/`, and `utils/`, with each component having a single responsibility (e.g., `text_intent_classifier.py` for intent detection, `s3_handler.py` for file storage).
+- **Modularity**: Code is organized into directories like `agents/`, `workflows/`, and `utils/`, with each component having a single responsibility (e.g., `text_intent_classifier.py` for intent detection, `supabase_storage_handler.py` for file storage).
 - **Documentation**: A `README.md` and inline comments maintain clarity and accessibility for developers.
 
 #### 4. **Flakes (Unreliable Tests or Inputs)**
@@ -135,7 +135,7 @@ project_root/
 │   ├── invoice_query_workflow.py  # Converts text to SQL, updates PostgreSQL
 │   ├── invoice_creator_workflow.py  # Extracts data, maps to schema, generates PDF
 │   ├── general_response_workflow.py  # Handles Greeting and General intents
-│   ├── file_processing_workflow.py  # Validates files, uploads to S3 if needed
+│   ├── file_processing_workflow.py  # Validates files, uploads to Supabase Storage if configured
 │
 ├── memory/                    # Memory management and context storage
 │   ├── __init__.py
@@ -149,9 +149,9 @@ project_root/
 │   ├── crud.py                # CRUD operations for database access
 │   ├── migrations/            # Alembic migration files for schema changes
 │
-├── storage/                   # File storage and S3 integration
+├── storage/                   # File storage integration
 │   ├── __init__.py
-│   ├── s3_handler.py          # Uploads raw files to S3
+│   ├── supabase_storage_handler.py  # Uploads raw files to Supabase Storage
 │
 ├── services/                  # External service integrations
 │   ├── __init__.py
@@ -204,7 +204,7 @@ project_root/
 │   ├── test_agents.py         # Tests for agent functionality
 │   ├── test_workflows.py      # Tests for workflow logic
 │   ├── test_memory.py         # Tests for memory integration
-│   ├── test_file_handling.py  # Tests for file validation and S3 uploads
+│   ├── test_file_handling.py  # Tests for file validation and storage metadata
 │   ├── test_api.py            # API endpoint tests
 │   ├── test_services.py       # Service integration tests
 │   ├── test_tasks.py          # Celery task tests
@@ -240,7 +240,7 @@ This structure aligns with the workflow diagrams and addresses your requirements
 - **Workflows**: Encapsulates logic for each intent-based flow, matching the flowchart branches (e.g., `invoice_query_workflow.py` for SQL conversion, `invoice_creator_workflow.py` for PDF generation).
 - **Memory**: `langgraph_memory.py` and `context_manager.py` ensure stateful interactions, supporting the LLM’s memory integration.
 - **Database**: Supports PostgreSQL interactions with models, schemas, and CRUD operations, critical for "InvoiceQuery" workflows.
-- **Storage**: `s3_handler.py` manages file uploads, aligning with the "Upload raw file to S3" path.
+- **Storage**: `supabase_storage_handler.py` manages file uploads, aligning with the "Upload raw file to storage" path.
 - **Services and Tasks**: Integrates Twilio, OpenAI, and Celery for WhatsApp, LLM, and asynchronous processing (e.g., `image_processing.py`).
 - **Utils and Constants**: Provides reusable tools and configurations (e.g., prompts, fallbacks) to enforce coding standards and handle flakes.
 - **Templates**: Standardizes responses and invoices, ensuring consistency.

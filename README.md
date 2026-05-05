@@ -16,8 +16,8 @@ An AI-powered WhatsApp bot for processing and managing invoice data. The applica
 - **Vector Embeddings**: Semantic understanding of invoice data using pgvector
 - **LangGraph Workflows**: Orchestrated AI agent workflows for different user intents
 - **Hybrid Search**: Combines vector similarity and keyword matching for optimal results
-- **Database Integration**: Structured storage with PostgreSQL and conversation memory with MongoDB
-- **Cloud Storage**: AWS S3 integration for file storage
+- **Database Integration**: Structured storage with Supabase and conversation memory with MongoDB
+- **Cloud Storage**: Supabase Storage integration for receipt files
 - **Containerization**: Docker and Kubernetes ready deployment
 
 ## 🛠️ System Architecture
@@ -36,7 +36,7 @@ The WhatsApp Invoice Assistant is built using a modular, agent-based architectur
 └───────────────┘     └───────────────┘     └───────────────┘
                                                    │
 ┌───────────────┐     ┌───────────────┐     ┌─────▼─────────┐
-│  PostgreSQL   │◀────│  Database     │◀────│   Response    │
+│   Supabase    │◀────│  Database     │◀────│   Response    │
 │  + pgvector   │     │   Services    │     │   Formatters  │
 └───────────────┘     └───────────────┘     └───────────────┘
 ```
@@ -48,7 +48,7 @@ The WhatsApp Invoice Assistant is built using a modular, agent-based architectur
 The system has been validated with the following results:
 
 ### Database Validation
-- **PostgreSQL Version**: 14.17 (Homebrew)
+- **PostgreSQL Version**: 14.17 (Supabase)
 - **pgvector Extension**: Installed and working (version 0.8.0)
 - **Database Tables**: 9 tables properly configured with relationships
 - **Vector Embeddings**:
@@ -84,10 +84,10 @@ Detailed documentation is available in the `docs/` directory:
 ### Prerequisites
 
 - Python 3.9+
-- PostgreSQL with pgvector extension
+- Supabase account (required)
 - MongoDB (optional, for conversation memory)
 - OpenAI API key
-- AWS S3 bucket (optional, for file storage)
+- Supabase Storage bucket for receipt files
 - Twilio account with WhatsApp integration
 
 ### Installation
@@ -123,19 +123,21 @@ Detailed documentation is available in the `docs/` directory:
 
 The WhatsApp Invoice Assistant uses two database systems for different purposes:
 
-#### PostgreSQL
+#### Supabase PostgreSQL
 - **Purpose**: Primary data storage for invoices, items, users, and vector embeddings
-- **Setup**: Uses Alembic migrations to create and update schema
-- **Setup Command**: `make db-migrate`
-- **Requirements**: 
-  - PostgreSQL 12+ with pgvector extension
-  - Connection string in `.env` file as `DATABASE_URL`
+- **Setup**: configure `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` in `.env`
+- **Requirements**:
+  - Supabase account and project
+  - Connection details in `.env` file (DATABASE_URL or component variables)
+  - pgvector extension enabled
 
 The migration process:
 - Creates all necessary tables (users, invoices, items, conversations, etc.)
 - Attempts to install the pgvector extension for vector similarity search
 - Sets up proper relationships between tables
 - Applies any pending schema changes
+
+> **Note**: Supabase is the only supported database for this application. Local PostgreSQL is not supported.
 
 #### MongoDB
 - **Purpose**: Conversation memory storage and context management
@@ -184,10 +186,46 @@ The WhatsApp Invoice Assistant is highly configurable through environment variab
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `OPENAI_API_KEY` | OpenAI API key for LLM access | Required |
-| `DATABASE_URL` | PostgreSQL connection string | Required |
+| `DATABASE_URL` | Supabase connection string | Required |
+| `SUPABASE_DATABASE_URL` | Alternative Supabase connection string | - |
+| `SUPABASE_URL` | Supabase project URL | - |
+| `SUPABASE_KEY` | Supabase project API key | - |
+| `SUPABASE_PROJECT_ID` | Supabase project ID | - |
+| `SUPABASE_DB_PASSWORD` | Supabase database password | - |
 | `MONGODB_URI` | MongoDB connection string | mongodb://localhost:27017/whatsapp_invoice_assistant |
 | `USE_MONGODB` | Enable MongoDB for memory | true |
-| `S3_BUCKET_NAME` | AWS S3 bucket for file storage | - |
+| `SUPABASE_STORAGE_BUCKET` | Supabase Storage bucket for receipt files | receipts |
+
+### Database Connection Options
+
+The application supports multiple ways to connect to Supabase:
+
+1. **Direct URL**: Set `DATABASE_URL` with a PostgreSQL connection string
+   ```
+   DATABASE_URL=postgresql://postgres:your_password@db.your-project-id.supabase.co:5432/postgres
+   ```
+
+2. **Connection Pooling**: Set `SUPABASE_DATABASE_URL` using either session or transaction pooling
+   ```
+   # Session pooling (port 5432)
+   SUPABASE_DATABASE_URL=postgresql://postgres.your-project-id:your_password@aws-0-us-east-1.pooler.supabase.com:5432/postgres
+
+   # Transaction pooling (port 6543)
+   SUPABASE_DATABASE_URL=postgresql://postgres.your-project-id:your_password@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+   ```
+
+3. **Component-based Connection**: Set `SUPABASE_PROJECT_ID` and `SUPABASE_DB_PASSWORD` to have the application build the connection string
+   ```
+   SUPABASE_PROJECT_ID=your-project-id
+   SUPABASE_DB_PASSWORD=your-db-password
+   ```
+
+Connection priority is as follows:
+1. `DATABASE_URL` (if provided)
+2. `SUPABASE_DATABASE_URL` (if provided)
+3. Component-based connection (using project ID and password)
+
+> **Note**: All connection strings should use the `postgresql://` protocol prefix for compatibility.
 
 ### Vector Search Configuration
 
@@ -276,6 +314,11 @@ The Makefile provides numerous helpful commands:
 - `make db-seed` - Seed test data
 - `make db-clean` - Reset the database
 - `make update-embeddings` - Update vector embeddings for items
+
+### Supabase Management
+- `make supabase-test` - Test Supabase connection
+- `make supabase-configure` - Configure Supabase connection
+- `make supabase-switch-connection` - Switch connection mode
 
 ### Development Tools
 - `make install` - Install dependencies

@@ -17,6 +17,16 @@ from constants.fallback_messages import get_intent_fallback, GENERAL_FALLBACKS
 logger = logging.getLogger(__name__)
 
 
+def _normalize_agent_result(result: Any) -> Dict[str, Any]:
+    if isinstance(result, dict):
+        return result
+    if hasattr(result, "dict"):
+        return result.dict()
+    if hasattr(result, "model_dump"):
+        return result.model_dump()
+    return {}
+
+
 async def process_general_response(
     text_content: str,
     intent: str = StateIntentType.GENERAL.value,
@@ -25,56 +35,71 @@ async def process_general_response(
 ) -> Dict[str, Any]:
     """
     Process general response for non-specific intents.
-    
+
     Args:
         text_content: The user's message
         intent: The detected intent (default: general)
         user_id: The user's ID
         conversation_history: Previous conversation history
-        
+
     Returns:
         Dict containing the formatted response and confidence
     """
     try:
         logger.info(f"Processing general response for: {text_content[:30]}...")
-        
+
         # Create LLMFactory instance
         llm_factory = LLMFactory()
-        
+
         # Create response formatter agent with the LLMFactory
         agent = ResponseFormatterAgent(llm_factory)
-        
+
         # Format the response
         formatter_input = {
             "content": text_content,
             "intent": intent,
             "user_id": user_id,
-            "type": "default"
+            "type": intent
         }
-        
+
         # If we have conversation history, add it
         if conversation_history:
             formatter_input["conversation_history"] = conversation_history
-            
-        result = await agent.process(formatter_input)
-        
+
+        result = _normalize_agent_result(await agent.process(formatter_input))
+
         if not result or "content" not in result:
             logger.warning(f"Failed to format {intent} response")
-            
+
             # Use fallback responses from constants file
             response = get_intent_fallback(intent)
-            
+
             return {
                 "content": response,
-                "confidence": 0.6
+                "confidence": 0.6,
+                "metadata": {
+                    "intent": intent,
+                    "user_id": user_id,
+                    "source": "fallback"
+                }
             }
-        
+
+        result.setdefault("metadata", {})
+        result["metadata"].update({
+            "intent": intent,
+            "user_id": user_id
+        })
         return result
     except Exception as e:
         logger.exception(f"Error generating {intent} response: {str(e)}")
         return {
             "content": GENERAL_FALLBACKS["error"],
-            "confidence": 0.5
+            "confidence": 0.5,
+            "metadata": {
+                "intent": intent,
+                "user_id": user_id,
+                "source": "error_fallback"
+            }
         }
 
 
@@ -85,12 +110,12 @@ async def process_greeting(
 ) -> Dict[str, Any]:
     """
     Process greeting response.
-    
+
     Args:
         text_content: The user's message
         user_id: The user's ID
         conversation_history: Previous conversation history
-        
+
     Returns:
         Dict containing the formatted greeting response and confidence
     """
@@ -110,17 +135,17 @@ async def generate_general_response(
 ) -> Dict[str, Any]:
     """
     Generate a general response based on intent.
-    
+
     Args:
         text_content: The user's message
         intent: The detected intent
         user_id: The user's ID
         conversation_history: Previous conversation history
-        
+
     Returns:
         Dict containing the formatted response and confidence
     """
     if intent == StateIntentType.GREETING.value:
         return await process_greeting(text_content, user_id, conversation_history)
     else:
-        return await process_general_response(text_content, intent, user_id, conversation_history) 
+        return await process_general_response(text_content, intent, user_id, conversation_history)

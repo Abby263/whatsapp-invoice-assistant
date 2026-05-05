@@ -15,7 +15,12 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # Database settings
-    DATABASE_URL: str
+    DATABASE_URL: Optional[str] = None
+    SUPABASE_DATABASE_URL: Optional[str] = None
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_STORAGE_BUCKET: str = "receipts"
 
     # OpenAI settings
     OPENAI_API_KEY: str
@@ -24,12 +29,6 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: str
     TWILIO_AUTH_TOKEN: str
     TWILIO_PHONE_NUMBER: str
-
-    # AWS settings
-    AWS_ACCESS_KEY_ID: str
-    AWS_SECRET_ACCESS_KEY: str
-    S3_BUCKET_NAME: str
-    S3_REGION: str
 
     # Redis settings (with default value)
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -106,41 +105,41 @@ config = ConfigLoader()
 def get_db_config() -> Dict[str, Any]:
     """
     Get database configuration.
-    
-    This function parses the database connection string and merges it with 
+
+    This function parses the database connection string and merges it with
     additional database configuration from the config file.
-    
+
     Returns:
         Dict[str, Any]: Dictionary with database configuration
     """
     db_config = {}
-    
+
     # Get configuration from config file
     if config.config and "database" in config.config:
         db_config.update(config.config["database"])
-    
+
     # Parse DATABASE_URL if it exists in settings
     if hasattr(config, "settings") and config.settings and hasattr(config.settings, "DATABASE_URL"):
         database_url = config.settings.DATABASE_URL
-        
+
         # Extract connection details from URL
         # Example URL format: postgresql://username:password@host:port/database
         if database_url:
             # Handle URL if it's already parsed in the config
             if "url" in db_config:
                 database_url = db_config["url"]
-                
+
             parts = database_url.split("://")
             if len(parts) > 1:
                 # Get the protocol
                 db_config["protocol"] = parts[0]
-                
+
                 # Parse the rest
                 rest = parts[1]
-                
+
                 # Extract credentials and host
                 auth_host, rest = rest.split("@") if "@" in rest else (None, rest)
-                
+
                 if auth_host:
                     # Extract username and password
                     if ":" in auth_host:
@@ -150,12 +149,12 @@ def get_db_config() -> Dict[str, Any]:
                     else:
                         db_config["username"] = auth_host
                         db_config["password"] = ""
-                
+
                 # Extract host, port and database name
                 if "/" in rest:
                     host_part, database = rest.split("/", 1)
                     db_config["database"] = database
-                    
+
                     if ":" in host_part:
                         host, port = host_part.split(":")
                         db_config["host"] = host
@@ -170,7 +169,7 @@ def get_db_config() -> Dict[str, Any]:
                             "sqlite": "",
                         }
                         db_config["port"] = default_ports.get(db_config["protocol"], "")
-    
+
     # Set default values if not present
     if "host" not in db_config:
         # Check if we're running in Docker
@@ -186,5 +185,5 @@ def get_db_config() -> Dict[str, Any]:
         db_config["password"] = ""
     if "database" not in db_config:
         db_config["database"] = "whatsapp_invoice_assistant"
-    
+
     return db_config

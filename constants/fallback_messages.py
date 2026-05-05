@@ -18,8 +18,8 @@ GENERAL_FALLBACKS = {
 
 # Intent-based fallback messages
 INTENT_FALLBACKS = {
-    IntentType.GREETING: "👋 Hello! I'm your Invoice Assistant! Ready to help you manage your business finances. What would you like to know about your expenses today?",
-    
+    IntentType.GREETING: "👋 Hello! I'm your WhatsApp Invoice Assistant! Ready to help you manage your business finances. What would you like to know about your expenses today?",
+
     IntentType.GENERAL: """📊 I'm your AI-powered Invoice Assistant!
 
 I can help you:
@@ -34,7 +34,7 @@ Try asking me:
 • "Find all invoices over $100"
 
 Or simply upload a receipt/invoice to get started!""",
-    
+
     IntentType.HELP: "I can help you with various invoice-related tasks. You can upload an invoice for processing, create a new invoice, or ask questions about your existing invoices.",
     IntentType.GOODBYE: "Thank you for using WhatsApp Invoice Assistant. Have a great day!",
     IntentType.UNKNOWN: "I'm not sure what you're asking for. You can try rephrasing your question or ask for help to see what I can do.",
@@ -125,11 +125,11 @@ API_FALLBACKS = {
 def get_intent_fallback(intent_type: str) -> str:
     """
     Get the appropriate fallback message for a given intent type.
-    
+
     Args:
         intent_type: The intent type string to get a fallback message for
-        
+
     Returns:
         The fallback message for the given intent type, or a default message
     """
-    return INTENT_FALLBACKS.get(intent_type, GENERAL_FALLBACKS["default"]) 
+    return INTENT_FALLBACKS.get(intent_type, GENERAL_FALLBACKS["default"])

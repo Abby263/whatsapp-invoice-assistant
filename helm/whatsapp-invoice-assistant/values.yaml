@@ -89,7 +89,7 @@ app:
     pool_size: 10
     max_overflow: 20
     echo: false
-  
+
   # OpenAI Configuration
   openai:
     model: "gpt-4o-mini"
@@ -99,12 +99,12 @@ app:
     presence_penalty: 0
     frequency_penalty: 0
     timeout: 60
-  
+
   # Redis Configuration
   redis:
     url: "redis://redis:6379/0"
     timeout: 10
-  
+
   # Logging Configuration
   logging:
     level: "INFO"
@@ -112,14 +112,14 @@ app:
     file: "logs/app.log"
     max_bytes: 10485760  # 10MB
     backup_count: 5
-  
+
   # Vector Database Configuration
   vector_db:
     enabled: true
     extension_name: "vector"
     index_type: "hnsw"  # Options: hnsw, ivfflat
     ops_type: "vector_cosine_ops"
-  
+
   # LLM Configuration
   llm:
     provider: "openai"
@@ -128,11 +128,11 @@ app:
     max_tokens: 1000
     embedding_model: "text-embedding-3-small"
     embedding_dimension: 1536
-  
+
   # Secret environment variables configuration
   secretEnv:
     enabled: true
-  
+
   # Secret environment variables
   secrets:
     # Leave these blank, they will be set in a secret
@@ -140,10 +140,10 @@ app:
     TWILIO_ACCOUNT_SID: ""
     TWILIO_AUTH_TOKEN: ""
     TWILIO_PHONE_NUMBER: ""
-    AWS_ACCESS_KEY_ID: ""
-    AWS_SECRET_ACCESS_KEY: ""
-    S3_BUCKET_NAME: ""
-    S3_REGION: "us-east-1"
+    SUPABASE_URL: ""
+    SUPABASE_KEY: ""
+    SUPABASE_SERVICE_ROLE_KEY: ""
+    SUPABASE_STORAGE_BUCKET: "receipts"
 
   # Persistent storage for uploads and logs
   persistence:
@@ -190,4 +190,4 @@ postgresql:
       enabled: true
       size: 8Gi
   service:
-    port: 5432 
+    port: 5432

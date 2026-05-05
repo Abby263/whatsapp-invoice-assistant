@@ -1,0 +1,35 @@
+# INVOICE
+
+[Company Name]
+[Company Address]
+[Company Phone]
+[Company Email]
+[Company Website]
+
+## INVOICE TO:
+[Client Name]
+[Client Company]
+[Client Address]
+[Client Phone]
+[Client Email]
+
+## INVOICE DETAILS:
+Invoice #: [Invoice Number]
+Date: [Invoice Date]
+Due Date: [Due Date]
+Terms: [Payment Terms]
+
+## ITEMS:
+| DESCRIPTION | QTY | RATE | AMOUNT |
+|-------------|-----|------|--------|
+| (Items will be populated automatically) | | | |
+
+## TOTALS:
+Subtotal: [Subtotal]
+Discount: [Discount Amount]
+Tax: [Tax Amount]
+TOTAL: [Total Amount]
+
+Balance Due: [Total Amount]
+
+Thank you for your business!

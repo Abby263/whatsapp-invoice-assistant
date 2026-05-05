@@ -16,75 +16,75 @@ logger = logging.getLogger(__name__)
 class ResponseFormatterAgent(BaseAgent):
     """
     Agent for formatting responses for WhatsApp messages.
-    
+
     This agent takes processed results from other agents and formats them
     in a way that is suitable for delivery as WhatsApp messages, ensuring
     proper formatting, emojis, and length constraints.
     """
-    
+
     def __init__(self, llm_factory: LLMFactory):
         """
         Initialize the ResponseFormatterAgent.
-        
+
         Args:
             llm_factory: LLMFactory instance for LLM operations
         """
         super().__init__(llm_factory)
-    
+
     def _serialize_for_json(self, obj):
         """
         Convert an object to a JSON-serializable format, handling special cases like datetime.
-        
+
         Args:
             obj: The object to serialize
-            
+
         Returns:
             JSON-serializable version of the object
         """
         if isinstance(obj, datetime):
             return obj.isoformat()
-        
+
         # Handle Decimal objects (commonly returned by database queries)
         if hasattr(obj, '__class__') and obj.__class__.__name__ == 'Decimal':
             return float(obj)
-        
+
         if isinstance(obj, dict):
             return {k: self._serialize_for_json(v) for k, v in obj.items()}
-        
+
         if isinstance(obj, list):
             return [self._serialize_for_json(item) for item in obj]
-        
+
         if hasattr(obj, '__dict__'):
             return self._serialize_for_json(obj.__dict__)
-        
+
         return obj
-    
-    async def process(self, 
-                     agent_input: Union[AgentInput, Dict[str, Any]], 
+
+    async def process(self,
+                     agent_input: Union[AgentInput, Dict[str, Any]],
                      context: Optional[AgentContext] = None) -> AgentOutput:
         """
         Format the input content for WhatsApp delivery.
-        
+
         Args:
             agent_input: Content to format and message type, either as AgentInput or Dict
             context: Optional context information
-            
+
         Returns:
             AgentOutput with formatted WhatsApp message
         """
         logger.info("=== RESPONSE FORMATTER STARTED ===")
-        
+
         try:
             # Convert dict to AgentInput if needed
             if isinstance(agent_input, dict):
                 # Extract content from the dict or use the whole dict if no content key
                 content = agent_input.get("content", agent_input)
                 metadata = agent_input.get("metadata", {})
-                
+
                 format_type = agent_input.get('type', 'default')
                 if "type" in agent_input:
                     logger.debug(f"Extracted format type '{format_type}' from input")
-                
+
                 logger.debug(f"Using dictionary input with keys: {list(agent_input.keys())}")
                 if "metadata" not in agent_input:
                     # Add remaining dict items as metadata if not already there
@@ -98,14 +98,14 @@ class ResponseFormatterAgent(BaseAgent):
                 metadata = agent_input.metadata
                 format_type = metadata.get('format_type', 'default')
                 logger.debug(f"Using AgentInput object with metadata keys: {list(metadata.keys())}")
-            
+
             logger.info(f"Formatting response of type '{format_type}'")
-            
+
             # If content is a dict or list, convert to JSON string
             if isinstance(content, (dict, list)):
                 import json
                 logger.debug(f"Converting complex content to JSON string (type: {type(content).__name__})")
-                
+
                 # If format_type is query_result, keep the content as is for the LLM formatter
                 if format_type == 'query_result':
                     # Serialize content for JSON compatibility
@@ -117,13 +117,13 @@ class ResponseFormatterAgent(BaseAgent):
                     try:
                         # First make sure all objects are serializable
                         serialized_content = self._serialize_for_json(content)
-                        
+
                         class DateTimeEncoder(json.JSONEncoder):
                             def default(self, obj):
                                 if isinstance(obj, datetime):
                                     return obj.isoformat()
                                 return super().default(obj)
-                        
+
                         content_for_llm = json.dumps(serialized_content, ensure_ascii=False, indent=2, cls=DateTimeEncoder)
                         logger.debug(f"JSON content length: {len(content_for_llm)}")
                     except TypeError as e:
@@ -133,7 +133,21 @@ class ResponseFormatterAgent(BaseAgent):
             else:
                 content_for_llm = str(content)
                 logger.debug(f"String content length: {len(content_for_llm)}")
-            
+
+            local_response = self._format_locally(content, content_for_llm, format_type)
+            if local_response:
+                return AgentOutput(
+                    content=local_response,
+                    confidence=0.9,
+                    status="success",
+                    metadata={
+                        "original_content": content,
+                        "format_type": format_type,
+                        "emoji_count": self._count_emojis(local_response),
+                        "formatting_markers": self._detect_formatting_markers(local_response),
+                    },
+                )
+
             # Call LLM to format the response
             logger.info(f"Calling LLM for response formatting")
             try:
@@ -141,23 +155,23 @@ class ResponseFormatterAgent(BaseAgent):
                     content=content_for_llm,
                     format_type=format_type
                 )
-                
+
                 logger.debug(f"Raw formatted response length: {len(formatted_response)}")
-                
+
                 # Apply additional WhatsApp-specific formatting if needed
                 logger.info("Applying WhatsApp-specific formatting")
                 whatsapp_formatted = self._apply_whatsapp_formatting(formatted_response)
-                
+
                 logger.info(f"Final formatted response length: {len(whatsapp_formatted)}")
                 logger.debug(f"Formatted response preview: {whatsapp_formatted[:100]}...")
-                
+
                 # Check for emojis and formatting markers
                 emoji_count = self._count_emojis(whatsapp_formatted)
                 formatting_markers = self._detect_formatting_markers(whatsapp_formatted)
                 logger.debug(f"Response contains {emoji_count} emojis and formatting markers: {formatting_markers}")
-                
+
                 logger.info("=== RESPONSE FORMATTER COMPLETED ===")
-                
+
                 # Prepare the output
                 return AgentOutput(
                     content=whatsapp_formatted,
@@ -172,29 +186,29 @@ class ResponseFormatterAgent(BaseAgent):
                 )
             except Exception as e:
                 logger.error(f"Error formatting response: {str(e)}", exc_info=True)
-                
+
                 # Create a readable fallback for query results
                 if format_type == 'query_result':
                     if isinstance(content, dict):
                         query = content.get('query', 'your query')
                         count = content.get('count', 0)
                         error = content.get('error', None)
-                        
+
                         if error:
                             fallback_response = QUERY_FALLBACKS["query_error"]
                         elif count == 0:
                             fallback_response = QUERY_FALLBACKS["no_results"]
                         else:
                             fallback_response = QUERY_FALLBACKS["ambiguous_query"]
-                        
+
                         logger.debug(f"Created fallback response for query_result: {fallback_response}")
                     else:
                         fallback_response = GENERAL_FALLBACKS["no_response"]
                 else:
                     fallback_response = GENERAL_FALLBACKS["error"]
-                
+
                 logger.info("=== RESPONSE FORMATTER COMPLETED WITH FALLBACK ===")
-                
+
                 return AgentOutput(
                     content=fallback_response,
                     confidence=0.5,
@@ -205,23 +219,23 @@ class ResponseFormatterAgent(BaseAgent):
                         "format_type": format_type
                     }
                 )
-            
+
         except Exception as e:
             logger.error(f"Error formatting response: {str(e)}", exc_info=True)
             logger.info("=== RESPONSE FORMATTER FAILED ===")
-            
+
             # In case of error, return the original content with minimal formatting
             if isinstance(agent_input, dict):
                 original_content = agent_input.get("content", agent_input)
             else:
                 original_content = agent_input.content
-            
+
             if isinstance(original_content, (dict, list)):
                 import json
                 fallback_response = GENERAL_FALLBACKS["error"]
             else:
                 fallback_response = GENERAL_FALLBACKS["error"]
-            
+
             return AgentOutput(
                 content=fallback_response,
                 confidence=0.5,
@@ -232,52 +246,52 @@ class ResponseFormatterAgent(BaseAgent):
                     "format_type": format_type if 'format_type' in locals() else 'default'
                 }
             )
-    
+
     def _apply_whatsapp_formatting(self, text: str) -> str:
         """
         Apply WhatsApp-specific formatting adjustments.
-        
+
         Args:
             text: The text to format
-            
+
         Returns:
             WhatsApp-formatted text
         """
         logger.debug("Applying WhatsApp-specific formatting adjustments")
-        
+
         # This could include:
         # - Enforcing character limits
         # - Breaking up long messages
         # - Ensuring proper emoji rendering
         # - Formatting lists properly
-        
+
         # Example: Check if message is too long for WhatsApp
         MAX_WHATSAPP_LENGTH = 4096  # WhatsApp message length limit
-        
+
         if len(text) > MAX_WHATSAPP_LENGTH:
             logger.warning(f"Message exceeds WhatsApp length limit: {len(text)} characters")
             # Truncate with indicator
             text = text[:MAX_WHATSAPP_LENGTH - 100] + "\n\n[Message truncated due to length limits]"
             logger.debug("Message truncated to fit WhatsApp length limit")
-        
+
         # Example: Ensure proper spacing after emojis
         # This regex would be more sophisticated in a real implementation
         import re
         original_length = len(text)
         text = re.sub(r'([\U00010000-\U0010ffff])', r'\1 ', text)
-        
+
         if len(text) != original_length:
             logger.debug(f"Adjusted emoji spacing (original: {original_length}, new: {len(text)})")
-        
+
         return text
-    
+
     def _count_emojis(self, text: str) -> int:
         """
         Count the number of emojis in the text.
-        
+
         Args:
             text: The text to analyze
-            
+
         Returns:
             Number of emojis found
         """
@@ -294,19 +308,19 @@ class ResponseFormatterAgent(BaseAgent):
             "\U0001FA00-\U0001FA6F"  # extended symbols
             "\U0001FA70-\U0001FAFF"  # extended symbols
             "\U00002702-\U000027B0"  # misc symbols
-            "\U000024C2-\U0001F251" 
+            "\U000024C2-\U0001F251"
             "]+"
         )
         emojis = emoji_pattern.findall(text)
         return len(emojis)
-    
+
     def _detect_formatting_markers(self, text: str) -> List[str]:
         """
         Detect WhatsApp formatting markers in the text.
-        
+
         Args:
             text: The text to analyze
-            
+
         Returns:
             List of formatting markers found
         """
@@ -323,4 +337,50 @@ class ResponseFormatterAgent(BaseAgent):
             markers.append("inline_code")
         if "•" in text or "·" in text or "⁃" in text or "◦" in text:
             markers.append("bullet_list")
-        return markers 
+        return markers
+
+    def _format_locally(self, content: Any, content_for_llm: str, format_type: str) -> Optional[str]:
+        if format_type == "greeting":
+            return "Welcome to the WhatsApp Invoice Assistant. I can help with receipts, invoices, and spending questions."
+
+        if format_type == "general":
+            return GENERAL_FALLBACKS["default"]
+
+        parsed = content
+        if isinstance(content_for_llm, str):
+            try:
+                parsed = json.loads(content_for_llm)
+            except Exception:
+                parsed = content
+
+        if format_type == "invoice_query" and isinstance(parsed, list):
+            if not parsed:
+                return "I could not find matching invoices."
+            lines = []
+            for row in parsed:
+                vendor = row.get("vendor", "Unknown vendor")
+                amount = row.get("total_amount", row.get("amount", ""))
+                date = row.get("date", row.get("invoice_date", ""))
+                lines.append(f"{vendor}: ${amount} {date}".strip())
+            return "Invoice results:\n" + "\n".join(lines)
+
+        if format_type == "invoice_creation" and isinstance(parsed, dict):
+            vendor = parsed.get("vendor", "Unknown vendor")
+            amount = parsed.get("total_amount", parsed.get("amount", 0))
+            return f"Invoice created for {vendor} totaling ${amount}."
+
+        if format_type == "summary" and isinstance(parsed, dict):
+            invoices = parsed.get("invoices", [])
+            total = parsed.get("total_spent")
+            vendor_lines = [
+                f"{invoice.get('vendor', 'Unknown')}: ${invoice.get('amount', '')}"
+                for invoice in invoices
+            ]
+            summary = "Summary"
+            if total is not None:
+                summary += f" total: ${total}"
+            if vendor_lines:
+                summary += "\n" + "\n".join(vendor_lines)
+            return summary
+
+        return None

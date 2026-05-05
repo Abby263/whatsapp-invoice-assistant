@@ -47,10 +47,9 @@ Or create a `.env` file with:
 
 ```
 OPENAI_API_KEY=your-api-key-here
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-S3_BUCKET_NAME=your-s3-bucket-name
-S3_REGION=us-east-1
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+SUPABASE_STORAGE_BUCKET=receipts
 ```
 
 2. Build and start the containers:
@@ -78,22 +77,20 @@ The following environment variables can be configured:
 
 - `OPENAI_API_KEY`: Your OpenAI API key for LLM functionality
 - `DATABASE_URL`: The PostgreSQL connection string (default: `postgresql://postgres:postgres@db/whatsapp_invoice_assistant`)
-- `AWS_ACCESS_KEY_ID`: Your AWS access key for S3 storage
-- `AWS_SECRET_ACCESS_KEY`: Your AWS secret key for S3 storage
-- `S3_BUCKET_NAME`: The S3 bucket name for file storage
-- `S3_REGION`: The AWS region for S3 (default: `us-east-1`)
+- `SUPABASE_URL`: Your Supabase project URL
+- `SUPABASE_SERVICE_ROLE_KEY`: Server-side Supabase key used for Storage uploads
+- `SUPABASE_STORAGE_BUCKET`: Storage bucket for receipt/invoice files (default: `receipts`)
 
 You can set these environment variables before running or add them to a `.env` file:
 
 ```
 OPENAI_API_KEY=your-api-key-here
-AWS_ACCESS_KEY_ID=your-aws-access-key
-AWS_SECRET_ACCESS_KEY=your-aws-secret-key
-S3_BUCKET_NAME=your-s3-bucket-name
-S3_REGION=us-east-1
+SUPABASE_URL=your-supabase-url
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+SUPABASE_STORAGE_BUCKET=receipts
 ```
 
-If you don't provide AWS credentials, the application will use a fallback mode that simulates S3 storage with local placeholders.
+If Supabase Storage is not configured, uploads fail explicitly so the application does not persist fake file URLs.
 
 ## Data Persistence
 
@@ -140,4 +137,4 @@ If the LLM functionality isn't working:
 2. Check the UI service logs for any API errors:
    ```bash
    docker-compose logs ui
-   ``` 
+   ```

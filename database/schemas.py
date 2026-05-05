@@ -9,7 +9,7 @@ import uuid
 import logging
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer, 
+    Boolean, Column, DateTime, ForeignKey, Integer,
     Numeric, String, Text, Enum, Float, UUID, JSON, UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
@@ -28,17 +28,17 @@ except ImportError:
     class Vector(UserDefinedType):
         def __init__(self, dim=None):
             self.dim = dim
-        
+
         def get_col_spec(self, **kw):
             return "TEXT"
-            
+
         def bind_processor(self, dialect):
             def process(value):
                 if value is None:
                     return None
                 return str(value)
             return process
-            
+
         def result_processor(self, dialect, coltype):
             def process(value):
                 if value is None:
@@ -76,7 +76,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = Column(Boolean, default=True)
-    
+    preferences = Column(Text, nullable=True)  # Store JSON data as string
+
     # Relationships
     invoices = relationship("Invoice", back_populates="user")
     conversations = relationship("Conversation", back_populates="user")
@@ -97,13 +98,13 @@ class Invoice(Base):
     total_amount = Column(Float, nullable=True)
     tax_amount = Column(Float, nullable=True)
     currency = Column(String(3), nullable=True)
-    file_url = Column(String(255), nullable=True)
+    file_url = Column(Text, nullable=True)
     file_content_type = Column(String(50), nullable=True)
     raw_data = Column(JSON, nullable=True)
     notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     user = relationship("User", back_populates="invoices")
     items = relationship("Item", back_populates="invoice")
@@ -114,27 +115,27 @@ class Invoice(Base):
 class InvoiceEmbedding(Base):
     """Model for storing vector embeddings of invoices for semantic search."""
     __tablename__ = "invoice_embeddings"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # For security filtering
-    
+
     # Text that was used to generate the embedding
     content_text = Column(Text, nullable=True)
-    
+
     # The embedding vector
     embedding = Column(Vector(1536), nullable=True)
-    
+
     # Metadata about the embedding
     model_name = Column(String(100), nullable=True)
     embedding_type = Column(String(50), default="invoice_full")  # Type of embedding (full invoice, item, etc.)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     invoice = relationship("Invoice", back_populates="embeddings")
     user = relationship("User", back_populates="invoice_embeddings")
-    
+
     # Add indices and constraints
     __table_args__ = (
         UniqueConstraint('invoice_id', 'embedding_type', name='uix_invoice_embedding_type'),
@@ -156,7 +157,7 @@ class Item(Base):
     description_embedding = Column(Vector(1536), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     invoice = relationship("Invoice", back_populates="items")
 
@@ -170,7 +171,7 @@ class Conversation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_active = Column(Boolean, default=True)
-    
+
     # Relationships
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation")
@@ -186,7 +187,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     role = Column(Enum(MessageRole), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
     whatsapp_messages = relationship("WhatsAppMessage", back_populates="message")
@@ -203,7 +204,7 @@ class WhatsAppMessage(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     message = relationship("Message", back_populates="whatsapp_messages")
 
@@ -217,20 +218,28 @@ class Media(Base):
     invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
     filename = Column(String(255), nullable=False)
     original_filename = Column(String(255), nullable=True)
-    file_path = Column(String(255), nullable=False)
-    file_url = Column(String(255), nullable=False)
+    file_path = Column(String(512), nullable=False)
+    file_url = Column(Text, nullable=False, default="")
     file_size = Column(Integer, nullable=True)
-    content_type = Column(String(50), nullable=False)
+    content_type = Column(String(50), nullable=False, default="application/octet-stream")
     file_type = Column(Enum('image', 'pdf', 'excel', 'word', 'text', 'other', name='filetype'), nullable=True)
     status = Column(Enum('uploaded', 'processed', 'error', name='filestatus'), nullable=True)
     ocr_text = Column(Text, nullable=True)
     processing_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationships
     user = relationship("User", back_populates="media_files")
     invoice = relationship("Invoice", back_populates="media_files")
+
+    @property
+    def mime_type(self):
+        return self.content_type
+
+    @mime_type.setter
+    def mime_type(self, value):
+        self.content_type = value
 
 
 class Usage(Base):
@@ -243,6 +252,6 @@ class Usage(Base):
     tokens_out = Column(Integer, default=0)
     cost = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # Relationships
-    user = relationship("User", back_populates="usage") 
+    user = relationship("User", back_populates="usage")

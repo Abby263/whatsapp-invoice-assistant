@@ -16,7 +16,6 @@ pydantic-settings = "^2.0.3"
 celery = "^5.3.4"
 redis = "^5.0.1"
 twilio = "^8.9.1"
-boto3 = "^1.28.62"
 openai = "^1.1.1"
 python-multipart = "^0.0.6"
 jinja2 = "^3.1.2"
@@ -36,6 +35,11 @@ langchain-core = "^0.1.53"
 pymongo = "^4.6.1"
 motor = "^3.3.2"
 langsmith = "^0.1.0"
+pandas = "^2.2.3"
+matplotlib = "<3.8.0"
+pypdf2 = "^3.0.1"
+openpyxl = "^3.1.5"
+python-docx = "^1.1.2"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.2"
@@ -68,7 +72,7 @@ no_implicit_optional = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = ["twilio.*", "celery.*", "boto3.*", "langchain.*", "langgraph.*"]
+module = ["twilio.*", "celery.*", "langchain.*", "langgraph.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -79,4 +83,4 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 log_cli = true
-log_cli_level = "DEBUG" 
+log_cli_level = "DEBUG"
