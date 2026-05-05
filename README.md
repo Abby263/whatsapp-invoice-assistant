@@ -232,4 +232,8 @@ This repository is production-oriented but still requires real environment confi
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This repository is licensed under the [PolyForm Noncommercial License 1.0.0](LICENSE). It is available for noncommercial review, learning, evaluation, research, and contribution under the license terms.
+
+Commercial use in any form is not permitted without a separate written commercial license from the copyright holder. This includes paid products, hosted services, client work, revenue-generating demos, resale, sublicensing, and use to support commercial operations.
+
+AGPL was not used because AGPL permits commercial use; it only adds copyleft and network source-sharing obligations.
