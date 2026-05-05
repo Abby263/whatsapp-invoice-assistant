@@ -22,6 +22,13 @@ const s3Url = document.getElementById('s3Url');
 const s3UrlContainer = document.getElementById('s3UrlContainer');
 const dbUserItemsCount = document.getElementById('db-user-items-count');
 const dbUserInvoicesCount = document.getElementById('db-user-invoices-count');
+const dashboardReceiptCount = document.getElementById('dashboardReceiptCount');
+const dashboardItemCount = document.getElementById('dashboardItemCount');
+const dashboardIntent = document.getElementById('dashboardIntent');
+const dashboardDbStatus = document.getElementById('dashboardDbStatus');
+const dashboardStorageStatus = document.getElementById('dashboardStorageStatus');
+const dashboardVectorStatus = document.getElementById('dashboardVectorStatus');
+const storageProvider = document.getElementById('storageProvider');
 
 // Global variables
 let isProcessing = false;
@@ -29,13 +36,32 @@ let conversationId = generateUUID();
 let userId = "0";
 let whatsappNumber = "+1234567890"; // Default WhatsApp number
 
+function setElementText(element, value) {
+    if (element) {
+        element.textContent = value;
+    }
+}
+
+function setDashboardStatus(element, value, active = true) {
+    if (!element) {
+        return;
+    }
+
+    element.textContent = value;
+    element.classList.toggle('status-active', active);
+    element.classList.toggle('status-inactive', !active);
+}
+
 function updateFileStorageInfo(storage) {
     if (!storage || Object.keys(storage).length === 0) {
         return;
     }
 
     s3StorageSection.style.display = 'block';
+    const provider = storage.provider || 'Supabase';
+    setElementText(storageProvider, provider);
     s3FileKey.textContent = storage.file_key || storage.path || 'None';
+    setDashboardStatus(dashboardStorageStatus, provider, true);
 
     if (storage.url) {
         s3Url.href = storage.url;
@@ -77,6 +103,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize vector embeddings controls
     setupVectorEmbeddingsControls();
+    setupCommandCenter();
 
     // Initialize UI when document is ready
     initUI();
@@ -85,14 +112,38 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
-// Document ready event listener
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize UI
-    initUI();
+function setupCommandCenter() {
+    document.querySelectorAll('[data-prompt]').forEach(button => {
+        if (button.dataset.bound === 'true') {
+            return;
+        }
 
-    // Set up event listeners
-    setupEventListeners();
-});
+        button.dataset.bound = 'true';
+        button.addEventListener('click', () => {
+            if (isProcessing) {
+                return;
+            }
+
+            const prompt = button.dataset.prompt;
+            messageInput.value = prompt;
+            messageInput.focus();
+            sendMessage();
+        });
+    });
+
+    document.querySelectorAll('[data-upload-trigger]').forEach(button => {
+        if (button.dataset.bound === 'true') {
+            return;
+        }
+
+        button.dataset.bound = 'true';
+        button.addEventListener('click', () => {
+            if (!isProcessing) {
+                fileInput.click();
+            }
+        });
+    });
+}
 
 // Function to load users into the dropdown
 function loadUsers() {
@@ -136,6 +187,9 @@ function loadUsers() {
                             userIdDisplay.textContent = userId;
                         }
                     }
+
+                    updateSelectedUser();
+                    updateDatabaseCounts();
                 }
             } else {
                 console.error('Failed to load users:', data.message);
@@ -198,6 +252,7 @@ function initializeForUser(whatsappNumber) {
 
                 // Reset intent
                 currentIntent.textContent = 'None';
+                setElementText(dashboardIntent, 'None');
 
                 // Reset token counts
                 document.getElementById('inputTokens').textContent = '0';
@@ -302,6 +357,7 @@ function processMessage(message) {
 
     // Update agent panel
     currentIntent.textContent = 'Analyzing...';
+    setElementText(dashboardIntent, 'Analyzing');
     addWorkflowStep('InputRouter', 'active');
 
     // Send message to server
@@ -406,6 +462,7 @@ function uploadFile() {
 
     // Update agent panel
     currentIntent.textContent = 'Processing File...';
+    setElementText(dashboardIntent, 'Processing file');
     addWorkflowStep('FileProcessor', 'active');
 
     // Create FormData
@@ -608,6 +665,7 @@ function startNewConversation() {
 
     // Reset intent
     currentIntent.textContent = 'None';
+    setElementText(dashboardIntent, 'None');
 
                 // Reset token counts
                 document.getElementById('inputTokens').textContent = '0';
@@ -635,6 +693,7 @@ function updateAgentPanel(data) {
     // Update intent from message data
     if (data.metadata && data.metadata.intent) {
         currentIntent.textContent = data.metadata.intent;
+        setElementText(dashboardIntent, data.metadata.intent);
     }
 
     // Update token usage if available
@@ -685,6 +744,7 @@ function updateAgentPanel(data) {
                 // Update intent if available in flow data
                 if (flowData.intent && flowData.intent !== 'unknown') {
                     currentIntent.textContent = flowData.intent;
+                    setElementText(dashboardIntent, flowData.intent);
                 }
 
                 // Clear existing workflow steps
@@ -1038,14 +1098,16 @@ function updateDatabaseCounts() {
                         pgConnection.textContent = "Connected";
                         pgConnection.classList.add('status-active');
                         pgConnection.classList.remove('status-inactive');
+                        setDashboardStatus(dashboardDbStatus, 'Connected', true);
                     } else {
                         pgConnection.textContent = "Not Connected";
                         pgConnection.classList.add('status-inactive');
                         pgConnection.classList.remove('status-active');
+                        setDashboardStatus(dashboardDbStatus, 'Offline', false);
 
                         // Show error message if available
                         if (status.message && status.message.includes('Database connection error')) {
-                            console.error('PostgreSQL connection error:', status.message);
+                            console.warn('PostgreSQL connection unavailable:', status.message);
                             // Add error tooltip or notification if needed
                             pgConnection.title = status.message;
                         }
@@ -1070,6 +1132,8 @@ function updateDatabaseCounts() {
                     dbUserInvoicesCount.textContent = data.counts.invoices.user_specific || 0;
                 }
 
+                setElementText(dashboardReceiptCount, data.counts.invoices.user_specific || 0);
+
                 if (dbItemsCount) {
                     dbItemsCount.textContent = data.counts.items || 0;
                 }
@@ -1077,6 +1141,8 @@ function updateDatabaseCounts() {
                 if (dbUserItemsCount) {
                     dbUserItemsCount.textContent = data.counts.user_items || 0;
                 }
+
+                setElementText(dashboardItemCount, data.counts.user_items || 0);
 
                 // Fallback for old UI elements
                 if (invoiceCount) {
@@ -1119,6 +1185,11 @@ function updateDatabaseCounts() {
                         vectorStatus.textContent = data.vector_info.installed ? 'Installed' : 'Not Installed';
                         vectorStatus.classList.toggle('status-active', data.vector_info.installed);
                         vectorStatus.classList.toggle('status-inactive', !data.vector_info.installed);
+                        setDashboardStatus(
+                            dashboardVectorStatus,
+                            data.vector_info.installed ? 'Installed' : 'Missing',
+                            data.vector_info.installed
+                        );
 
                         // Set embedding counts if available
                         if (data.vector_info.installed && 'with_embeddings' in data.vector_info) {
@@ -1130,13 +1201,14 @@ function updateDatabaseCounts() {
                 }
             } else if (data.status === 'error') {
                 // Handle error case
-                console.error("Database status error:", data.message);
+                console.warn("Database status unavailable:", data.message);
 
                 // Add error message to UI if needed
                 if (pgConnection && data.message) {
                     pgConnection.textContent = "Error";
                     pgConnection.classList.add('status-inactive');
                     pgConnection.title = data.message;
+                    setDashboardStatus(dashboardDbStatus, 'Error', false);
                 }
             }
         })
@@ -1150,6 +1222,7 @@ function updateDatabaseCounts() {
                 pgConnection.classList.remove('status-active');
                 pgConnection.title = "Failed to fetch database status";
             }
+            setDashboardStatus(dashboardDbStatus, 'Error', false);
         });
 }
 
@@ -1383,6 +1456,40 @@ function initUI() {
     updateSelectedUser();
     clearChatHistory();
     resetFileUpload();
+}
+
+function updateSelectedUser() {
+    if (!whatsappNumberSelect || whatsappNumberSelect.options.length === 0) {
+        setElementText(userIdDisplay, userId);
+        return;
+    }
+
+    const selectedOption = whatsappNumberSelect.options[whatsappNumberSelect.selectedIndex];
+    if (!selectedOption) {
+        setElementText(userIdDisplay, userId);
+        return;
+    }
+
+    whatsappNumber = selectedOption.value || whatsappNumber;
+    if (selectedOption.dataset.userId) {
+        userId = selectedOption.dataset.userId;
+    }
+
+    setElementText(userIdDisplay, userId);
+}
+
+function clearChatHistory() {
+    if (!chatMessages || chatMessages.dataset.initialized === 'true') {
+        return;
+    }
+
+    chatMessages.dataset.initialized = 'true';
+}
+
+function resetFileUpload() {
+    if (fileInput) {
+        fileInput.value = '';
+    }
 }
 
 // Setup all event listeners

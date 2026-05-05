@@ -20,25 +20,17 @@ import argparse
 # Add parent directory to path so we can import project modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Parse command line arguments
-parser = argparse.ArgumentParser(description='Update vector embeddings for items')
-parser.add_argument('--force', action='store_true', help='Force update all embeddings even if they exist')
-args = parser.parse_args()
-
-# Print directly to ensure visibility
-print("Script started! Importing modules...")
-print(f"Force update mode: {args.force}")
-
-from database.connection import db_session
-from utils.vector_utils import get_embedding_generator
-from database.schemas import Item, InvoiceEmbedding, Invoice
-from sqlalchemy import text
-
-print("Modules imported successfully")
+def parse_args():
+    parser = argparse.ArgumentParser(description='Update vector embeddings for items')
+    parser.add_argument('--force', action='store_true', help='Force update all embeddings even if they exist')
+    return parser.parse_args()
 
 async def update_item_embeddings(session, force_update=False):
     """Update embeddings for all items in the database that don't have embeddings."""
     try:
+        from database.schemas import Item
+        from utils.vector_utils import get_embedding_generator
+
         # Count total items
         total_items = session.query(Item).count()
         print(f"Total items in database: {total_items}")
@@ -116,6 +108,10 @@ async def update_invoice_embeddings(session, force_update=False):
         Dict with status and counts
     """
     try:
+        from database.schemas import InvoiceEmbedding, Invoice
+        from sqlalchemy import text
+        from utils.vector_utils import get_embedding_generator, EMBEDDING_MODEL
+
         # Count total invoices
         total_invoices = session.query(Invoice).count()
         print(f"Total invoices in database: {total_invoices}")
@@ -213,11 +209,16 @@ async def update_invoice_embeddings(session, force_update=False):
 
 async def main():
     """Main function to update item embeddings."""
+    args = parse_args()
+    print("Script started! Importing modules...")
+    print(f"Force update mode: {args.force}")
     print("Starting embedding update process")
     
     start_time = time.time()
     
     try:
+        from database.connection import db_session
+
         # Use the db_session context manager from database.connection
         print("Creating database session...")
         with db_session() as session:
@@ -298,4 +299,4 @@ async def run_embeddings_update(force_update=False):
 if __name__ == "__main__":
     print("Running main function...")
     asyncio.run(main())
-    print("Script finished!") 
+    print("Script finished!")

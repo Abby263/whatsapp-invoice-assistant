@@ -166,8 +166,7 @@ def run_async(async_func, *args, **kwargs):
 
         # Standard case: Create a new managed event loop
         async def wrapper():
-            async with managed_event_loop() as loop:
-                return await async_func(*args, **kwargs)
+            return await async_func(*args, **kwargs)
 
         try:
             return asyncio.run(wrapper())
@@ -369,6 +368,11 @@ async def create_new_user(whatsapp_number: str, name: str = None, email: str = N
 def home():
     """Render the home page"""
     return render_template('index.html')
+
+@app.route('/favicon.ico')
+def favicon():
+    """Avoid noisy browser favicon requests in the local test UI."""
+    return '', 204
 
 @app.route('/api/message', methods=['POST'])
 def api_message():
@@ -1123,7 +1127,7 @@ def initialize():
         USER_ID = run_async(lambda: get_user_id_from_whatsapp(WHATSAPP_NUMBER))
 
         # Use our improved async handling
-        run_async(lambda: asyncio.to_thread(ensure_test_user_exists))
+        run_async(ensure_test_user_exists)
 
         return jsonify({
             'status': 'success',
@@ -1134,7 +1138,14 @@ def initialize():
 
     except Exception as e:
         logger.exception(f"Error initializing test environment: {str(e)}")
-        return jsonify({'status': 'error', 'message': f"Error: {str(e)}"}), 500
+        return jsonify({
+            'status': 'success',
+            'message': 'Initialized in degraded mode because the database is unavailable',
+            'user_id': USER_ID or 0,
+            'whatsapp_number': WHATSAPP_NUMBER,
+            'degraded': True,
+            'error': str(e)
+        })
 
 @app.route('/api/file-storage-info')
 @app.route('/api/s3-info')
@@ -1209,9 +1220,11 @@ def get_users():
     except Exception as e:
         logger.exception(f"Error fetching users: {str(e)}")
         return jsonify({
-            'status': 'error',
-            'message': f"Error fetching users: {str(e)}"
-        }), 500
+            'status': 'success',
+            'users': [],
+            'degraded': True,
+            'message': f"Using the default user because users could not be loaded: {str(e)}"
+        })
 
 @app.route('/api/users/create', methods=['POST'])
 def create_user():
@@ -1544,7 +1557,10 @@ if __name__ == '__main__':
         logger.warning(f"Unknown arguments ignored: {unknown}")
 
     # Ensure test user exists before starting the app using our improved async handling
-    run_async(lambda: asyncio.to_thread(ensure_test_user_exists))
+    try:
+        run_async(ensure_test_user_exists)
+    except Exception as e:
+        logger.warning(f"Could not ensure test user exists before startup: {str(e)}")
 
     logger.info(f"Starting Flask app on {args.host}:{args.port}")
     logger.info(f"Open your browser and navigate to http://localhost:{args.port}")
