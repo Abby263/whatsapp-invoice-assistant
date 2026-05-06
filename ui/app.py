@@ -32,6 +32,14 @@ sys.path.insert(0, project_dir)
 
 # Import logging utilities
 from utils.logging import get_logs_directory
+from utils.clerk_auth import (
+    ClerkAuthError,
+    ClerkAuthContext,
+    get_auth_config,
+    is_auth_required,
+    is_clerk_enabled,
+    verify_clerk_request,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -224,6 +232,83 @@ agent_traces = []
 # Global variable to store conversation history
 CONVERSATION_HISTORY = []
 
+
+def get_request_auth(optional: bool = True) -> Optional[ClerkAuthContext]:
+    """Return verified Clerk auth context for the current request."""
+
+    if not is_clerk_enabled():
+        return None
+
+    try:
+        return verify_clerk_request(request)
+    except ClerkAuthError as exc:
+        if optional and not is_auth_required():
+            logger.info("Continuing without Clerk auth: %s", str(exc))
+            return None
+        raise
+
+
+def auth_error_response(exc: Exception):
+    """Return a consistent auth error response."""
+
+    return jsonify({
+        "status": "error",
+        "message": str(exc),
+        "auth_required": True,
+    }), 401
+
+
+def get_linked_user_for_auth(auth_context: Optional[ClerkAuthContext]):
+    """Return the database user linked to a Clerk account, if any."""
+
+    if not auth_context:
+        return None
+
+    from database.connection import get_db_session
+    from database.user_utils import get_user_by_clerk_id
+
+    db = get_db_session()
+    try:
+        return get_user_by_clerk_id(db, auth_context.clerk_user_id)
+    finally:
+        db.close()
+
+
+def serialize_linked_user(user) -> Optional[Dict[str, Any]]:
+    """Serialize a linked SQLAlchemy user for JSON responses."""
+
+    if not user:
+        return None
+    return {
+        "id": str(user.id),
+        "name": user.name,
+        "email": user.email,
+        "whatsapp_number": user.whatsapp_number,
+        "clerk_user_id": user.clerk_user_id,
+    }
+
+
+def require_linked_user():
+    """Return (auth_context, user, response) for endpoints requiring linkage."""
+
+    try:
+        auth_context = get_request_auth(optional=not is_auth_required())
+    except ClerkAuthError as exc:
+        return None, None, auth_error_response(exc)
+
+    linked_user = get_linked_user_for_auth(auth_context)
+    if auth_context and is_auth_required() and not linked_user:
+        return auth_context, None, (
+            jsonify({
+                "status": "error",
+                "message": "Link your WhatsApp number before using this workspace.",
+                "needs_link": True,
+            }),
+            403,
+        )
+
+    return auth_context, linked_user, None
+
 # Function to get user ID from WhatsApp number
 async def get_user_id_from_whatsapp(whatsapp_number: str) -> int:
     """Get user ID from WhatsApp number or create if doesn't exist."""
@@ -374,17 +459,134 @@ def favicon():
     """Avoid noisy browser favicon requests in the local test UI."""
     return '', 204
 
+
+@app.route('/api/auth/config')
+def auth_config():
+    """Return public Clerk auth configuration for the browser."""
+
+    return jsonify({
+        "status": "success",
+        "auth": get_auth_config()
+    })
+
+
+@app.route('/api/auth/me')
+def auth_me():
+    """Return current Clerk identity and linked app user."""
+
+    try:
+        auth_context = get_request_auth(optional=not is_auth_required())
+    except ClerkAuthError as exc:
+        return auth_error_response(exc)
+
+    linked_user = get_linked_user_for_auth(auth_context)
+    return jsonify({
+        "status": "success",
+        "auth": get_auth_config(),
+        "identity": {
+            "clerk_user_id": auth_context.clerk_user_id if auth_context else None,
+            "session_id": auth_context.session_id if auth_context else None,
+            "linked_user": serialize_linked_user(linked_user),
+            "needs_link": bool(auth_context and not linked_user),
+        }
+    })
+
+
+@app.route('/api/auth/sync', methods=['POST'])
+def auth_sync():
+    """Synchronize the signed-in Clerk identity with the app session."""
+
+    try:
+        auth_context = get_request_auth(optional=False)
+    except ClerkAuthError as exc:
+        return auth_error_response(exc)
+
+    linked_user = get_linked_user_for_auth(auth_context)
+    return jsonify({
+        "status": "success",
+        "message": "Clerk session synchronized",
+        "identity": {
+            "clerk_user_id": auth_context.clerk_user_id,
+            "session_id": auth_context.session_id,
+            "linked_user": serialize_linked_user(linked_user),
+            "needs_link": linked_user is None,
+        },
+        "linked_user": serialize_linked_user(linked_user),
+    })
+
+
+@app.route('/api/auth/link-whatsapp', methods=['POST'])
+def auth_link_whatsapp():
+    """Link the signed-in Clerk user to an app user by WhatsApp number."""
+
+    try:
+        auth_context = get_request_auth(optional=False)
+    except ClerkAuthError as exc:
+        return auth_error_response(exc)
+
+    data = request.json or {}
+    whatsapp_number = data.get('whatsapp_number')
+    if not whatsapp_number:
+        return jsonify({
+            "status": "error",
+            "message": "WhatsApp number is required"
+        }), 400
+
+    from database.connection import get_db_session
+    from database.user_utils import link_clerk_user_to_whatsapp
+
+    db = get_db_session()
+    try:
+        user_info = link_clerk_user_to_whatsapp(
+            db,
+            clerk_user_id=auth_context.clerk_user_id,
+            whatsapp_number=whatsapp_number,
+            name=data.get('name'),
+            email=data.get('email'),
+        )
+    except ValueError as exc:
+        return jsonify({
+            "status": "error",
+            "message": str(exc)
+        }), 409
+    except Exception as exc:
+        logger.exception("Error linking Clerk user to WhatsApp number: %s", str(exc))
+        return jsonify({
+            "status": "error",
+            "message": f"Error linking account: {str(exc)}"
+        }), 500
+    finally:
+        db.close()
+
+    return jsonify({
+        "status": "success",
+        "message": "Clerk account linked to WhatsApp number",
+        "user": user_info,
+        "identity": {
+            "clerk_user_id": auth_context.clerk_user_id,
+            "linked_user": user_info,
+            "needs_link": False,
+        }
+    })
+
 @app.route('/api/message', methods=['POST'])
 def api_message():
     try:
         global CONVERSATION_ID, CONVERSATION_HISTORY, USER_ID, WHATSAPP_NUMBER
+
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+        if linked_user:
+            USER_ID = linked_user.id
+            WHATSAPP_NUMBER = linked_user.whatsapp_number
 
         data = request.json
         message = data.get('message')
         is_file = data.get('is_file', False)
 
         # Get WhatsApp number from request or use global
-        whatsapp_number = data.get('whatsapp_number', WHATSAPP_NUMBER)
+        whatsapp_number = WHATSAPP_NUMBER if linked_user else data.get('whatsapp_number', WHATSAPP_NUMBER)
 
         # Update global WhatsApp number if it changed
         if whatsapp_number != WHATSAPP_NUMBER:
@@ -452,13 +654,20 @@ def upload_file():
     try:
         global WHATSAPP_NUMBER, USER_ID
 
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+        if linked_user:
+            USER_ID = linked_user.id
+            WHATSAPP_NUMBER = linked_user.whatsapp_number
+
         if 'file' not in request.files:
             return jsonify({'status': 'error', 'message': 'No file part'}), 400
 
         file = request.files['file']
 
         # Handle WhatsApp number if provided
-        whatsapp_number = request.form.get('whatsapp_number', WHATSAPP_NUMBER)
+        whatsapp_number = WHATSAPP_NUMBER if linked_user else request.form.get('whatsapp_number', WHATSAPP_NUMBER)
 
         # Update global WhatsApp number if it changed
         if whatsapp_number != WHATSAPP_NUMBER:
@@ -692,8 +901,16 @@ def get_db_status():
     try:
         global USER_ID
 
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
         # Specific user ID for which to get invoice count
-        user_id = request.args.get('user_id', USER_ID) if USER_ID is not None else None
+        if linked_user:
+            user_id = linked_user.id
+            USER_ID = linked_user.id
+        else:
+            user_id = request.args.get('user_id', USER_ID) if USER_ID is not None else None
 
         # Define an async function to query the database
         async def query_db():
@@ -1115,25 +1332,38 @@ def initialize():
     try:
         global CONVERSATION_ID, CONVERSATION_HISTORY, WHATSAPP_NUMBER, USER_ID
 
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
         # Reset conversation ID for new session
         CONVERSATION_ID = str(uuid.uuid4())
         CONVERSATION_HISTORY = []
 
         # Get WhatsApp number from request or use default
-        whatsapp_number = request.args.get('whatsapp_number', DEFAULT_WHATSAPP_NUMBER)
+        whatsapp_number = (
+            linked_user.whatsapp_number
+            if linked_user
+            else request.args.get('whatsapp_number', DEFAULT_WHATSAPP_NUMBER)
+        )
         WHATSAPP_NUMBER = whatsapp_number
 
         # Get user ID for this WhatsApp number, creating if needed
-        USER_ID = run_async(lambda: get_user_id_from_whatsapp(WHATSAPP_NUMBER))
+        USER_ID = linked_user.id if linked_user else run_async(lambda: get_user_id_from_whatsapp(WHATSAPP_NUMBER))
 
         # Use our improved async handling
-        run_async(ensure_test_user_exists)
+        if not linked_user:
+            run_async(ensure_test_user_exists)
 
         return jsonify({
             'status': 'success',
             'message': 'Test environment initialized',
             'user_id': USER_ID,
-            'whatsapp_number': WHATSAPP_NUMBER
+            'whatsapp_number': WHATSAPP_NUMBER,
+            'auth': {
+                'clerk_user_id': auth_context.clerk_user_id if auth_context else None,
+                'needs_link': bool(auth_context and not linked_user)
+            }
         })
 
     except Exception as e:
@@ -1152,6 +1382,10 @@ def initialize():
 def get_file_storage_info():
     """Return storage information for the most recent uploaded invoice file."""
     try:
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
         from sqlalchemy import text
 
         from database.connection import get_db
@@ -1159,13 +1393,23 @@ def get_file_storage_info():
 
         db = next(get_db())
         try:
-            media_query = text("""
+            if linked_user:
+                media_query = text("""
+                SELECT file_url, file_path, content_type, file_size, processing_metadata
+                FROM media
+                WHERE user_id = :user_id
+                ORDER BY created_at DESC
+                LIMIT 1
+                """)
+                result = db.execute(media_query, {"user_id": linked_user.id}).first()
+            else:
+                media_query = text("""
                 SELECT file_url, file_path, content_type, file_size, processing_metadata
                 FROM media
                 ORDER BY created_at DESC
                 LIMIT 1
-            """)
-            result = db.execute(media_query).first()
+                """)
+                result = db.execute(media_query).first()
         finally:
             db.close()
 
@@ -1211,6 +1455,19 @@ def get_file_storage_info():
 def get_users():
     """Get all users from database for UI dropdown"""
     try:
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+        if linked_user:
+            return jsonify({
+                'status': 'success',
+                'users': [serialize_linked_user(linked_user)],
+                'auth': {
+                    'clerk_user_id': auth_context.clerk_user_id if auth_context else None,
+                    'needs_link': False
+                }
+            })
+
         users = run_async(lambda: get_all_users())
 
         return jsonify({
@@ -1230,6 +1487,11 @@ def get_users():
 def create_user():
     """Create a new user with the provided information"""
     try:
+        try:
+            auth_context = get_request_auth(optional=not is_auth_required())
+        except ClerkAuthError as exc:
+            return auth_error_response(exc)
+
         # Get request data
         data = request.json
 
@@ -1248,17 +1510,28 @@ def create_user():
             }), 400
 
         # Import the user utilities
-        from database.user_utils import create_user as db_create_user
-        from database.connection import db_session
+        from database.user_utils import create_user as db_create_user, link_clerk_user_to_whatsapp
+        from database.connection import get_db_session
 
-        # Create the user in the database
-        with db_session() as session:
-            user_info = db_create_user(
-                session=session,
-                whatsapp_number=whatsapp_number,
-                name=name,
-                email=email
-            )
+        session = get_db_session()
+        try:
+            if auth_context:
+                user_info = link_clerk_user_to_whatsapp(
+                    session=session,
+                    clerk_user_id=auth_context.clerk_user_id,
+                    whatsapp_number=whatsapp_number,
+                    name=name,
+                    email=email,
+                )
+            else:
+                user_info = db_create_user(
+                    session=session,
+                    whatsapp_number=whatsapp_number,
+                    name=name,
+                    email=email
+                )
+        finally:
+            session.close()
 
         # Return the created user information
         return jsonify({

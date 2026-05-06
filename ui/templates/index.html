@@ -80,6 +80,12 @@
                     <p id="topbarSubtitle">Welcome back — here is the state of your receipt workspace.</p>
                 </div>
                 <div class="topbar-actions">
+                    <div class="topbar-auth" id="authSection" data-auth-state="disabled">
+                        <span class="auth-status" id="authStatus">Auth optional</span>
+                        <button id="signInBtn" class="auth-action-btn" type="button">Sign in</button>
+                        <button id="linkWhatsappBtn" class="auth-action-btn is-secondary" type="button">Link WhatsApp</button>
+                        <div id="clerkUserButton" class="clerk-user-button"></div>
+                    </div>
                     <a class="topbar-github-link" href="https://github.com/Abby263/whatsapp-invoice-assistant" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository">
                         <i class="fab fa-github" aria-hidden="true"></i>
                         <span>GitHub</span>

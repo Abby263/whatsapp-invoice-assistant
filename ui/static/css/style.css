@@ -360,6 +360,72 @@ input, select, textarea {
     flex: 0 0 auto;
 }
 
+.topbar-auth {
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.topbar-auth[data-auth-state="disabled"],
+.topbar-auth[data-auth-state="signed-out"],
+.topbar-auth[data-auth-state="signed-in"],
+.topbar-auth[data-auth-state="needs-link"] {
+    display: inline-flex;
+}
+
+.auth-status {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--surface-alt);
+    border: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.auth-action-btn {
+    height: 38px;
+    border: 1px solid var(--brand);
+    border-radius: 999px;
+    background: var(--brand);
+    color: #ffffff;
+    padding: 0 14px;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.auth-action-btn.is-secondary {
+    background: var(--surface);
+    color: var(--brand);
+}
+
+.auth-action-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(13, 148, 136, 0.18);
+}
+
+.topbar-auth[data-auth-state="signed-out"] #linkWhatsappBtn,
+.topbar-auth[data-auth-state="signed-out"] #clerkUserButton,
+.topbar-auth[data-auth-state="disabled"] #signInBtn,
+.topbar-auth[data-auth-state="disabled"] #linkWhatsappBtn,
+.topbar-auth[data-auth-state="disabled"] #clerkUserButton,
+.topbar-auth[data-auth-state="signed-in"] #signInBtn,
+.topbar-auth[data-auth-state="signed-in"] #linkWhatsappBtn,
+.topbar-auth[data-auth-state="needs-link"] #signInBtn {
+    display: none;
+}
+
+.clerk-user-button {
+    display: flex;
+    align-items: center;
+}
+
 .topbar-github-link {
     display: inline-flex;
     align-items: center;
@@ -1823,6 +1889,16 @@ input, select, textarea {
 
     .topbar-user-select {
         max-width: 140px;
+    }
+
+    .auth-status,
+    .auth-action-btn span {
+        display: none;
+    }
+
+    .auth-action-btn {
+        padding: 0 10px;
+        font-size: 12px;
     }
 
     .topbar-github-link {

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, validator
 class UserBase(BaseModel):
     """Base user model with common attributes."""
     whatsapp_number: str = Field(..., min_length=10, max_length=20)
+    clerk_user_id: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
 
@@ -28,6 +29,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     """User update model with all fields optional."""
     whatsapp_number: Optional[str] = Field(None, min_length=10, max_length=20)
+    clerk_user_id: Optional[str] = None
     name: Optional[str] = None
     email: Optional[str] = None
     is_active: Optional[bool] = None
