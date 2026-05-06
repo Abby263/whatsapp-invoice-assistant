@@ -12,7 +12,7 @@ The Vercel deployment runs the operator UI in demo mode so reviewers can inspect
 
 ## UI Demo
 
-The repository includes a lightweight animated GIF so the product walkthrough renders directly in GitHub.
+The repository includes a lightweight animated GIF captured from the hosted Vercel UI so the product walkthrough renders directly in GitHub.
 
 ![Receipt Intelligence Workspace demo](docs/assets/invoice-command-center-demo.gif)
 
