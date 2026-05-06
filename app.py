@@ -131,6 +131,11 @@ def home():
     return render_template("index.html")
 
 
+@app.get("/favicon.ico")
+def favicon():
+    return app.send_static_file("images/site-icon.svg")
+
+
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "runtime": "vercel-ui-demo"})
