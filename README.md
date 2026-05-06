@@ -12,11 +12,9 @@ The Vercel deployment runs the operator UI in demo mode so reviewers can inspect
 
 ## UI Demo
 
-The repository includes a short UI demo video. If GitHub does not render the video inline, open the file directly.
+The repository includes a lightweight animated GIF so the product walkthrough renders directly in GitHub.
 
-<video controls width="100%" src="docs/assets/invoice-command-center-demo.webm"></video>
-
-[Open demo video](docs/assets/invoice-command-center-demo.webm)
+![Receipt Intelligence Workspace demo](docs/assets/invoice-command-center-demo.gif)
 
 ### Light Mode
 
