@@ -133,7 +133,7 @@ def home():
 
 @app.get("/favicon.ico")
 def favicon():
-    return app.send_static_file("images/site-icon.svg")
+    return app.send_static_file("site-icon.svg")
 
 
 @app.get("/health")
