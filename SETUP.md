@@ -275,7 +275,32 @@ http://localhost:5001
 
 The UI can render in degraded mode when Supabase is unavailable, but upload, extraction, storage, and search require working Supabase and OpenAI credentials.
 
-## 11. Docker Setup
+## 11. Vercel UI Deployment
+
+The repository includes a Vercel-compatible Flask entrypoint in `app.py`. This deployment is intentionally lightweight and serves the operator UI in demo mode. It is useful for README demos and product review, while the full WhatsApp processing backend should run with the production services listed above.
+
+Current public UI:
+
+```text
+https://whatsapp-invoice-assistant.vercel.app
+```
+
+Deploy from the repository root:
+
+```bash
+npx vercel deploy --prod --scope <vercel-team-or-user-scope>
+```
+
+Vercel uses:
+
+- `app.py` for the hosted UI/demo routes.
+- `requirements.txt` for minimal hosted UI dependencies.
+- `vercel.json` for the Flask project preset.
+- `.vercelignore` to exclude local databases, secrets, tests, generated files, and heavyweight backend modules from the UI bundle.
+
+For a fully functional hosted production system, configure the same Supabase, OpenAI, Twilio, MongoDB, and Redis variables in Vercel or deploy the FastAPI/LangGraph backend on a Python service that supports longer-running workers.
+
+## 12. Docker Setup
 
 Build and run:
 
@@ -292,7 +317,7 @@ docker-compose up --build
 
 The compose file includes local Postgres and MongoDB containers for development. Production deployments should use managed Supabase Postgres, Supabase Storage, and a managed MongoDB service if persistent memory is needed.
 
-## 12. Production Deployment Checklist
+## 13. Production Deployment Checklist
 
 - Use managed Supabase Postgres with automated backups.
 - Enable `vector` in Supabase.
@@ -306,7 +331,7 @@ The compose file includes local Postgres and MongoDB containers for development.
 - Run Alembic migrations in CI/CD before app rollout.
 - Use separate Supabase projects for development, staging, and production.
 
-## 13. Troubleshooting
+## 14. Troubleshooting
 
 ### `No Supabase connection details found`
 

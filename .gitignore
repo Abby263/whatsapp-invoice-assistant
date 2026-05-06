@@ -171,3 +171,4 @@ poetry.lock
 !TASKS.md
 !docker-run.sh
 !uploads/.gitkeep
+.vercel
