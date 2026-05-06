@@ -39,7 +39,6 @@ storage/
 template/
 /templates/
 tests/
-utils/
 workflows/
 
 docs/assets/

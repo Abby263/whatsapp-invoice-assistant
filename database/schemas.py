@@ -71,6 +71,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     whatsapp_number = Column(String(20), unique=True, nullable=False, index=True)
+    clerk_user_id = Column(String(128), unique=True, nullable=True, index=True)
     name = Column(String(100), nullable=True)
     email = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -39,6 +39,11 @@ const sidebar = document.querySelector('.app-sidebar');
 const sidebarToggle = document.getElementById('sidebarToggle');
 const topbarTitle = document.getElementById('topbarTitle');
 const topbarSubtitle = document.getElementById('topbarSubtitle');
+const authSection = document.getElementById('authSection');
+const authStatus = document.getElementById('authStatus');
+const signInBtn = document.getElementById('signInBtn');
+const linkWhatsappBtn = document.getElementById('linkWhatsappBtn');
+const clerkUserButton = document.getElementById('clerkUserButton');
 
 // View metadata for topbar copy
 const VIEW_META = {
@@ -69,6 +74,14 @@ let isProcessing = false;
 let conversationId = generateUUID();
 let userId = "0";
 let whatsappNumber = "+1234567890"; // Default WhatsApp number
+let authState = {
+    enabled: false,
+    required: false,
+    isSignedIn: false,
+    needsLink: false,
+    user: null
+};
+const nativeFetch = window.fetch.bind(window);
 
 function setElementText(element, value) {
     if (element) {
@@ -118,20 +131,325 @@ function updateFileStorageInfo(storage) {
     }
 }
 
+function setupAuthenticatedFetch() {
+    window.fetch = async (input, init = {}) => {
+        const requestUrl = typeof input === 'string' ? input : input.url || input.toString();
+        const url = new URL(requestUrl, window.location.origin);
+        const isAppApi = url.origin === window.location.origin && url.pathname.startsWith('/api/');
+
+        if (!isAppApi || !window.Clerk || !window.Clerk.session) {
+            return nativeFetch(input, init);
+        }
+
+        try {
+            const token = await window.Clerk.session.getToken();
+            if (!token) {
+                return nativeFetch(input, init);
+            }
+
+            const headers = new Headers(
+                init.headers || (input instanceof Request ? input.headers : undefined)
+            );
+            headers.set('Authorization', `Bearer ${token}`);
+            return nativeFetch(input, {
+                ...init,
+                headers
+            });
+        } catch (error) {
+            console.warn('Could not attach Clerk token to request:', error);
+            return nativeFetch(input, init);
+        }
+    };
+}
+
+function deriveClerkDomain(publishableKey) {
+    try {
+        const encoded = publishableKey.split('_').slice(2).join('_');
+        const normalized = encoded.replace(/-/g, '+').replace(/_/g, '/');
+        const padded = normalized.padEnd(
+            normalized.length + ((4 - (normalized.length % 4)) % 4),
+            '='
+        );
+        const decoded = atob(padded);
+        return decoded.replace(/\$$/, '');
+    } catch (error) {
+        console.error('Could not derive Clerk Frontend API domain:', error);
+        return null;
+    }
+}
+
+function loadScript(src, attributes = {}) {
+    return new Promise((resolve, reject) => {
+        const existing = Array.from(document.scripts).find(script => script.src === src);
+        if (existing) {
+            resolve();
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        Object.entries(attributes).forEach(([key, value]) => {
+            script.setAttribute(key, value);
+        });
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(script);
+    });
+}
+
+async function setupAuth() {
+    if (!authSection) {
+        return;
+    }
+
+    let configResponse;
+    try {
+        configResponse = await nativeFetch('/api/auth/config');
+    } catch (error) {
+        console.warn('Auth config unavailable:', error);
+        setAuthUiState('disabled', 'Auth offline');
+        return;
+    }
+
+    const configData = await configResponse.json();
+    const authConfig = configData.auth || {};
+    authState.enabled = !!authConfig.enabled;
+    authState.required = !!authConfig.required;
+
+    if (!authState.enabled || !authConfig.publishable_key) {
+        setAuthUiState('disabled', 'Auth optional');
+        return;
+    }
+
+    const clerkDomain = deriveClerkDomain(authConfig.publishable_key);
+    if (!clerkDomain) {
+        setAuthUiState('disabled', 'Auth misconfigured');
+        updateWorkspaceAuthAvailability();
+        return;
+    }
+
+    try {
+        await loadScript(`https://${clerkDomain}/npm/@clerk/ui@1/dist/ui.browser.js`);
+        await loadScript(
+            `https://${clerkDomain}/npm/@clerk/clerk-js@6/dist/clerk.browser.js`,
+            {'data-clerk-publishable-key': authConfig.publishable_key}
+        );
+
+        await window.Clerk.load({
+            ui: { ClerkUI: window.__internal_ClerkUICtor },
+        });
+    } catch (error) {
+        console.error('Clerk failed to load:', error);
+        setAuthUiState('signed-out', 'Auth unavailable');
+        updateWorkspaceAuthAvailability();
+        return;
+    }
+
+    if (signInBtn) {
+        signInBtn.addEventListener('click', () => {
+            window.Clerk.openSignIn();
+        });
+    }
+
+    if (linkWhatsappBtn) {
+        linkWhatsappBtn.addEventListener('click', linkAuthenticatedWhatsappNumber);
+    }
+
+    if (typeof window.Clerk.addListener === 'function') {
+        window.Clerk.addListener(({ user }) => {
+            if (user && !authState.isSignedIn) {
+                handleSignedInUser();
+            } else if (!user && authState.isSignedIn) {
+                authState.isSignedIn = false;
+                authState.needsLink = false;
+                authState.user = null;
+                setAuthUiState('signed-out', 'Sign in required');
+                updateWorkspaceAuthAvailability();
+            }
+        });
+    }
+
+    if (window.Clerk.isSignedIn) {
+        await handleSignedInUser();
+    } else {
+        setAuthUiState('signed-out', 'Sign in required');
+        updateWorkspaceAuthAvailability();
+    }
+}
+
+async function handleSignedInUser() {
+    authState.isSignedIn = true;
+    authState.needsLink = false;
+    authState.user = window.Clerk.user || null;
+    updateWorkspaceAuthAvailability();
+
+    if (clerkUserButton && window.Clerk.mountUserButton) {
+        clerkUserButton.innerHTML = '';
+        window.Clerk.mountUserButton(clerkUserButton);
+    }
+
+    try {
+        const user = authState.user;
+        const response = await fetch('/api/auth/sync', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(getClerkProfilePayload(user))
+        });
+        const data = await response.json();
+        const linkedUser = data.linked_user || data.identity?.linked_user;
+
+        if (linkedUser) {
+            applyLinkedUser(linkedUser);
+            setAuthUiState('signed-in', 'Signed in');
+        } else {
+            authState.needsLink = true;
+            setAuthUiState('needs-link', 'Link WhatsApp');
+            updateWorkspaceAuthAvailability();
+            addSystemMessage('Sign-in complete. Link your WhatsApp number so web and WhatsApp receipts use the same account.');
+        }
+    } catch (error) {
+        console.error('Error syncing Clerk user:', error);
+        authState.needsLink = true;
+        setAuthUiState('needs-link', 'Sync needed');
+        updateWorkspaceAuthAvailability();
+    }
+}
+
+function getClerkProfilePayload(user) {
+    const primaryEmail = user?.primaryEmailAddress?.emailAddress || '';
+    const fullName = user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ');
+    const primaryPhone = user?.primaryPhoneNumber?.phoneNumber || whatsappNumber;
+
+    return {
+        email: primaryEmail,
+        name: fullName,
+        whatsapp_number: primaryPhone || whatsappNumber,
+    };
+}
+
+async function linkAuthenticatedWhatsappNumber() {
+    if (!window.Clerk || !window.Clerk.isSignedIn) {
+        if (window.Clerk) {
+            window.Clerk.openSignIn();
+        }
+        return;
+    }
+
+    const user = authState.user || window.Clerk.user;
+    const defaultNumber = user?.primaryPhoneNumber?.phoneNumber || whatsappNumber || '+1234567890';
+    const linkedNumber = prompt('Enter the WhatsApp number used for receipt uploads:', defaultNumber);
+    if (!linkedNumber) {
+        return;
+    }
+
+    showLoading('Linking WhatsApp number...');
+    try {
+        const response = await fetch('/api/auth/link-whatsapp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                ...getClerkProfilePayload(user),
+                whatsapp_number: linkedNumber.trim()
+            })
+        });
+        const data = await response.json();
+
+        if (data.status === 'success' && data.user) {
+            applyLinkedUser(data.user);
+            setAuthUiState('signed-in', 'Signed in');
+            addSystemMessage(`Linked this workspace to WhatsApp number ${data.user.whatsapp_number}.`);
+            initializeApp();
+            loadUsers();
+            updateDatabaseCounts();
+        } else {
+            addSystemMessage(`Could not link WhatsApp number: ${data.message}`);
+        }
+    } catch (error) {
+        console.error('Error linking WhatsApp number:', error);
+        addSystemMessage(`Could not link WhatsApp number: ${error.message}`);
+    } finally {
+        hideLoading();
+    }
+}
+
+function applyLinkedUser(linkedUser) {
+    if (!linkedUser) {
+        return;
+    }
+
+    authState.needsLink = false;
+    userId = linkedUser.id || userId;
+    whatsappNumber = linkedUser.whatsapp_number || whatsappNumber;
+    setElementText(userIdDisplay, userId);
+    setElementText(userWhatsappDisplay, whatsappNumber);
+
+    if (whatsappNumberSelect) {
+        const existingOption = Array.from(whatsappNumberSelect.options).find(
+            option => option.value === whatsappNumber
+        );
+        const label = `${linkedUser.name || 'Linked user'} (${whatsappNumber})`;
+        const option = existingOption || document.createElement('option');
+        option.value = whatsappNumber;
+        option.textContent = label;
+        option.dataset.userId = userId;
+        if (!existingOption) {
+            whatsappNumberSelect.appendChild(option);
+        }
+        whatsappNumberSelect.value = whatsappNumber;
+    }
+
+    updateWorkspaceAuthAvailability();
+}
+
+function setAuthUiState(state, label) {
+    if (authSection) {
+        authSection.dataset.authState = state;
+    }
+    if (authStatus) {
+        authStatus.textContent = label;
+    }
+}
+
+function updateWorkspaceAuthAvailability() {
+    const shouldDisable = authState.required && (!authState.isSignedIn || authState.needsLink);
+
+    [sendBtn, attachBtn, messageInput].forEach(element => {
+        if (element) {
+            element.disabled = shouldDisable;
+        }
+    });
+}
+
 // Initialize application
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     setupTheme();
     setupNavigation();
-    initializeApp();
-    updateDatabaseCounts();
-    loadUsers();
+    setupAuthenticatedFetch();
+    await setupAuth();
+
+    const canLoadWorkspace = (
+        !authState.enabled ||
+        !authState.required ||
+        (authState.isSignedIn && !authState.needsLink)
+    );
+    if (canLoadWorkspace) {
+        initializeApp();
+        updateDatabaseCounts();
+        loadUsers();
+    } else {
+        addSystemMessage('Sign in to connect your WhatsApp receipts with this workspace.');
+    }
 
     // Set user information in the UI
     if (userIdDisplay) userIdDisplay.textContent = userId;
     if (userWhatsappDisplay) userWhatsappDisplay.textContent = whatsappNumber;
 
     // Setup WhatsApp number select event handling
-    whatsappNumberSelect.addEventListener('change', switchUser);
+    if (whatsappNumberSelect) {
+        whatsappNumberSelect.addEventListener('change', switchUser);
+    }
 
     // Setup create user button
     const createUserBtn = document.getElementById('createUserBtn');

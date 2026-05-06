@@ -2,7 +2,7 @@
 
 Production-oriented AI workspace for capturing receipts from WhatsApp, extracting invoice data, storing original receipt files, generating vector embeddings, and answering finance questions in natural language.
 
-The application combines a WhatsApp webhook API, LangGraph agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for local testing and workflow inspection.
+The application combines a WhatsApp webhook API, Clerk web authentication, LangGraph agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for local testing and workflow inspection.
 
 ## Live UI
 
@@ -27,6 +27,7 @@ The repository includes a lightweight animated GIF so the product walkthrough re
 ## What This Application Does
 
 - Captures invoice and receipt files from WhatsApp media messages or the local test UI.
+- Links Clerk web users to WhatsApp numbers so receipts and insights stay scoped to one account across channels.
 - Validates PDF and image uploads before processing.
 - Extracts merchant, invoice metadata, totals, taxes, and line items.
 - Stores original receipt files in Supabase Storage with signed URL access.
@@ -52,12 +53,17 @@ The system is designed to preserve the original receipt file, normalize the extr
 ```mermaid
 flowchart LR
     W["WhatsApp user"] --> T["Twilio WhatsApp webhook"]
+    C["Clerk signed-in user"] --> UI
+    C --> LINK["Link WhatsApp number"]
+    LINK --> UMAP["users.clerk_user_id + users.whatsapp_number"]
+    W --> UMAP
     O["Operator / developer"] --> UI["Flask test UI :5001"]
 
     T --> API["FastAPI application"]
     UI --> UIF["Flask UI routes"]
     UIF --> LAPI["LangChain app API"]
     API --> LAPI
+    UMAP --> LAPI
 
     LAPI --> WF["LangGraph workflow"]
     WF --> R["Input router"]
@@ -90,6 +96,7 @@ flowchart LR
 | --- | --- |
 | FastAPI (`api/main.py`) | Production API surface and WhatsApp webhook endpoint. |
 | Flask UI (`ui/app.py`) | Local operator UI for receipt upload, chat simulation, and workflow inspection. |
+| Clerk (`utils/clerk_auth.py`) | Browser sign-in, session JWT verification, and account-to-WhatsApp linking. |
 | LangGraph workflow (`langchain_app/`) | Routes text and files through specialized agent nodes. |
 | Agents (`agents/`) | Intent classification, file validation, extraction, SQL/vector query generation, response formatting. |
 | Supabase Postgres | Primary relational store for users, invoices, line items, messages, and embedding metadata. |
@@ -130,6 +137,12 @@ sequenceDiagram
 4. The agent builds a scoped query for the current user.
 5. Supabase Postgres and pgvector return structured and semantic results.
 6. The response formatter turns the result into a WhatsApp-ready answer.
+
+## Identity Model
+
+Clerk owns website authentication, while the application keeps `users.id` as the internal owner for invoices, media, messages, and embeddings. A user signs in on the web UI, selects **Link WhatsApp**, and enters the WhatsApp number they use for receipt uploads. The backend stores the Clerk subject in `users.clerk_user_id` on the row with the same `users.whatsapp_number`.
+
+After linking, web uploads, WhatsApp uploads, dashboard counts, receipt lists, and semantic queries all resolve through the same internal `users.id`. If `CLERK_REQUIRE_AUTH=true`, the UI APIs reject receipt and insight access until the Clerk session is valid and linked to a WhatsApp number.
 
 ## Storage and Embeddings
 
@@ -198,6 +211,10 @@ The most important variables are:
 | `SUPABASE_URL` | Supabase project URL. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
 | `SUPABASE_STORAGE_BUCKET` | Private receipt bucket name, default `receipts`. |
+| `CLERK_PUBLISHABLE_KEY` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key used to load the sign-in UI. |
+| `CLERK_SECRET_KEY` | Clerk server key kept for production auth configuration. |
+| `CLERK_REQUIRE_AUTH` | Set `true` to require sign-in and WhatsApp linking for web APIs. |
+| `CLERK_AUTHORIZED_PARTIES` | Comma-separated allowed origins for Clerk token `azp` validation. |
 | `OPENAI_API_KEY` | OpenAI API key. |
 | `OPENAI_API_MODEL` | Chat model, default in this repo is `gpt-4o-mini`. |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID. |
@@ -206,7 +223,7 @@ The most important variables are:
 | `MONGODB_URI` | Optional MongoDB connection string. |
 | `USE_MONGODB` | Set `true` for persistent memory, `false` for local UI-only testing. |
 
-See [SETUP.md](SETUP.md) for exact source locations in Supabase, OpenAI, and Twilio dashboards.
+See [SETUP.md](SETUP.md) for exact source locations in Supabase, Clerk, OpenAI, and Twilio dashboards.
 
 ## Production Readiness Notes
 

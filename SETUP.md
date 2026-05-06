@@ -12,6 +12,7 @@ Install these tools locally:
 | Poetry | Latest stable | Dependency management. |
 | Git | Latest stable | Source control. |
 | Supabase account | Any paid/free project | Postgres, pgvector, and receipt storage. |
+| Clerk account | Any project | Web authentication and user identity. |
 | OpenAI account | API access enabled | Chat model and embeddings. |
 | Twilio account | WhatsApp sandbox or sender | WhatsApp webhook testing and production traffic. |
 | MongoDB | Optional | Persistent conversation memory. |
@@ -171,7 +172,56 @@ WHATSAPP_ACCESS_TOKEN=<meta-cloud-api-token>
 
 These are useful if you extend the app to use Meta Cloud API directly. The current webhook path is Twilio-compatible.
 
-## 6. MongoDB Memory Setup
+## 6. Clerk Authentication Setup
+
+Clerk is used for website sign-in. The app still stores receipts and invoices under the internal `users.id`, while Clerk provides the web identity. A signed-in user links their WhatsApp number once; after that, website activity and WhatsApp receipt uploads resolve to the same `users` row.
+
+### 6.1 Create a Clerk Application
+
+1. Go to [Clerk](https://clerk.com/).
+2. Create an application.
+3. Enable the sign-in methods you want, ideally phone number plus email so users can link the same WhatsApp number.
+4. In Clerk Dashboard, open `Configure` -> `API keys`.
+5. Copy the publishable key and secret key.
+
+Add:
+
+```env
+CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+CLERK_SECRET_KEY=<clerk-secret-key>
+CLERK_REQUIRE_AUTH=true
+```
+
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is included because Vercel/Clerk integrations commonly provision that name. The Flask UI also accepts `CLERK_PUBLISHABLE_KEY`.
+
+### 6.2 Production Hardening
+
+The backend verifies Clerk session JWTs using the Clerk JWKS endpoint. The issuer is derived from the publishable key by default. For stricter production configuration, set:
+
+```env
+CLERK_JWT_ISSUER=https://<your-clerk-frontend-api-domain>
+CLERK_JWKS_URL=https://<your-clerk-frontend-api-domain>/.well-known/jwks.json
+CLERK_AUTHORIZED_PARTIES=https://your-production-domain.com
+```
+
+For the current Vercel deployment, set:
+
+```env
+CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
+```
+
+### 6.3 WhatsApp Link Flow
+
+1. User signs in on the website with Clerk.
+2. User clicks `Link WhatsApp`.
+3. The app links `users.clerk_user_id` to the row with the same `users.whatsapp_number`.
+4. WhatsApp uploads continue to use the phone number path.
+5. Website dashboard queries use the Clerk-linked internal `users.id`.
+
+This is the bridge that makes a receipt uploaded over WhatsApp visible to the same user in the web UI.
+
+## 7. MongoDB Memory Setup
 
 MongoDB is optional. It stores conversation memory and can back LangGraph checkpointing.
 
@@ -190,7 +240,7 @@ USE_MONGODB=false
 
 The local UI command already uses `USE_MONGODB=false` by default in the Makefile.
 
-## 7. Redis Setup
+## 8. Redis Setup
 
 Redis is optional for current local UI testing, but the project includes Celery/Redis dependencies for background work patterns.
 
@@ -198,7 +248,7 @@ Redis is optional for current local UI testing, but the project includes Celery/
 REDIS_URL=redis://localhost:6379/0
 ```
 
-## 8. Complete `.env` Example
+## 9. Complete `.env` Example
 
 ```env
 DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
@@ -209,6 +259,12 @@ SUPABASE_PROJECT_ID=<project-ref>
 SUPABASE_DB_PASSWORD=<database-password>
 SUPABASE_STORAGE_BUCKET=receipts
 SUPABASE_STORAGE_TIMEOUT=30
+
+CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+CLERK_SECRET_KEY=<clerk-secret-key>
+CLERK_REQUIRE_AUTH=true
+CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_API_MODEL=gpt-4o-mini
@@ -227,7 +283,7 @@ PORT=8000
 HOST=0.0.0.0
 ```
 
-## 9. Database Migration
+## 10. Database Migration
 
 Run migrations after configuring Supabase:
 
@@ -247,7 +303,7 @@ Update embeddings after importing or backfilling invoice data:
 make update-embeddings
 ```
 
-## 10. Run Locally
+## 11. Run Locally
 
 ### FastAPI Webhook API
 
@@ -275,7 +331,7 @@ http://localhost:5001
 
 The UI can render in degraded mode when Supabase is unavailable, but upload, extraction, storage, and search require working Supabase and OpenAI credentials.
 
-## 11. Vercel UI Deployment
+## 12. Vercel UI Deployment
 
 The repository includes a Vercel-compatible Flask entrypoint in `app.py`. This deployment is intentionally lightweight and serves the operator UI in demo mode. It is useful for README demos and product review, while the full WhatsApp processing backend should run with the production services listed above.
 
@@ -300,7 +356,7 @@ Vercel uses:
 
 For a fully functional hosted production system, configure the same Supabase, OpenAI, Twilio, MongoDB, and Redis variables in Vercel or deploy the FastAPI/LangGraph backend on a Python service that supports longer-running workers.
 
-## 12. Docker Setup
+## 13. Docker Setup
 
 Build and run:
 
@@ -317,7 +373,7 @@ docker-compose up --build
 
 The compose file includes local Postgres and MongoDB containers for development. Production deployments should use managed Supabase Postgres, Supabase Storage, and a managed MongoDB service if persistent memory is needed.
 
-## 13. Production Deployment Checklist
+## 14. Production Deployment Checklist
 
 - Use managed Supabase Postgres with automated backups.
 - Enable `vector` in Supabase.
@@ -331,7 +387,7 @@ The compose file includes local Postgres and MongoDB containers for development.
 - Run Alembic migrations in CI/CD before app rollout.
 - Use separate Supabase projects for development, staging, and production.
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### `No Supabase connection details found`
 
