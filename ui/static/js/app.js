@@ -8,30 +8,61 @@ const uploadForm = document.getElementById('uploadForm');
 const newConversationBtn = document.getElementById('newConversationBtn');
 const helpBtn = document.getElementById('helpBtn');
 const loadingOverlay = document.getElementById('loadingOverlay');
-const togglePanelBtn = document.getElementById('togglePanelBtn');
-const agentPanel = document.querySelector('.agent-panel');
 const currentIntent = document.getElementById('currentIntent');
 const workflowSteps = document.getElementById('workflowSteps');
 const invoiceCount = document.getElementById('invoiceCount');
 const itemCount = document.getElementById('itemCount');
 const userIdDisplay = document.getElementById('userIdDisplay');
+const userWhatsappDisplay = document.getElementById('userWhatsappDisplay');
 const whatsappNumberSelect = document.getElementById('whatsappNumberSelect');
 const s3StorageSection = document.getElementById('s3StorageSection');
 const s3FileKey = document.getElementById('s3FileKey');
 const s3Url = document.getElementById('s3Url');
 const s3UrlContainer = document.getElementById('s3UrlContainer');
-const dbUserItemsCount = document.getElementById('db-user-items-count');
-const dbUserInvoicesCount = document.getElementById('db-user-invoices-count');
 const dashboardReceiptCount = document.getElementById('dashboardReceiptCount');
 const dashboardItemCount = document.getElementById('dashboardItemCount');
 const dashboardIntent = document.getElementById('dashboardIntent');
 const dashboardDbStatus = document.getElementById('dashboardDbStatus');
 const dashboardStorageStatus = document.getElementById('dashboardStorageStatus');
-const dashboardVectorStatus = document.getElementById('dashboardVectorStatus');
+const sidebarDbStatus = document.getElementById('sidebarDbStatus');
+const sidebarDbDot = document.getElementById('sidebarDbDot');
+const sidebarVectorStatus = document.getElementById('sidebarVectorStatus');
+const sidebarVectorDot = document.getElementById('sidebarVectorDot');
+const receiptsUserInvoices = document.getElementById('receiptsUserInvoices');
+const receiptsUserItems = document.getElementById('receiptsUserItems');
+const receiptsAllInvoices = document.getElementById('receiptsAllInvoices');
+const receiptsEmbeddings = document.getElementById('receiptsEmbeddings');
 const storageProvider = document.getElementById('storageProvider');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
 const themeToggleIcon = document.getElementById('themeToggleIcon');
-const themeToggleLabel = document.getElementById('themeToggleLabel');
+const sidebar = document.querySelector('.app-sidebar');
+const sidebarToggle = document.getElementById('sidebarToggle');
+const topbarTitle = document.getElementById('topbarTitle');
+const topbarSubtitle = document.getElementById('topbarSubtitle');
+
+// View metadata for topbar copy
+const VIEW_META = {
+    overview: {
+        title: 'Overview',
+        subtitle: 'Welcome back — here is the state of your receipt workspace.'
+    },
+    chat: {
+        title: 'Chat',
+        subtitle: 'Simulate WhatsApp conversations with the assistant.'
+    },
+    receipts: {
+        title: 'Receipts',
+        subtitle: 'Captured invoices, line items, and storage.'
+    },
+    inspector: {
+        title: 'Workflow inspector',
+        subtitle: 'LangGraph steps, intent, and token usage for the most recent message.'
+    },
+    settings: {
+        title: 'Settings',
+        subtitle: 'Users, memory, embeddings, and database health.'
+    }
+};
 
 // Global variables
 let isProcessing = false;
@@ -55,6 +86,17 @@ function setDashboardStatus(element, value, active = true) {
     element.classList.toggle('status-inactive', !active);
 }
 
+function setSidebarStatus(textEl, dotEl, value, active) {
+    if (textEl) {
+        textEl.textContent = value;
+    }
+    if (dotEl) {
+        dotEl.classList.toggle('is-good', active === true);
+        dotEl.classList.toggle('is-bad', active === false);
+        dotEl.classList.toggle('is-warn', active === null || active === undefined);
+    }
+}
+
 function updateFileStorageInfo(storage) {
     if (!storage || Object.keys(storage).length === 0) {
         return;
@@ -64,7 +106,7 @@ function updateFileStorageInfo(storage) {
     const provider = storage.provider || 'Supabase';
     setElementText(storageProvider, provider);
     s3FileKey.textContent = storage.file_key || storage.path || 'None';
-    setDashboardStatus(dashboardStorageStatus, provider, true);
+    setElementText(dashboardStorageStatus, `${provider} ready`);
 
     if (storage.url) {
         s3Url.href = storage.url;
@@ -79,12 +121,14 @@ function updateFileStorageInfo(storage) {
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     setupTheme();
+    setupNavigation();
     initializeApp();
     updateDatabaseCounts();
     loadUsers();
 
     // Set user information in the UI
-    userIdDisplay.textContent = userId;
+    if (userIdDisplay) userIdDisplay.textContent = userId;
+    if (userWhatsappDisplay) userWhatsappDisplay.textContent = whatsappNumber;
 
     // Setup WhatsApp number select event handling
     whatsappNumberSelect.addEventListener('change', switchUser);
@@ -116,6 +160,50 @@ document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
 });
 
+function setupNavigation() {
+    const navItems = document.querySelectorAll('.nav-item[data-view]');
+    navItems.forEach(item => {
+        item.addEventListener('click', () => {
+            switchView(item.dataset.view);
+            if (sidebar) sidebar.classList.remove('is-open');
+        });
+    });
+
+    document.querySelectorAll('[data-goto]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchView(btn.dataset.goto);
+        });
+    });
+
+    if (sidebarToggle && sidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('is-open');
+        });
+    }
+}
+
+function switchView(viewName) {
+    if (!viewName) return;
+
+    document.querySelectorAll('.view').forEach(view => {
+        view.classList.toggle('is-active', view.dataset.view === viewName);
+    });
+
+    document.querySelectorAll('.nav-item[data-view]').forEach(item => {
+        item.classList.toggle('is-active', item.dataset.view === viewName);
+    });
+
+    const meta = VIEW_META[viewName];
+    if (meta) {
+        if (topbarTitle) topbarTitle.textContent = meta.title;
+        if (topbarSubtitle) topbarSubtitle.textContent = meta.subtitle;
+    }
+
+    if (viewName === 'chat' && messageInput) {
+        setTimeout(() => messageInput.focus(), 50);
+    }
+}
+
 function setupTheme() {
     const savedTheme = localStorage.getItem('invoice-ui-theme');
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -141,11 +229,13 @@ function applyTheme(theme) {
         themeToggleIcon.className = normalizedTheme === 'dark' ? 'fas fa-sun' : 'fas fa-moon';
     }
 
-    setElementText(themeToggleLabel, normalizedTheme === 'dark' ? 'Light' : 'Dark');
-
     if (themeToggleBtn) {
         themeToggleBtn.setAttribute(
             'aria-label',
+            normalizedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+        );
+        themeToggleBtn.setAttribute(
+            'title',
             normalizedTheme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
         );
     }
@@ -334,10 +424,6 @@ attachBtn.addEventListener('click', () => {
 });
 
 fileInput.addEventListener('change', uploadFile);
-
-togglePanelBtn.addEventListener('click', () => {
-    agentPanel.classList.toggle('panel-collapsed');
-});
 
 newConversationBtn.addEventListener('click', startNewConversation);
 
@@ -1146,11 +1232,13 @@ function updateDatabaseCounts() {
                         pgConnection.classList.add('status-active');
                         pgConnection.classList.remove('status-inactive');
                         setDashboardStatus(dashboardDbStatus, 'Connected', true);
+                        setSidebarStatus(sidebarDbStatus, sidebarDbDot, 'Online', true);
                     } else {
                         pgConnection.textContent = "Not Connected";
                         pgConnection.classList.add('status-inactive');
                         pgConnection.classList.remove('status-active');
                         setDashboardStatus(dashboardDbStatus, 'Offline', false);
+                        setSidebarStatus(sidebarDbStatus, sidebarDbDot, 'Offline', false);
 
                         // Show error message if available
                         if (status.message && status.message.includes('Database connection error')) {
@@ -1171,25 +1259,33 @@ function updateDatabaseCounts() {
                 const dbSize = document.getElementById('db-size');
                 const tablesSize = document.getElementById('tables-size');
 
+                const totalInvoices = data.counts.invoices.total || 0;
+                const userInvoices = data.counts.invoices.user_specific || 0;
+                const totalItems = data.counts.items || 0;
+                const userItems = data.counts.user_items || 0;
+
                 if (dbInvoicesCount) {
-                    dbInvoicesCount.textContent = data.counts.invoices.total || 0;
+                    dbInvoicesCount.textContent = totalInvoices;
                 }
 
                 if (dbUserInvoicesCount) {
-                    dbUserInvoicesCount.textContent = data.counts.invoices.user_specific || 0;
+                    dbUserInvoicesCount.textContent = userInvoices;
                 }
 
-                setElementText(dashboardReceiptCount, data.counts.invoices.user_specific || 0);
+                setElementText(dashboardReceiptCount, userInvoices);
+                setElementText(receiptsUserInvoices, userInvoices);
+                setElementText(receiptsAllInvoices, totalInvoices);
 
                 if (dbItemsCount) {
-                    dbItemsCount.textContent = data.counts.items || 0;
+                    dbItemsCount.textContent = totalItems;
                 }
 
                 if (dbUserItemsCount) {
-                    dbUserItemsCount.textContent = data.counts.user_items || 0;
+                    dbUserItemsCount.textContent = userItems;
                 }
 
-                setElementText(dashboardItemCount, data.counts.user_items || 0);
+                setElementText(dashboardItemCount, userItems);
+                setElementText(receiptsUserItems, userItems);
 
                 // Fallback for old UI elements
                 if (invoiceCount) {
@@ -1226,25 +1322,30 @@ function updateDatabaseCounts() {
                 if (data.vector_info) {
                     const vectorStatus = document.getElementById('pgvectorStatus');
                     const embeddingsCount = document.getElementById('embeddingsCount');
+                    const isInstalled = !!data.vector_info.installed;
 
-                    if (vectorStatus && embeddingsCount) {
-                        // Set pgvector status
-                        vectorStatus.textContent = data.vector_info.installed ? 'Installed' : 'Not Installed';
-                        vectorStatus.classList.toggle('status-active', data.vector_info.installed);
-                        vectorStatus.classList.toggle('status-inactive', !data.vector_info.installed);
-                        setDashboardStatus(
-                            dashboardVectorStatus,
-                            data.vector_info.installed ? 'Installed' : 'Missing',
-                            data.vector_info.installed
-                        );
-
-                        // Set embedding counts if available
-                        if (data.vector_info.installed && 'with_embeddings' in data.vector_info) {
-                            embeddingsCount.textContent = `${data.vector_info.with_embeddings}/${data.vector_info.with_embeddings + data.vector_info.without_embeddings}`;
-                        } else {
-                            embeddingsCount.textContent = 'N/A';
-                        }
+                    if (vectorStatus) {
+                        vectorStatus.textContent = isInstalled ? 'Installed' : 'Not Installed';
+                        vectorStatus.classList.toggle('status-active', isInstalled);
+                        vectorStatus.classList.toggle('status-inactive', !isInstalled);
                     }
+
+                    setSidebarStatus(
+                        sidebarVectorStatus,
+                        sidebarVectorDot,
+                        isInstalled ? 'Online' : 'Missing',
+                        isInstalled
+                    );
+
+                    // Set embedding counts if available
+                    let embeddingDisplay = 'N/A';
+                    if (isInstalled && 'with_embeddings' in data.vector_info) {
+                        embeddingDisplay = `${data.vector_info.with_embeddings}/${data.vector_info.with_embeddings + data.vector_info.without_embeddings}`;
+                    }
+                    if (embeddingsCount) {
+                        embeddingsCount.textContent = embeddingDisplay;
+                    }
+                    setElementText(receiptsEmbeddings, embeddingDisplay);
                 }
             } else if (data.status === 'error') {
                 // Handle error case
@@ -1256,6 +1357,7 @@ function updateDatabaseCounts() {
                     pgConnection.classList.add('status-inactive');
                     pgConnection.title = data.message;
                     setDashboardStatus(dashboardDbStatus, 'Error', false);
+                    setSidebarStatus(sidebarDbStatus, sidebarDbDot, 'Error', false);
                 }
             }
         })
@@ -1270,6 +1372,7 @@ function updateDatabaseCounts() {
                 pgConnection.title = "Failed to fetch database status";
             }
             setDashboardStatus(dashboardDbStatus, 'Error', false);
+            setSidebarStatus(sidebarDbStatus, sidebarDbDot, 'Error', false);
         });
 }
 
@@ -1508,12 +1611,14 @@ function initUI() {
 function updateSelectedUser() {
     if (!whatsappNumberSelect || whatsappNumberSelect.options.length === 0) {
         setElementText(userIdDisplay, userId);
+        setElementText(userWhatsappDisplay, whatsappNumber);
         return;
     }
 
     const selectedOption = whatsappNumberSelect.options[whatsappNumberSelect.selectedIndex];
     if (!selectedOption) {
         setElementText(userIdDisplay, userId);
+        setElementText(userWhatsappDisplay, whatsappNumber);
         return;
     }
 
@@ -1523,6 +1628,7 @@ function updateSelectedUser() {
     }
 
     setElementText(userIdDisplay, userId);
+    setElementText(userWhatsappDisplay, whatsappNumber);
 }
 
 function clearChatHistory() {
