@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice Command Center</title>
+    <title>Receipt Intelligence — WhatsApp Invoice Assistant</title>
+    <meta name="description" content="Turn WhatsApp receipts into searchable invoice intelligence. Capture, extract, store, and ask questions in natural language.">
     <link rel="icon" href="data:,">
     <script>
         const savedTheme = localStorage.getItem('invoice-ui-theme');
@@ -12,400 +13,649 @@
         }
     </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
-        <header class="app-toolbar">
-            <div class="brand-block">
-                <div class="brand-mark">
+    <div class="app-shell">
+        <aside class="app-sidebar" aria-label="Primary navigation">
+            <div class="sidebar-brand">
+                <div class="brand-mark" aria-hidden="true">
                     <i class="fas fa-receipt"></i>
                 </div>
-                <div>
-                    <h1>Receipt Intelligence Workspace</h1>
-                    <p>WhatsApp invoice assistant for receipt capture, extraction, and finance Q&A</p>
+                <div class="brand-text">
+                    <strong>Receipt Intelligence</strong>
+                    <span>WhatsApp Invoice Assistant</span>
                 </div>
             </div>
-            <div class="toolbar-actions">
-                <div class="toolbar-status-grid">
-                    <div class="toolbar-status">
-                        <span>Postgres</span>
-                        <strong id="dashboardDbStatus">Checking</strong>
-                    </div>
-                    <div class="toolbar-status">
-                        <span>Storage</span>
-                        <strong id="dashboardStorageStatus">Ready</strong>
-                    </div>
-                    <div class="toolbar-status">
+
+            <nav class="sidebar-nav" aria-label="Workspace sections">
+                <button type="button" class="nav-item is-active" data-view="overview">
+                    <i class="fas fa-compass"></i>
+                    <span>Overview</span>
+                </button>
+                <button type="button" class="nav-item" data-view="chat">
+                    <i class="fas fa-comments"></i>
+                    <span>Chat</span>
+                </button>
+                <button type="button" class="nav-item" data-view="receipts">
+                    <i class="fas fa-file-invoice"></i>
+                    <span>Receipts</span>
+                </button>
+                <button type="button" class="nav-item" data-view="inspector">
+                    <i class="fas fa-diagram-project"></i>
+                    <span>Inspector</span>
+                </button>
+                <button type="button" class="nav-item" data-view="settings">
+                    <i class="fas fa-sliders"></i>
+                    <span>Settings</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="sidebar-status">
+                    <span class="status-row">
+                        <span class="status-dot" id="sidebarDbDot"></span>
+                        <span>Database</span>
+                        <strong id="sidebarDbStatus">Checking</strong>
+                    </span>
+                    <span class="status-row">
+                        <span class="status-dot" id="sidebarVectorDot"></span>
                         <span>Vector</span>
-                        <strong id="dashboardVectorStatus">Checking</strong>
-                    </div>
+                        <strong id="sidebarVectorStatus">Checking</strong>
+                    </span>
                 </div>
-                <button id="themeToggleBtn" class="theme-toggle" type="button" aria-label="Switch to dark mode">
-                    <i id="themeToggleIcon" class="fas fa-moon"></i>
-                    <span id="themeToggleLabel">Dark</span>
+            </div>
+        </aside>
+
+        <div class="app-main">
+            <header class="app-topbar">
+                <button type="button" class="topbar-icon-btn sidebar-toggle" aria-label="Toggle navigation" id="sidebarToggle">
+                    <i class="fas fa-bars"></i>
                 </button>
-            </div>
-        </header>
-
-        <section class="app-overview" aria-label="Application overview">
-            <div class="overview-copy">
-                <span class="eyebrow">AI finance operations</span>
-                <h2>Turn WhatsApp receipts into searchable invoice intelligence.</h2>
-                <p>Upload a receipt, let the agent extract line items, store the original file, generate embeddings, and answer spend questions from the same workspace.</p>
-            </div>
-            <div class="pipeline-strip" aria-label="Receipt processing pipeline">
-                <div class="pipeline-step">
-                    <span>1</span>
-                    <strong>Capture</strong>
-                    <small>PDF or image</small>
+                <div class="topbar-title">
+                    <h1 id="topbarTitle">Overview</h1>
+                    <p id="topbarSubtitle">Welcome back — here is the state of your receipt workspace.</p>
                 </div>
-                <div class="pipeline-step">
-                    <span>2</span>
-                    <strong>Extract</strong>
-                    <small>Merchant, totals, items</small>
-                </div>
-                <div class="pipeline-step">
-                    <span>3</span>
-                    <strong>Store</strong>
-                    <small>Supabase files + Postgres</small>
-                </div>
-                <div class="pipeline-step">
-                    <span>4</span>
-                    <strong>Ask</strong>
-                    <small>Semantic finance search</small>
-                </div>
-            </div>
-        </section>
-
-        <main class="workspace">
-        <div class="chat-container">
-            <!-- Chat Header -->
-            <div class="chat-header">
-                <div class="user-info">
-                    <div class="avatar">
-                        <i class="fas fa-robot"></i>
+                <div class="topbar-actions">
+                    <div class="topbar-user">
+                        <i class="fas fa-circle-user"></i>
+                        <select id="whatsappNumberSelect" class="topbar-user-select" aria-label="Active user">
+                            <option value="+1234567890">+1234567890</option>
+                        </select>
                     </div>
-                    <div class="info">
-                        <h3>Conversation Simulator</h3>
-                        <p>Upload receipts or ask questions as a WhatsApp user</p>
-                    </div>
-                </div>
-                <div class="actions">
-                    <button id="newConversationBtn" title="New Conversation">
-                        <i class="fas fa-plus"></i>
-                    </button>
-                    <button id="helpBtn" title="Help">
-                        <i class="fas fa-question-circle"></i>
+                    <button id="themeToggleBtn" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch to dark mode" title="Toggle theme">
+                        <i id="themeToggleIcon" class="fas fa-moon"></i>
                     </button>
                 </div>
-            </div>
+            </header>
 
-            <section class="command-center" aria-label="Receipt workflow overview">
-                <div class="metric-card">
-                    <div class="metric-icon capture">
-                        <i class="fas fa-inbox"></i>
-                    </div>
-                    <div class="metric-copy">
-                        <span>Current user receipts</span>
-                        <strong id="dashboardReceiptCount">0</strong>
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-icon review">
-                        <i class="fas fa-list-check"></i>
-                    </div>
-                    <div class="metric-copy">
-                        <span>Line items</span>
-                        <strong id="dashboardItemCount">0</strong>
-                    </div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-icon automate">
-                        <i class="fas fa-wand-magic-sparkles"></i>
-                    </div>
-                    <div class="metric-copy">
-                        <span>Intent</span>
-                        <strong id="dashboardIntent">None</strong>
-                    </div>
-                </div>
-            </section>
+            <main class="app-content">
 
-            <section class="quick-actions" aria-label="Quick actions">
-                <button type="button" class="quick-action" data-upload-trigger>
-                    <i class="fas fa-cloud-arrow-up"></i>
-                    <span>Capture receipt</span>
-                </button>
-                <button type="button" class="quick-action" data-prompt="What did I spend this month?">
-                    <i class="fas fa-chart-line"></i>
-                    <span>Ask monthly spend</span>
-                </button>
-                <button type="button" class="quick-action" data-prompt="Show my latest uploaded receipts">
-                    <i class="fas fa-clock-rotate-left"></i>
-                    <span>Search receipts</span>
-                </button>
-                <button type="button" class="quick-action" data-prompt="Create an invoice for a new client">
-                    <i class="fas fa-file-invoice-dollar"></i>
-                    <span>Draft invoice</span>
-                </button>
-            </section>
-
-            <!-- Chat Messages -->
-            <div class="chat-messages" id="chatMessages">
-                <div class="message system">
-                    <div class="message-content">
-                        <p>Workspace ready. Capture a receipt or ask a finance question to start.</p>
-                    </div>
-                    <div class="message-time">Now</div>
-                </div>
-            </div>
-
-            <!-- Chat Input -->
-            <div class="chat-input">
-                <form id="uploadForm" enctype="multipart/form-data" style="display:none">
-                    <input type="file" id="fileInput" name="file" accept=".pdf,.jpg,.jpeg,.png">
-                </form>
-                <button id="attachBtn" class="attach-btn">
-                    <i class="fas fa-paperclip"></i>
-                </button>
-                <div class="input-area">
-                    <input type="text" id="messageInput" placeholder="Type a message">
-                </div>
-                <button id="sendBtn" class="send-btn">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-            </div>
-        </div>
-
-        <!-- Agent Flow Panel -->
-        <div class="agent-panel">
-            <div class="panel-header">
-                <div>
-                    <h3>System Inspector</h3>
-                    <p>Agent, storage, memory, and vector status</p>
-                </div>
-                <button id="togglePanelBtn">
-                    <i class="fas fa-angle-right"></i>
-                </button>
-            </div>
-            <div class="panel-content">
-                <div class="panel-section">
-                    <h4>User Information</h4>
-                    <div class="db-status-container">
-                        <button class="full-width-btn" id="createUserBtn" title="Create New User">
-                            <i class="fas fa-user-plus"></i> Create New User
-                        </button>
-                        <button class="full-width-btn" id="companyProfileBtn" title="Edit Company Profile">
-                            <i class="fas fa-building"></i> Company Profile
-                        </button>
-                        <div class="form-hint">Or select an existing user below</div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">User ID:</span>
-                            <span class="agent-panel-value" id="userIdDisplay">0</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">WhatsApp:</span>
-                            <div class="value-control">
-                                <select id="whatsappNumberSelect" class="whatsapp-select" title="Select WhatsApp number">
-                                    <option value="+1234567890">+1234567890</option>
-                                    <!-- More options will be loaded dynamically -->
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="panel-section">
-                    <h4>Current Intent</h4>
-                    <div class="db-status-container">
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Intent:</span>
-                            <span class="agent-panel-value" id="currentIntent">None</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="panel-section">
-                    <h4>Token Usage</h4>
-                    <div class="db-status-container">
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Input:</span>
-                            <span class="agent-panel-value" id="inputTokens">0</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Output:</span>
-                            <span class="agent-panel-value" id="outputTokens">0</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Total:</span>
-                            <span class="agent-panel-value" id="totalTokens">0</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="panel-section">
-                    <h4>Workflow Steps</h4>
-                    <div id="workflowSteps" class="workflow-steps">
-                        <div class="step waiting">
-                            <span class="step-dot"></span>
-                            <span>Waiting for input...</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="panel-section">
-                    <h4>Database Status</h4>
-                    <div class="db-status-container">
-                        <div class="section-divider">
-                            <span>Global Statistics</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Total Invoices:</span>
-                            <span class="agent-panel-value" id="db-invoices-count">0</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Total Items:</span>
-                            <span class="agent-panel-value" id="db-items-count">0</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">DB Size:</span>
-                            <span class="agent-panel-value" id="db-size">-</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Tables Size:</span>
-                            <span class="agent-panel-value" id="tables-size">-</span>
-                        </div>
-
-                        <div class="section-divider">
-                            <span>Current User Statistics</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">User Invoices:</span>
-                            <span class="agent-panel-value" id="db-user-invoices-count">0</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">User Items:</span>
-                            <span class="agent-panel-value" id="db-user-items-count">0</span>
-                        </div>
-
-                        <h5>Connection Info</h5>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">PostgreSQL:</span>
-                            <span class="agent-panel-value" id="pg-connection">-</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">MongoDB:</span>
-                            <span class="agent-panel-value" id="mongo-connection">-</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="panel-subsection" id="vectorStatus">
-                    <h5>Vector Status</h5>
-                    <div class="agent-panel-item">
-                        <span class="agent-panel-label">pgvector:</span>
-                        <span class="agent-panel-value" id="pgvectorStatus">Unknown</span>
-                    </div>
-                    <div class="agent-panel-item">
-                        <span class="agent-panel-label">Embeddings:</span>
-                        <span class="agent-panel-value" id="embeddingsCount">0/0</span>
-                    </div>
-                    <div class="vector-actions">
-                        <button id="updateEmbeddings" class="action-btn" title="Update Vector Embeddings">
-                            <i class="fas fa-sync-alt"></i> Update Embeddings
-                        </button>
-                        <button id="forceUpdateEmbeddings" class="action-btn" title="Force Update All Embeddings">
-                            <i class="fas fa-bolt"></i> Force Update
-                        </button>
-                    </div>
-                </div>
-                <div class="panel-section" id="s3StorageSection" style="display: none;">
-                    <h4>File Storage</h4>
-                    <div class="db-status-container">
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Provider:</span>
-                            <span class="agent-panel-value" id="storageProvider">Supabase</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">File Key:</span>
-                            <span class="agent-panel-value" id="s3FileKey">None</span>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">URL:</span>
-                            <div class="agent-panel-value" id="s3UrlContainer">
-                                <a href="#" id="s3Url" target="_blank">None</a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Memory Configuration Section -->
-                <div class="panel-section">
-                    <h4>Memory Settings</h4>
-                    <div class="db-status-container">
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Max Messages:</span>
-                            <div class="value-control">
-                                <span class="agent-panel-value" id="maxMessagesValue">50</span>
-                                <button class="adjust-btn" id="editMaxMessages" title="Edit Max Messages">
-                                    <i class="fas fa-edit"></i>
+                <!-- ============== OVERVIEW VIEW ============== -->
+                <section class="view view-overview is-active" data-view="overview">
+                    <div class="hero-card">
+                        <div class="hero-copy">
+                            <span class="eyebrow">AI Finance Operations</span>
+                            <h2>Turn WhatsApp receipts into searchable invoice intelligence.</h2>
+                            <p>Capture receipts directly from WhatsApp, let the agent extract merchant, totals, and line items, then ask spend questions in plain language — all from one workspace.</p>
+                            <div class="hero-actions">
+                                <button type="button" class="btn btn-primary" data-upload-trigger>
+                                    <i class="fas fa-cloud-arrow-up"></i>
+                                    <span>Capture a receipt</span>
+                                </button>
+                                <button type="button" class="btn btn-ghost" data-goto="chat">
+                                    <i class="fas fa-comments"></i>
+                                    <span>Open chat</span>
                                 </button>
                             </div>
                         </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Context Window:</span>
-                            <div class="value-control">
-                                <span class="agent-panel-value" id="messageWindowValue">10</span>
-                                <button class="adjust-btn" id="editMessageWindow" title="Edit Context Window Size">
-                                    <i class="fas fa-edit"></i>
-                                </button>
+                        <div class="hero-illustration" aria-hidden="true">
+                            <div class="hero-bubble bubble-incoming">
+                                <span class="bubble-tag">From WhatsApp</span>
+                                <span>Sending receipt.pdf…</span>
+                                <i class="fas fa-paperclip"></i>
+                            </div>
+                            <div class="hero-bubble bubble-outgoing">
+                                <span class="bubble-tag">Assistant</span>
+                                <span>Captured Acme Coffee · $14.20 · 3 items</span>
+                            </div>
+                            <div class="hero-bubble bubble-incoming">
+                                <span class="bubble-tag">User</span>
+                                <span>What did I spend on coffee this month?</span>
+                            </div>
+                            <div class="hero-bubble bubble-outgoing">
+                                <span class="bubble-tag">Assistant</span>
+                                <span>$48.60 across 4 receipts in March.</span>
                             </div>
                         </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Memory Age (s):</span>
-                            <div class="value-control">
-                                <span class="agent-panel-value" id="maxMemoryAgeValue">3600</span>
-                                <button class="adjust-btn" id="editMaxMemoryAge" title="Edit Max Memory Age">
-                                    <i class="fas fa-edit"></i>
+                    </div>
+
+                    <section class="section">
+                        <div class="section-head">
+                            <h3>How it works</h3>
+                            <p>Four stages, fully automated end to end.</p>
+                        </div>
+                        <div class="pipeline-grid">
+                            <article class="pipeline-card">
+                                <span class="pipeline-step-num">01</span>
+                                <i class="fas fa-camera-retro"></i>
+                                <h4>Capture</h4>
+                                <p>Send a PDF or image of a receipt from WhatsApp, or upload it here.</p>
+                            </article>
+                            <article class="pipeline-card">
+                                <span class="pipeline-step-num">02</span>
+                                <i class="fas fa-wand-magic-sparkles"></i>
+                                <h4>Extract</h4>
+                                <p>The agent extracts merchant, totals, taxes, and individual line items.</p>
+                            </article>
+                            <article class="pipeline-card">
+                                <span class="pipeline-step-num">03</span>
+                                <i class="fas fa-database"></i>
+                                <h4>Store</h4>
+                                <p>Original file goes to Supabase Storage; structured data lands in Postgres with embeddings.</p>
+                            </article>
+                            <article class="pipeline-card">
+                                <span class="pipeline-step-num">04</span>
+                                <i class="fas fa-magnifying-glass-chart"></i>
+                                <h4>Ask</h4>
+                                <p>Ask spend questions in plain English — answered with SQL plus semantic search.</p>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section class="section">
+                        <div class="section-head">
+                            <h3>At a glance</h3>
+                            <p>Live state for the active user.</p>
+                        </div>
+                        <div class="metric-grid">
+                            <article class="metric-card">
+                                <div class="metric-icon tone-green">
+                                    <i class="fas fa-inbox"></i>
+                                </div>
+                                <div class="metric-body">
+                                    <span class="metric-label">User receipts</span>
+                                    <strong class="metric-value" id="dashboardReceiptCount">0</strong>
+                                    <small class="metric-hint">Invoices captured for the active user</small>
+                                </div>
+                            </article>
+                            <article class="metric-card">
+                                <div class="metric-icon tone-blue">
+                                    <i class="fas fa-list-check"></i>
+                                </div>
+                                <div class="metric-body">
+                                    <span class="metric-label">Line items</span>
+                                    <strong class="metric-value" id="dashboardItemCount">0</strong>
+                                    <small class="metric-hint">Items extracted from receipts</small>
+                                </div>
+                            </article>
+                            <article class="metric-card">
+                                <div class="metric-icon tone-amber">
+                                    <i class="fas fa-bullseye"></i>
+                                </div>
+                                <div class="metric-body">
+                                    <span class="metric-label">Last intent</span>
+                                    <strong class="metric-value metric-value-text" id="dashboardIntent">None</strong>
+                                    <small class="metric-hint">Most recent classified user intent</small>
+                                </div>
+                            </article>
+                            <article class="metric-card">
+                                <div class="metric-icon tone-violet">
+                                    <i class="fas fa-server"></i>
+                                </div>
+                                <div class="metric-body">
+                                    <span class="metric-label">System</span>
+                                    <strong class="metric-value metric-value-text" id="dashboardDbStatus">Checking</strong>
+                                    <small class="metric-hint" id="dashboardStorageStatus">Storage ready</small>
+                                </div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section class="section">
+                        <div class="section-head">
+                            <h3>Get started</h3>
+                            <p>Pick a quick action or jump to chat.</p>
+                        </div>
+                        <div class="quick-grid">
+                            <button type="button" class="quick-card" data-upload-trigger>
+                                <i class="fas fa-cloud-arrow-up"></i>
+                                <strong>Capture receipt</strong>
+                                <span>Upload a PDF or image</span>
+                            </button>
+                            <button type="button" class="quick-card" data-prompt="What did I spend this month?">
+                                <i class="fas fa-chart-line"></i>
+                                <strong>Ask monthly spend</strong>
+                                <span>Answered with SQL + vectors</span>
+                            </button>
+                            <button type="button" class="quick-card" data-prompt="Show my latest uploaded receipts">
+                                <i class="fas fa-clock-rotate-left"></i>
+                                <strong>Recent receipts</strong>
+                                <span>List the latest captures</span>
+                            </button>
+                            <button type="button" class="quick-card" data-prompt="Create an invoice for a new client">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                                <strong>Draft an invoice</strong>
+                                <span>Generate a DOCX invoice</span>
+                            </button>
+                        </div>
+                    </section>
+                </section>
+
+                <!-- ============== CHAT VIEW ============== -->
+                <section class="view view-chat" data-view="chat">
+                    <div class="chat-shell">
+                        <header class="chat-shell-head">
+                            <div class="chat-shell-title">
+                                <div class="avatar-soft">
+                                    <i class="fas fa-robot"></i>
+                                </div>
+                                <div>
+                                    <h3>Conversation simulator</h3>
+                                    <p>Send messages or upload receipts as a WhatsApp user.</p>
+                                </div>
+                            </div>
+                            <div class="chat-shell-actions">
+                                <button id="newConversationBtn" class="icon-btn" title="Start new conversation" type="button">
+                                    <i class="fas fa-rotate-right"></i>
+                                </button>
+                                <button id="helpBtn" class="icon-btn" title="Show help" type="button">
+                                    <i class="fas fa-circle-question"></i>
                                 </button>
                             </div>
+                        </header>
+
+                        <div class="chat-quick-row">
+                            <button type="button" class="chip" data-upload-trigger>
+                                <i class="fas fa-paperclip"></i>
+                                <span>Capture receipt</span>
+                            </button>
+                            <button type="button" class="chip" data-prompt="What did I spend this month?">
+                                <i class="fas fa-chart-line"></i>
+                                <span>Monthly spend</span>
+                            </button>
+                            <button type="button" class="chip" data-prompt="Show my latest uploaded receipts">
+                                <i class="fas fa-clock-rotate-left"></i>
+                                <span>Recent receipts</span>
+                            </button>
+                            <button type="button" class="chip" data-prompt="Create an invoice for a new client">
+                                <i class="fas fa-file-invoice-dollar"></i>
+                                <span>Draft invoice</span>
+                            </button>
                         </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Context Window:</span>
-                            <div class="value-control">
-                                <span class="agent-panel-value" id="enableContextWindowValue">Enabled</span>
-                                <button class="toggle-btn" id="toggleContextWindow" title="Toggle Context Window">
-                                    <i class="fas fa-toggle-on"></i>
-                                </button>
+
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="message system">
+                                <div class="message-content">
+                                    <p>Workspace ready. Capture a receipt or ask a finance question to start.</p>
+                                </div>
+                                <div class="message-time">Now</div>
                             </div>
                         </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Persist Memory:</span>
-                            <div class="value-control">
-                                <span class="agent-panel-value" id="persistMemoryValue">Enabled</span>
-                                <button class="toggle-btn" id="togglePersistMemory" title="Toggle Memory Persistence">
-                                    <i class="fas fa-toggle-on"></i>
-                                </button>
+
+                        <form id="uploadForm" enctype="multipart/form-data" class="upload-form">
+                            <input type="file" id="fileInput" name="file" accept=".pdf,.jpg,.jpeg,.png">
+                        </form>
+
+                        <div class="chat-composer">
+                            <button id="attachBtn" class="composer-icon-btn" type="button" title="Attach file">
+                                <i class="fas fa-paperclip"></i>
+                            </button>
+                            <div class="composer-input">
+                                <input type="text" id="messageInput" placeholder="Ask a question or describe a task…" autocomplete="off">
                             </div>
-                        </div>
-                        <div class="agent-panel-item">
-                            <span class="agent-panel-label">Using MongoDB:</span>
-                            <span class="agent-panel-value" id="useMongoDBValue">Yes</span>
-                        </div>
-                        <div class="memory-actions">
-                            <button id="refreshMemoryConfig" class="refresh-btn" title="Refresh Memory Configuration">
-                                <i class="fas fa-sync-alt"></i> Refresh
+                            <button id="sendBtn" class="composer-send-btn" type="button" title="Send">
+                                <i class="fas fa-paper-plane"></i>
                             </button>
                         </div>
                     </div>
-                </div>
-            </div>
+                </section>
+
+                <!-- ============== RECEIPTS VIEW ============== -->
+                <section class="view view-receipts" data-view="receipts">
+                    <div class="metric-grid metric-grid-tight">
+                        <article class="metric-card">
+                            <div class="metric-icon tone-green"><i class="fas fa-file-invoice"></i></div>
+                            <div class="metric-body">
+                                <span class="metric-label">Your invoices</span>
+                                <strong class="metric-value" id="receiptsUserInvoices">0</strong>
+                                <small class="metric-hint">For the active user</small>
+                            </div>
+                        </article>
+                        <article class="metric-card">
+                            <div class="metric-icon tone-blue"><i class="fas fa-list-check"></i></div>
+                            <div class="metric-body">
+                                <span class="metric-label">Your line items</span>
+                                <strong class="metric-value" id="receiptsUserItems">0</strong>
+                                <small class="metric-hint">Across all your invoices</small>
+                            </div>
+                        </article>
+                        <article class="metric-card">
+                            <div class="metric-icon tone-violet"><i class="fas fa-database"></i></div>
+                            <div class="metric-body">
+                                <span class="metric-label">Workspace invoices</span>
+                                <strong class="metric-value" id="receiptsAllInvoices">0</strong>
+                                <small class="metric-hint">Across all users</small>
+                            </div>
+                        </article>
+                        <article class="metric-card">
+                            <div class="metric-icon tone-amber"><i class="fas fa-vector-square"></i></div>
+                            <div class="metric-body">
+                                <span class="metric-label">Embedded items</span>
+                                <strong class="metric-value" id="receiptsEmbeddings">0/0</strong>
+                                <small class="metric-hint">Items with vector embeddings</small>
+                            </div>
+                        </article>
+                    </div>
+
+                    <section class="card">
+                        <div class="card-head">
+                            <div>
+                                <h3>Capture or query</h3>
+                                <p>Receipts are persisted in Supabase Storage and indexed in Postgres + pgvector. Use chat to add new ones or run searches.</p>
+                            </div>
+                        </div>
+                        <div class="card-body card-body-actions">
+                            <button type="button" class="btn btn-primary" data-upload-trigger>
+                                <i class="fas fa-cloud-arrow-up"></i>
+                                <span>Upload a receipt</span>
+                            </button>
+                            <button type="button" class="btn btn-ghost" data-prompt="Show my latest uploaded receipts">
+                                <i class="fas fa-clock-rotate-left"></i>
+                                <span>List recent receipts</span>
+                            </button>
+                            <button type="button" class="btn btn-ghost" data-prompt="What did I spend this month?">
+                                <i class="fas fa-chart-line"></i>
+                                <span>Monthly spend</span>
+                            </button>
+                        </div>
+                    </section>
+
+                    <section class="card" id="s3StorageSection" style="display: none;">
+                        <div class="card-head">
+                            <div>
+                                <h3>Latest stored file</h3>
+                                <p>Most recent receipt persisted to object storage.</p>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <dl class="kv-list">
+                                <div class="kv-row">
+                                    <dt>Provider</dt>
+                                    <dd id="storageProvider">Supabase</dd>
+                                </div>
+                                <div class="kv-row">
+                                    <dt>File key</dt>
+                                    <dd id="s3FileKey" class="kv-mono">None</dd>
+                                </div>
+                                <div class="kv-row">
+                                    <dt>Signed URL</dt>
+                                    <dd id="s3UrlContainer">
+                                        <a href="#" id="s3Url" target="_blank" rel="noopener">None</a>
+                                    </dd>
+                                </div>
+                            </dl>
+                        </div>
+                    </section>
+                </section>
+
+                <!-- ============== INSPECTOR VIEW ============== -->
+                <section class="view view-inspector" data-view="inspector">
+                    <div class="inspector-grid">
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Workflow steps</h3>
+                                    <p>LangGraph nodes that processed the most recent message. Click a step for logs.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div id="workflowSteps" class="workflow-steps">
+                                    <div class="step waiting">
+                                        <span class="step-dot"></span>
+                                        <span>Waiting for input…</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Current intent</h3>
+                                    <p>Classifier output for the last user turn.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="intent-display">
+                                    <span class="intent-label">Intent</span>
+                                    <span class="intent-value" id="currentIntent">None</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Token usage</h3>
+                                    <p>Last LLM call.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="token-grid">
+                                    <div class="token-cell">
+                                        <span>Input</span>
+                                        <strong id="inputTokens">0</strong>
+                                    </div>
+                                    <div class="token-cell">
+                                        <span>Output</span>
+                                        <strong id="outputTokens">0</strong>
+                                    </div>
+                                    <div class="token-cell token-cell-total">
+                                        <span>Total</span>
+                                        <strong id="totalTokens">0</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card card-span-2">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Active user context</h3>
+                                    <p>Identity used for the current conversation.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <dl class="kv-list">
+                                    <div class="kv-row">
+                                        <dt>User ID</dt>
+                                        <dd id="userIdDisplay">0</dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>WhatsApp number</dt>
+                                        <dd id="userWhatsappDisplay">+1234567890</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <!-- ============== SETTINGS VIEW ============== -->
+                <section class="view view-settings" data-view="settings">
+                    <div class="settings-grid">
+
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Users</h3>
+                                    <p>Create new users or switch between existing test identities.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="settings-actions-row">
+                                    <button class="btn btn-primary" id="createUserBtn" type="button">
+                                        <i class="fas fa-user-plus"></i>
+                                        <span>Create new user</span>
+                                    </button>
+                                    <button class="btn btn-ghost" id="companyProfileBtn" type="button">
+                                        <i class="fas fa-building"></i>
+                                        <span>Company profile</span>
+                                    </button>
+                                </div>
+                                <p class="form-hint">Switch the active user using the dropdown in the topbar.</p>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Vector embeddings</h3>
+                                    <p>Manage pgvector embeddings for semantic search over items and invoices.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <dl class="kv-list">
+                                    <div class="kv-row">
+                                        <dt>pgvector</dt>
+                                        <dd><span id="pgvectorStatus" class="pill">Unknown</span></dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>Embeddings</dt>
+                                        <dd id="embeddingsCount">0/0</dd>
+                                    </div>
+                                </dl>
+                                <div class="settings-actions-row">
+                                    <button id="updateEmbeddings" class="btn btn-ghost btn-small" type="button">
+                                        <i class="fas fa-rotate"></i>
+                                        <span>Update missing</span>
+                                    </button>
+                                    <button id="forceUpdateEmbeddings" class="btn btn-ghost btn-small" type="button">
+                                        <i class="fas fa-bolt"></i>
+                                        <span>Force update</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card card-span-2">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Memory configuration</h3>
+                                    <p>LangGraph conversation memory. Click an editable value to change it.</p>
+                                </div>
+                                <button id="refreshMemoryConfig" class="icon-btn" type="button" title="Refresh">
+                                    <i class="fas fa-rotate"></i>
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <dl class="kv-list">
+                                    <div class="kv-row">
+                                        <dt>Max messages</dt>
+                                        <dd>
+                                            <span id="maxMessagesValue">50</span>
+                                            <button class="adjust-btn" id="editMaxMessages" type="button" title="Edit"><i class="fas fa-pen"></i></button>
+                                        </dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>Context window</dt>
+                                        <dd>
+                                            <span id="messageWindowValue">10</span>
+                                            <button class="adjust-btn" id="editMessageWindow" type="button" title="Edit"><i class="fas fa-pen"></i></button>
+                                        </dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>Memory age (s)</dt>
+                                        <dd>
+                                            <span id="maxMemoryAgeValue">3600</span>
+                                            <button class="adjust-btn" id="editMaxMemoryAge" type="button" title="Edit"><i class="fas fa-pen"></i></button>
+                                        </dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>Use context window</dt>
+                                        <dd>
+                                            <span id="enableContextWindowValue" class="pill">Enabled</span>
+                                            <button class="toggle-btn" id="toggleContextWindow" type="button" title="Toggle"><i class="fas fa-toggle-on"></i></button>
+                                        </dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>Persist memory</dt>
+                                        <dd>
+                                            <span id="persistMemoryValue" class="pill">Enabled</span>
+                                            <button class="toggle-btn" id="togglePersistMemory" type="button" title="Toggle"><i class="fas fa-toggle-on"></i></button>
+                                        </dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>Using MongoDB</dt>
+                                        <dd id="useMongoDBValue">Yes</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </section>
+
+                        <section class="card card-span-2">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Database status</h3>
+                                    <p>Postgres + MongoDB health and counts.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="db-grid">
+                                    <div class="db-stat">
+                                        <span>Total invoices</span>
+                                        <strong id="db-invoices-count">0</strong>
+                                    </div>
+                                    <div class="db-stat">
+                                        <span>Total items</span>
+                                        <strong id="db-items-count">0</strong>
+                                    </div>
+                                    <div class="db-stat">
+                                        <span>DB size</span>
+                                        <strong id="db-size">—</strong>
+                                    </div>
+                                    <div class="db-stat">
+                                        <span>Tables size</span>
+                                        <strong id="tables-size">—</strong>
+                                    </div>
+                                    <div class="db-stat">
+                                        <span>User invoices</span>
+                                        <strong id="db-user-invoices-count">0</strong>
+                                    </div>
+                                    <div class="db-stat">
+                                        <span>User items</span>
+                                        <strong id="db-user-items-count">0</strong>
+                                    </div>
+                                </div>
+
+                                <dl class="kv-list kv-list-tight">
+                                    <div class="kv-row">
+                                        <dt>PostgreSQL</dt>
+                                        <dd id="pg-connection" class="pill">—</dd>
+                                    </div>
+                                    <div class="kv-row">
+                                        <dt>MongoDB</dt>
+                                        <dd id="mongo-connection" class="kv-mono">—</dd>
+                                    </div>
+                                </dl>
+                            </div>
+                        </section>
+
+                    </div>
+                </section>
+
+            </main>
         </div>
-        </main>
     </div>
 
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="loading-overlay hidden">
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden" role="status" aria-live="polite">
         <div class="spinner"></div>
-        <p class="loading-text">Processing...</p>
+        <p class="loading-text">Processing…</p>
     </div>
 
     <!-- Scripts -->
