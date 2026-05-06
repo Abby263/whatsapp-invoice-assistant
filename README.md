@@ -4,6 +4,12 @@ Production-oriented AI workspace for capturing receipts from WhatsApp, extractin
 
 The application combines a WhatsApp webhook API, LangGraph agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for local testing and workflow inspection.
 
+## Live UI
+
+[Open the hosted UI on Vercel](https://whatsapp-invoice-assistant.vercel.app)
+
+The Vercel deployment runs the operator UI in demo mode so reviewers can inspect the product surface without private infrastructure. Full receipt extraction, WhatsApp webhook processing, Supabase persistence, and OpenAI embeddings require the production environment variables documented in [SETUP.md](SETUP.md).
+
 ## UI Demo
 
 The repository includes a short UI demo video. If GitHub does not render the video inline, open the file directly.
