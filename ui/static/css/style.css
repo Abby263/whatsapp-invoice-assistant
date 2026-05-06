@@ -360,6 +360,34 @@ input, select, textarea {
     flex: 0 0 auto;
 }
 
+.topbar-github-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.15s;
+}
+
+.topbar-github-link i {
+    font-size: 17px;
+}
+
+.topbar-github-link:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+    transform: translateY(-1px);
+}
+
 .topbar-icon-btn {
     width: 38px;
     height: 38px;
@@ -1795,6 +1823,16 @@ input, select, textarea {
 
     .topbar-user-select {
         max-width: 140px;
+    }
+
+    .topbar-github-link {
+        width: 38px;
+        padding: 0;
+        border-radius: 10px;
+    }
+
+    .topbar-github-link span {
+        display: none;
     }
 
     .view-chat {
