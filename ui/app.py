@@ -457,7 +457,7 @@ def home():
 @app.route('/favicon.ico')
 def favicon():
     """Serve the site icon for browsers that request /favicon.ico."""
-    return app.send_static_file('images/site-icon.svg')
+    return app.send_static_file('site-icon.svg')
 
 
 @app.route('/api/auth/config')
