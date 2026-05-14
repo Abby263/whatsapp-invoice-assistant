@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from utils.clerk_auth import (
     ClerkAuthError,
@@ -40,6 +40,7 @@ MEMORY_CONFIG = {
     "use_mongodb": False,
 }
 DEMO_LINKS: dict[str, dict] = {}
+DEMO_GENERATED_INVOICES: list[dict] = []
 
 
 app = Flask(
@@ -93,6 +94,81 @@ def _demo_db_status() -> dict:
             "with_embeddings": 0,
             "without_embeddings": 0,
         },
+    }
+
+
+def _demo_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _demo_generated_invoice(user: dict, source: str, payload: dict | None = None) -> dict:
+    invoice_id = len(DEMO_GENERATED_INVOICES) + 1
+    now = datetime.now(timezone.utc)
+    payload = payload or {}
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    if not items:
+        items = [
+            {
+                "description": payload.get("description") or "Consulting services",
+                "quantity": 1,
+                "unit_price": 500,
+                "total_price": 500,
+            }
+        ]
+    normalized_items = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        quantity = _demo_float(item.get("quantity"), 1)
+        unit_price = _demo_float(item.get("unit_price") or item.get("price"), 0)
+        total_price = _demo_float(item.get("total_price") or item.get("amount"), quantity * unit_price)
+        normalized_items.append(
+            {
+                "description": item.get("description") or "Service",
+                "quantity": quantity,
+                "unit_price": unit_price,
+                "total_price": total_price,
+            }
+        )
+    subtotal = sum(item["total_price"] for item in normalized_items)
+    tax_rate = _demo_float(payload.get("tax_rate") or 0)
+    tax_amount = subtotal * tax_rate / 100
+    total_amount = subtotal + tax_amount
+    return {
+        "id": invoice_id,
+        "user_id": user["id"],
+        "source": source,
+        "status": "generated",
+        "invoice_number": f"INV-DEMO-{invoice_id:04d}",
+        "invoice_date": now.date().isoformat(),
+        "due_date": payload.get("due_date") or now.date().isoformat(),
+        "client_name": payload.get("client_name") or "Demo Client",
+        "client_company": payload.get("client_company") or "Demo Client LLC",
+        "client_email": payload.get("client_email") or "client@example.com",
+        "currency": (payload.get("currency") or "USD").upper()[:3],
+        "subtotal": subtotal,
+        "tax_amount": tax_amount,
+        "discount_amount": 0,
+        "total_amount": total_amount,
+        "payment_terms": payload.get("payment_terms") or "Due on receipt",
+        "document_url": "/api/generated-invoices/demo-invoice.txt",
+        "pdf_url": None,
+        "items": normalized_items,
+        "created_at": now.isoformat(),
+    }
+
+
+def _demo_generated_invoice_stats(invoices: list[dict]) -> dict:
+    return {
+        "count": len(invoices),
+        "total_amount": sum(float(invoice.get("total_amount") or 0) for invoice in invoices),
+        "by_status": {
+            "generated": len([invoice for invoice in invoices if invoice.get("status") == "generated"])
+        },
+        "recent": invoices[:5],
     }
 
 
@@ -349,9 +425,12 @@ def message():
         )
     elif "invoice" in lower_prompt or "draft" in lower_prompt:
         intent = "invoice_generation"
+        invoice = _demo_generated_invoice(linked_user or DEFAULT_USER, source="demo_chat")
+        DEMO_GENERATED_INVOICES.insert(0, invoice)
         response = (
-            "Demo response: invoice drafting would use extracted receipt data "
-            "and company profile fields to prepare an invoice document."
+            "Demo response: generated a sample outgoing invoice from your "
+            "saved company defaults. In production this is saved to Supabase "
+            "Storage and appears in the website invoice list."
         )
     else:
         intent = "general_finance_query"
@@ -365,6 +444,7 @@ def message():
             "status": "success",
             "message": response,
             "metadata": _demo_metadata(intent),
+            "generated_invoice": DEMO_GENERATED_INVOICES[0] if intent == "invoice_generation" else None,
             "whatsapp_number": whatsapp_number,
             "user_id": (
                 linked_user["id"]
@@ -372,6 +452,84 @@ def message():
                 else data.get("user_id") or DEFAULT_USER["id"]
             ),
         }
+    )
+
+
+@app.get("/api/generated-invoices")
+def generated_invoices():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
+    user = linked_user or DEFAULT_USER
+    invoices = [
+        invoice for invoice in DEMO_GENERATED_INVOICES
+        if invoice.get("user_id") == user["id"]
+    ]
+    return jsonify(
+        {
+            "status": "success",
+            "generated_invoices": invoices,
+            "invoices": invoices,
+            "analytics": _demo_generated_invoice_stats(invoices),
+            "degraded": True,
+        }
+    )
+
+
+@app.post("/api/generated-invoices")
+@app.post("/api/generate-pdf-invoice")
+def generated_invoice_create():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
+    user = linked_user or DEFAULT_USER
+    invoice = _demo_generated_invoice(
+        user,
+        source="demo_web",
+        payload=request.get_json(silent=True) or {},
+    )
+    DEMO_GENERATED_INVOICES.insert(0, invoice)
+    return jsonify(
+        {
+            "status": "success",
+            "message": "Demo invoice generated",
+            "generated_invoice": invoice,
+            "invoice": invoice,
+            "document_url": invoice["document_url"],
+            "pdf_url": invoice["pdf_url"],
+            "degraded": True,
+        }
+    )
+
+
+@app.get("/api/generated-invoices/analytics")
+def generated_invoice_analytics():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
+    user = linked_user or DEFAULT_USER
+    invoices = [
+        invoice for invoice in DEMO_GENERATED_INVOICES
+        if invoice.get("user_id") == user["id"]
+    ]
+    return jsonify(
+        {
+            "status": "success",
+            "analytics": _demo_generated_invoice_stats(invoices),
+            "degraded": True,
+        }
+    )
+
+
+@app.get("/api/generated-invoices/demo-invoice.txt")
+def generated_invoice_demo_download():
+    return Response(
+        "Demo invoice file. Configure Supabase Storage to generate durable DOCX/PDF files.",
+        mimetype="text/plain",
+        headers={"Content-Disposition": "attachment; filename=demo-invoice.txt"},
     )
 
 
@@ -505,16 +663,6 @@ def check_embeddings():
             },
         }
     )
-
-
-@app.post("/api/generate-pdf-invoice")
-def generate_pdf_invoice():
-    return jsonify(
-        {
-            "status": "error",
-            "message": "Document generation is disabled in the hosted UI demo.",
-        }
-    ), 501
 
 
 @app.get("/uploads/<path:filename>")

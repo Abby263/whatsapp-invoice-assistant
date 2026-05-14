@@ -32,6 +32,12 @@ const receiptsUserInvoices = document.getElementById('receiptsUserInvoices');
 const receiptsUserItems = document.getElementById('receiptsUserItems');
 const receiptsAllInvoices = document.getElementById('receiptsAllInvoices');
 const receiptsEmbeddings = document.getElementById('receiptsEmbeddings');
+const generatedInvoiceCount = document.getElementById('generatedInvoiceCount');
+const generatedInvoiceValue = document.getElementById('generatedInvoiceValue');
+const generatedInvoiceList = document.getElementById('generatedInvoiceList');
+const generatedInvoiceEmpty = document.getElementById('generatedInvoiceEmpty');
+const refreshGeneratedInvoicesBtn = document.getElementById('refreshGeneratedInvoicesBtn');
+const generateInvoiceBtn = document.getElementById('generateInvoiceBtn');
 const storageProvider = document.getElementById('storageProvider');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
 const themeToggleIcon = document.getElementById('themeToggleIcon');
@@ -401,6 +407,7 @@ function applyLinkedUser(linkedUser) {
     }
 
     updateWorkspaceAuthAvailability();
+    loadGeneratedInvoices();
 }
 
 function setAuthUiState(state, label) {
@@ -437,6 +444,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (canLoadWorkspace) {
         initializeApp();
         updateDatabaseCounts();
+        loadGeneratedInvoices();
         loadUsers();
     } else {
         addSystemMessage('Sign in to connect your WhatsApp receipts with this workspace.');
@@ -461,6 +469,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const companyProfileBtn = document.getElementById('companyProfileBtn');
     if (companyProfileBtn) {
         companyProfileBtn.addEventListener('click', showCompanyProfileModal);
+    }
+
+    if (refreshGeneratedInvoicesBtn) {
+        refreshGeneratedInvoicesBtn.addEventListener('click', loadGeneratedInvoices);
+    }
+
+    if (generateInvoiceBtn) {
+        generateInvoiceBtn.addEventListener('click', showGeneratedInvoiceModal);
     }
 
     // Initialize memory configuration
@@ -590,6 +606,15 @@ function setupCommandCenter() {
             }
         });
     });
+
+    document.querySelectorAll('[data-generate-invoice]').forEach(button => {
+        if (button.dataset.bound === 'true') {
+            return;
+        }
+
+        button.dataset.bound = 'true';
+        button.addEventListener('click', showGeneratedInvoiceModal);
+    });
 }
 
 // Function to load users into the dropdown
@@ -716,6 +741,7 @@ function initializeForUser(whatsappNumber) {
 
                 // Update database counts for this user
                 updateDatabaseCounts();
+                loadGeneratedInvoices();
             } else {
                 addSystemMessage(`Error initializing for user: ${data.message}`);
             }
@@ -848,7 +874,10 @@ function processMessage(message) {
             updateAgentPanel(data);
 
             // Update database counts
-                updateDatabaseCounts();
+            updateDatabaseCounts();
+            if (data.generated_invoice || data.metadata?.generated_invoice) {
+                loadGeneratedInvoices();
+            }
 
             // Update user information display if provided
             if (data.user_id) {
@@ -1694,6 +1723,314 @@ function updateDatabaseCounts() {
         });
 }
 
+function loadGeneratedInvoices() {
+    if (!generatedInvoiceList) {
+        return;
+    }
+
+    fetch(`/api/generated-invoices?user_id=${userId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                console.warn('Generated invoices unavailable:', data.message);
+                return;
+            }
+            renderGeneratedInvoices(data.generated_invoices || data.invoices || []);
+            const analytics = data.analytics || {};
+            setElementText(generatedInvoiceCount, analytics.count || 0);
+            setElementText(
+                generatedInvoiceValue,
+                formatGeneratedCurrency(analytics.total_amount || 0, 'USD')
+            );
+        })
+        .catch(error => {
+            console.error('Error loading generated invoices:', error);
+        });
+}
+
+function showGeneratedInvoiceModal() {
+    if (!userId || userId === '0') {
+        alert('Please select or link a user before generating an invoice.');
+        return;
+    }
+
+    showLoading('Loading invoice defaults...');
+    fetch(`/api/users/company-profile/${encodeURIComponent(userId)}`)
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            const prefs = data.status === 'success' ? (data.preferences || data.profile || {}) : {};
+            renderGeneratedInvoiceModal(prefs);
+        })
+        .catch(error => {
+            hideLoading();
+            console.warn('Could not load invoice defaults:', error);
+            renderGeneratedInvoiceModal({});
+        });
+}
+
+function renderGeneratedInvoiceModal(prefs = {}) {
+    const dialog = document.createElement('div');
+    dialog.className = 'modal-dialog generated-invoice-modal';
+    const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    dialog.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4>Generate Invoice</h4>
+                <button class="close-btn" id="closeGeneratedInvoiceDialog" type="button">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-section">
+                    <h5>Seller defaults</h5>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="invoiceCompanyName">Company name</label>
+                            <input type="text" id="invoiceCompanyName" value="${escapeAttribute(prefs.company_name || '')}" placeholder="Your company">
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceCompanyEmail">Company email</label>
+                            <input type="email" id="invoiceCompanyEmail" value="${escapeAttribute(prefs.company_email || '')}" placeholder="billing@company.com">
+                        </div>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="invoiceCurrency">Currency</label>
+                            <select id="invoiceCurrency">
+                                ${['USD', 'INR', 'EUR', 'GBP', 'CAD', 'AUD'].map(currency => (
+                                    `<option value="${currency}" ${String(prefs.currency || 'USD').toUpperCase() === currency ? 'selected' : ''}>${currency}</option>`
+                                )).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="invoicePaymentTerms">Payment terms</label>
+                            <input type="text" id="invoicePaymentTerms" value="${escapeAttribute(prefs.payment_terms || '')}" placeholder="Net 30">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h5>Client</h5>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="invoiceClientName">Client name</label>
+                            <input type="text" id="invoiceClientName" value="${escapeAttribute(prefs.client_name || '')}" placeholder="Primary contact">
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceClientCompany">Client company</label>
+                            <input type="text" id="invoiceClientCompany" value="${escapeAttribute(prefs.client_company || '')}" placeholder="Client LLC">
+                        </div>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="invoiceClientEmail">Client email</label>
+                            <input type="email" id="invoiceClientEmail" value="${escapeAttribute(prefs.client_email || '')}" placeholder="client@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceDueDate">Due date</label>
+                            <input type="date" id="invoiceDueDate" value="${escapeAttribute(dueDate)}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="invoiceClientAddress">Client address</label>
+                        <textarea id="invoiceClientAddress" rows="2" placeholder="Billing address">${escapeHtml(prefs.client_address || '')}</textarea>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h5>Transaction</h5>
+                    <div class="form-group">
+                        <label for="invoiceLineDescription">Description</label>
+                        <input type="text" id="invoiceLineDescription" placeholder="Consulting services, product delivery, project milestone" required>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="invoiceQuantity">Quantity</label>
+                            <input type="number" id="invoiceQuantity" min="0.01" step="0.01" value="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceUnitPrice">Unit price</label>
+                            <input type="number" id="invoiceUnitPrice" min="0" step="0.01" placeholder="0.00" required>
+                        </div>
+                    </div>
+                    <div class="form-grid-2">
+                        <div class="form-group">
+                            <label for="invoiceTaxRate">Tax rate %</label>
+                            <input type="number" id="invoiceTaxRate" min="0" step="0.01" value="${escapeAttribute(prefs.tax_rate || 0)}">
+                        </div>
+                        <div class="form-group">
+                            <label for="invoiceNotes">Notes</label>
+                            <input type="text" id="invoiceNotes" value="${escapeAttribute(prefs.payment_instructions || '')}" placeholder="Payment instructions or memo">
+                        </div>
+                    </div>
+                    <label class="checkbox-row" for="invoiceSaveDefaults">
+                        <input type="checkbox" id="invoiceSaveDefaults" checked>
+                        <span>
+                            Save seller, client, currency, tax, and payment terms as defaults for future WhatsApp and web invoices.
+                        </span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="action-btn" id="submitGeneratedInvoice" type="button">Generate Invoice</button>
+                <button class="cancel-btn" id="cancelGeneratedInvoice" type="button">Cancel</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const closeDialog = () => {
+        if (document.body.contains(dialog)) {
+            document.body.removeChild(dialog);
+        }
+    };
+
+    document.getElementById('closeGeneratedInvoiceDialog').addEventListener('click', closeDialog);
+    document.getElementById('cancelGeneratedInvoice').addEventListener('click', closeDialog);
+    dialog.addEventListener('click', event => {
+        if (event.target === dialog) {
+            closeDialog();
+        }
+    });
+    document.getElementById('submitGeneratedInvoice').addEventListener('click', () => {
+        submitGeneratedInvoice(dialog, closeDialog);
+    });
+}
+
+function submitGeneratedInvoice(dialog, closeDialog) {
+    const description = document.getElementById('invoiceLineDescription').value.trim();
+    const unitPrice = Number(document.getElementById('invoiceUnitPrice').value || 0);
+    const quantity = Number(document.getElementById('invoiceQuantity').value || 1);
+
+    if (!description || !unitPrice || unitPrice < 0 || !quantity || quantity <= 0) {
+        alert('Enter a transaction description, quantity, and unit price.');
+        return;
+    }
+
+    const submitBtn = document.getElementById('submitGeneratedInvoice');
+    submitBtn.disabled = true;
+    showLoading('Generating invoice...');
+
+    const payload = {
+        user_id: userId,
+        source: 'web',
+        save_defaults: document.getElementById('invoiceSaveDefaults').checked,
+        company_name: document.getElementById('invoiceCompanyName').value.trim(),
+        company_email: document.getElementById('invoiceCompanyEmail').value.trim(),
+        currency: document.getElementById('invoiceCurrency').value,
+        payment_terms: document.getElementById('invoicePaymentTerms').value.trim(),
+        client_name: document.getElementById('invoiceClientName').value.trim(),
+        client_company: document.getElementById('invoiceClientCompany').value.trim(),
+        client_email: document.getElementById('invoiceClientEmail').value.trim(),
+        client_address: document.getElementById('invoiceClientAddress').value.trim(),
+        due_date: document.getElementById('invoiceDueDate').value,
+        tax_rate: Number(document.getElementById('invoiceTaxRate').value || 0),
+        notes: document.getElementById('invoiceNotes').value.trim(),
+        items: [
+            {
+                description,
+                quantity,
+                unit_price: unitPrice,
+                total_price: quantity * unitPrice
+            }
+        ]
+    };
+
+    fetch('/api/generated-invoices', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                throw new Error(data.message || 'Invoice generation failed');
+            }
+
+            closeDialog();
+            const invoice = data.generated_invoice || data.invoice || {};
+            addSystemMessage(`Generated invoice ${escapeHtml(invoice.invoice_number || '')}. It is now saved under this user.`);
+            loadGeneratedInvoices();
+            updateDatabaseCounts();
+            switchView('receipts');
+        })
+        .catch(error => {
+            console.error('Error generating invoice:', error);
+            addSystemMessage(`Could not generate invoice: ${escapeHtml(error.message)}`);
+        })
+        .finally(() => {
+            hideLoading();
+            if (document.body.contains(dialog)) {
+                submitBtn.disabled = false;
+            }
+        });
+}
+
+function renderGeneratedInvoices(invoices) {
+    if (!generatedInvoiceList) {
+        return;
+    }
+
+    generatedInvoiceList.innerHTML = '';
+    if (!invoices.length) {
+        if (generatedInvoiceEmpty) {
+            generatedInvoiceList.appendChild(generatedInvoiceEmpty);
+            generatedInvoiceEmpty.style.display = 'grid';
+        }
+        return;
+    }
+
+    invoices.forEach(invoice => {
+        const row = document.createElement('article');
+        row.className = 'generated-invoice-row';
+        const client = invoice.client_name || invoice.client_company || 'Client';
+        const amount = formatGeneratedCurrency(invoice.total_amount || 0, invoice.currency || 'USD');
+        const created = invoice.created_at ? new Date(invoice.created_at).toLocaleDateString() : 'Recent';
+        const downloadUrl = invoice.pdf_url || invoice.document_url || '#';
+        const downloadLabel = invoice.pdf_url ? 'PDF' : 'File';
+
+        row.innerHTML = `
+            <div class="generated-invoice-main">
+                <strong>${escapeHtml(invoice.invoice_number || `Invoice #${invoice.id}`)}</strong>
+                <span>${escapeHtml(client)} · ${escapeHtml(invoice.status || 'generated')}</span>
+            </div>
+            <div class="generated-invoice-meta">
+                <strong>${amount}</strong>
+                <span>${created}</span>
+            </div>
+            <div class="generated-invoice-actions">
+                ${downloadUrl !== '#'
+                    ? `<a href="${escapeAttribute(downloadUrl)}" target="_blank" rel="noopener"><i class="fas fa-download"></i>${downloadLabel}</a>`
+                    : '<span class="muted">No file</span>'}
+            </div>
+        `;
+        generatedInvoiceList.appendChild(row);
+    });
+}
+
+function formatGeneratedCurrency(amount, currency) {
+    try {
+        return new Intl.NumberFormat(undefined, {
+            style: 'currency',
+            currency: currency || 'USD',
+            maximumFractionDigits: 2
+        }).format(Number(amount || 0));
+    } catch (error) {
+        return `${currency || 'USD'} ${Number(amount || 0).toFixed(2)}`;
+    }
+}
+
+function escapeHtml(value) {
+    const div = document.createElement('div');
+    div.textContent = value == null ? '' : String(value);
+    return div.innerHTML;
+}
+
+function escapeAttribute(value) {
+    return escapeHtml(value).replace(/"/g, '&quot;');
+}
+
 // Memory Configuration Management
 function updateMemoryConfig() {
     fetch('/api/memory/config')
@@ -2302,206 +2639,11 @@ function replaceLastBotMessage(newMessage) {
     }
 }
 
-// Function to generate and download a DOCX invoice
+// Backward-compatible entry point for older templates that call generateInvoice().
 function generateInvoice() {
-    showLoading("Generating invoice document...");
-
-    // First, get the company profile
-    fetch('/api/users/company-profile', {
-        method: 'GET',
-        headers: {
-            'Content-Type': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            // Use the company profile data to generate a DOCX invoice
-            fetch('/api/generate-pdf-invoice', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    company_name: data.profile.company_name || 'Sample Company',
-                    company_address: data.profile.company_address || '123 Business St',
-                    company_phone: data.profile.company_phone || '555-1234',
-                    company_email: data.profile.company_email || 'sample@company.com',
-                    company_website: data.profile.company_website || 'www.samplecompany.com',
-                    invoice_number: 'INV-' + Math.floor(Math.random() * 10000),
-                    invoice_date: new Date().toISOString().split('T')[0],
-                    due_date: new Date(Date.now() + 30*24*60*60*1000).toISOString().split('T')[0],
-                    client_name: 'Sample Client',
-                    client_address: '456 Client Ave',
-                    client_phone: '555-5678',
-                    client_email: 'client@example.com',
-                    items: [
-                        {
-                            description: 'Service 1',
-                            quantity: 1,
-                            unit_price: 100,
-                            amount: 100
-                        },
-                        {
-                            description: 'Service 2',
-                            quantity: 2,
-                            unit_price: 50,
-                            amount: 100
-                        }
-                    ],
-                    subtotal: 200,
-                    tax: 20,
-                    total: 220,
-                    notes: 'Thank you for your business!'
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                hideLoading();
-                if (result.status === 'success') {
-                    console.log('DOCX invoice generated successfully', result);
-
-                    // Create a modal to show the download link
-                    const modal = document.createElement('div');
-                    modal.className = 'modal';
-                    modal.innerHTML = `
-                        <div class="modal-content">
-                            <span class="close">&times;</span>
-                            <h2>Invoice Generated Successfully</h2>
-                            <div id="invoice-viewer">
-                                <p>Your invoice document has been generated successfully.</p>
-                                <div class="download-links">
-                                    ${result.document_url ? `<a href="${result.document_url}" download class="btn btn-primary">Download Invoice Document</a>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `;
-                    document.body.appendChild(modal);
-
-                    // Add event listener to close the modal
-                    const closeBtn = modal.querySelector('.close');
-                    closeBtn.onclick = function() {
-                        document.body.removeChild(modal);
-                    };
-
-                    // Also close when clicking outside the modal content
-                    modal.onclick = function(event) {
-                        if (event.target === modal) {
-                            document.body.removeChild(modal);
-                        }
-                    };
-
-                    // Add some CSS for the modal
-                    const style = document.createElement('style');
-                    style.textContent = `
-                        .modal {
-                            display: block;
-                            position: fixed;
-                            z-index: 1000;
-                            left: 0;
-                            top: 0;
-                            width: 100%;
-                            height: 100%;
-                            background-color: rgba(0,0,0,0.5);
-                        }
-                        .modal-content {
-                            background-color: white;
-                            margin: 10% auto;
-                            padding: 20px;
-                            border-radius: 8px;
-                            width: 80%;
-                            max-width: 800px;
-                        }
-                        .close {
-                            color: #aaa;
-                            float: right;
-                            font-size: 28px;
-                            font-weight: bold;
-                            cursor: pointer;
-                        }
-                        .close:hover {
-                            color: black;
-                        }
-                        .download-links {
-                            margin-top: 20px;
-                            display: flex;
-                            gap: 10px;
-                        }
-                        .btn {
-                            padding: 10px 15px;
-                            border-radius: 5px;
-                            text-decoration: none;
-                            color: white;
-                            font-weight: bold;
-                        }
-                        .btn-primary {
-                            background-color: #4CAF50;
-                        }
-                    `;
-                    document.head.appendChild(style);
-
-                    // Add a reply in the chat
-                    if (result.document_url) {
-                        replaceLastBotMessage(`
-                            <p>I've generated a sample invoice based on your company profile.</p>
-                            <p><a href="${result.document_url}" download class="btn btn-primary">Download Invoice Document</a></p>
-                        `);
-                    } else {
-                        replaceLastBotMessage(`
-                            <p>I've generated a sample invoice based on your company profile, but the document generation failed. Please try again.</p>
-                        `);
-                    }
-                } else {
-                    console.error('Failed to generate invoice document', result);
-                    replaceLastBotMessage(`
-                        <p>Sorry, I couldn't generate the invoice document. Error: ${result.message || 'Unknown error'}</p>
-                    `);
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                console.error('Error generating invoice document:', error);
-                replaceLastBotMessage(`
-                    <p>Sorry, there was an error generating the invoice document: ${error.message}</p>
-                `);
-            });
-        } else {
-            hideLoading();
-            console.error('Failed to get company profile:', data);
-            replaceLastBotMessage(`
-                <p>Sorry, I couldn't retrieve your company profile. Please make sure your company profile is set up correctly.</p>
-            `);
-        }
-    })
-    .catch(error => {
-        hideLoading();
-        console.error('Error fetching company profile:', error);
-        replaceLastBotMessage(`
-            <p>Sorry, there was an error fetching your company profile: ${error.message}</p>
-        `);
-    });
+    showGeneratedInvoiceModal();
 }
 
-// Function to add the PDF generation button to the navigation
 function addPDFGenerationButton() {
-    // Find the navigation container
-    const navContainer = document.querySelector('.navbar-nav');
-
-    if (navContainer) {
-        // Create the button
-        const button = document.createElement('button');
-        button.className = 'btn btn-outline-success my-2 my-sm-0 ml-2';
-        button.textContent = 'Generate Sample Invoice';
-
-        // Add click event listener
-        button.addEventListener('click', generateInvoice);
-
-        // Create a list item to contain the button
-        const listItem = document.createElement('li');
-        listItem.className = 'nav-item';
-        listItem.appendChild(button);
-
-        // Add the button to the navigation
-        navContainer.appendChild(listItem);
-    }
+    return null;
 }

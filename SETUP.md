@@ -81,7 +81,7 @@ create extension if not exists vector;
 
 The Alembic migrations also try to create the extension, but enabling it explicitly makes setup failures easier to diagnose.
 
-### 3.4 Create the Receipt Storage Bucket
+### 3.4 Create the Receipt and Generated-Invoice Storage Bucket
 
 1. Go to `Storage`.
 2. Create a bucket named `receipts`.
@@ -91,6 +91,13 @@ The Alembic migrations also try to create the extension, but enabling it explici
 ```env
 SUPABASE_STORAGE_BUCKET=receipts
 ```
+
+The same private bucket stores original receipt uploads and generated outgoing invoice documents. Object paths are user-scoped:
+
+- `<user-id>/invoices/...` for uploaded receipt files.
+- `<user-id>/generated-invoices/...` for generated invoice DOCX/PDF files.
+
+Local development can fall back to `ui/uploads` if Supabase Storage is missing. Production runtimes such as Vercel fail invoice generation clearly when storage is not configured because local files are not durable.
 
 ### 3.5 Get Supabase API Keys
 
@@ -221,7 +228,28 @@ CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 
 This is the bridge that makes a receipt uploaded over WhatsApp visible to the same user in the web UI.
 
-## 7. MongoDB Memory Setup
+## 7. Generated Invoice Setup
+
+Outgoing invoice generation uses the same services already required by receipt processing:
+
+| Requirement | Why it is needed |
+| --- | --- |
+| Supabase Postgres migrations | Creates `generated_invoices` and `generated_invoice_items`. |
+| Supabase Storage | Stores generated invoice DOCX/PDF files in a private bucket. |
+| Clerk or WhatsApp user mapping | Ensures generated invoices belong to the same internal `users.id` as uploaded receipts. |
+| Company profile defaults | Reuses seller, client, currency, tax, and payment terms across WhatsApp and website generation. |
+
+Run migrations after pulling this feature:
+
+```bash
+PYTHONPATH=. poetry run alembic upgrade head
+```
+
+In the website, open `Settings` -> `Company profile` to save reusable seller/client defaults. Users can also save defaults from the **Generate invoice** form. WhatsApp invoice requests reuse those defaults automatically once the sender's WhatsApp number resolves to the same user row.
+
+Production note: generated invoice files must use Supabase Storage. The local `ui/uploads` fallback is only for development and should not be used as a durable production store.
+
+## 8. MongoDB Memory Setup
 
 MongoDB is optional. It stores conversation memory and can back LangGraph checkpointing.
 
@@ -240,7 +268,7 @@ USE_MONGODB=false
 
 The local UI command already uses `USE_MONGODB=false` by default in the Makefile.
 
-## 8. Redis Setup
+## 9. Redis Setup
 
 Redis is optional for current local UI testing, but the project includes Celery/Redis dependencies for background work patterns.
 
@@ -248,7 +276,7 @@ Redis is optional for current local UI testing, but the project includes Celery/
 REDIS_URL=redis://localhost:6379/0
 ```
 
-## 9. Complete `.env` Example
+## 10. Complete `.env` Example
 
 ```env
 DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
@@ -283,7 +311,7 @@ PORT=8000
 HOST=0.0.0.0
 ```
 
-## 10. Database Migration
+## 11. Database Migration
 
 Run migrations after configuring Supabase:
 
@@ -303,7 +331,7 @@ Update embeddings after importing or backfilling invoice data:
 make update-embeddings
 ```
 
-## 11. Run Locally
+## 12. Run Locally
 
 ### FastAPI Webhook API
 
@@ -331,7 +359,7 @@ http://localhost:5001
 
 The UI can render in degraded mode when Supabase is unavailable, but upload, extraction, storage, and search require working Supabase and OpenAI credentials.
 
-## 12. Vercel UI Deployment
+## 13. Vercel UI Deployment
 
 The repository includes a Vercel-compatible Flask entrypoint in `app.py`. This deployment is intentionally lightweight and serves the operator UI in demo mode. It is useful for README demos and product review, while the full WhatsApp processing backend should run with the production services listed above.
 
@@ -356,7 +384,7 @@ Vercel uses:
 
 For a fully functional hosted production system, configure the same Supabase, OpenAI, Twilio, MongoDB, and Redis variables in Vercel or deploy the FastAPI/LangGraph backend on a Python service that supports longer-running workers.
 
-## 13. Docker Setup
+## 14. Docker Setup
 
 Build and run:
 
@@ -373,7 +401,7 @@ docker-compose up --build
 
 The compose file includes local Postgres and MongoDB containers for development. Production deployments should use managed Supabase Postgres, Supabase Storage, and a managed MongoDB service if persistent memory is needed.
 
-## 14. Production Deployment Checklist
+## 15. Production Deployment Checklist
 
 - Use managed Supabase Postgres with automated backups.
 - Enable `vector` in Supabase.
@@ -387,7 +415,7 @@ The compose file includes local Postgres and MongoDB containers for development.
 - Run Alembic migrations in CI/CD before app rollout.
 - Use separate Supabase projects for development, staging, and production.
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 ### `No Supabase connection details found`
 
