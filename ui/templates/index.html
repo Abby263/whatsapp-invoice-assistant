@@ -251,10 +251,10 @@
                                 <strong>Recent receipts</strong>
                                 <span>List the latest captures</span>
                             </button>
-                            <button type="button" class="quick-card" data-prompt="Create an invoice for a new client">
+                            <button type="button" class="quick-card" data-generate-invoice>
                                 <i class="fas fa-file-invoice-dollar"></i>
                                 <strong>Draft an invoice</strong>
-                                <span>Generate a DOCX invoice</span>
+                                <span>Use saved defaults</span>
                             </button>
                         </div>
                     </section>
@@ -296,7 +296,7 @@
                                 <i class="fas fa-clock-rotate-left"></i>
                                 <span>Recent receipts</span>
                             </button>
-                            <button type="button" class="chip" data-prompt="Create an invoice for a new client">
+                            <button type="button" class="chip" data-generate-invoice>
                                 <i class="fas fa-file-invoice-dollar"></i>
                                 <span>Draft invoice</span>
                             </button>
@@ -364,6 +364,22 @@
                                 <small class="metric-hint">Items with vector embeddings</small>
                             </div>
                         </article>
+                        <article class="metric-card">
+                            <div class="metric-icon tone-green"><i class="fas fa-file-signature"></i></div>
+                            <div class="metric-body">
+                                <span class="metric-label">Generated invoices</span>
+                                <strong class="metric-value" id="generatedInvoiceCount">0</strong>
+                                <small class="metric-hint">Created from chat or web</small>
+                            </div>
+                        </article>
+                        <article class="metric-card">
+                            <div class="metric-icon tone-blue"><i class="fas fa-sack-dollar"></i></div>
+                            <div class="metric-body">
+                                <span class="metric-label">Generated value</span>
+                                <strong class="metric-value metric-value-text" id="generatedInvoiceValue">$0</strong>
+                                <small class="metric-hint">Total outgoing invoice value</small>
+                            </div>
+                        </article>
                     </div>
 
                     <section class="card">
@@ -413,6 +429,33 @@
                                     </dd>
                                 </div>
                             </dl>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head">
+                            <div>
+                                <h3>Generated invoices</h3>
+                                <p>Outgoing invoices created from WhatsApp or the website are saved under the active user and available here.</p>
+                            </div>
+                            <div class="card-head-actions">
+                                <button type="button" class="btn btn-primary" id="generateInvoiceBtn">
+                                    <i class="fas fa-file-circle-plus"></i>
+                                    <span>Generate invoice</span>
+                                </button>
+                                <button type="button" class="btn btn-secondary" id="refreshGeneratedInvoicesBtn">
+                                    <i class="fas fa-rotate"></i>
+                                    <span>Refresh</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="generated-invoice-list" id="generatedInvoiceList">
+                                <div class="empty-state" id="generatedInvoiceEmpty">
+                                    <i class="fas fa-file-invoice-dollar"></i>
+                                    <p>No generated invoices yet. Ask the chat to create one for a client.</p>
+                                </div>
+                            </div>
                         </div>
                     </section>
                 </section>

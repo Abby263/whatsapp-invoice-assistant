@@ -1,6 +1,6 @@
 # WhatsApp Invoice Assistant
 
-Production-oriented AI workspace for capturing receipts from WhatsApp, extracting invoice data, storing original receipt files, generating vector embeddings, and answering finance questions in natural language.
+Production-oriented AI workspace for capturing receipts from WhatsApp, extracting invoice data, storing original receipt files, generating outgoing invoices, generating vector embeddings, and answering finance questions in natural language.
 
 The application combines a WhatsApp webhook API, Clerk web authentication, LangGraph agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for local testing and workflow inspection.
 
@@ -32,6 +32,8 @@ The repository includes a lightweight animated GIF captured from the hosted Verc
 - Extracts merchant, invoice metadata, totals, taxes, and line items.
 - Stores original receipt files in Supabase Storage with signed URL access.
 - Persists normalized invoice and item data in Supabase Postgres.
+- Generates outgoing invoices from WhatsApp or the website using saved company/client defaults.
+- Saves generated invoice metadata and line items under the same user account as uploaded receipts.
 - Generates OpenAI embeddings and stores them in pgvector columns for semantic search.
 - Routes user messages through LangGraph agents for upload, query, and invoice-creation workflows.
 - Keeps conversation context in MongoDB when memory persistence is enabled.
@@ -82,6 +84,10 @@ flowchart LR
 
     SQL --> PG
     SQL --> VEC
+    IE --> GINV["Generated invoice service"]
+    GINV --> GT["DOCX/PDF generator"]
+    GT --> ST
+    GINV --> PG
     IE --> RF
     DE --> RF
     RF --> T
@@ -99,6 +105,7 @@ flowchart LR
 | Clerk (`utils/clerk_auth.py`) | Browser sign-in, session JWT verification, and account-to-WhatsApp linking. |
 | LangGraph workflow (`langchain_app/`) | Routes text and files through specialized agent nodes. |
 | Agents (`agents/`) | Intent classification, file validation, extraction, SQL/vector query generation, response formatting. |
+| Generated invoice service (`services/generated_invoice_service.py`) | Merges saved defaults, creates DOCX/PDF files, stores files, and persists outgoing invoice records. |
 | Supabase Postgres | Primary relational store for users, invoices, line items, messages, and embedding metadata. |
 | pgvector | Semantic search over item descriptions and invoice embeddings. |
 | Supabase Storage | Private receipt file storage with signed URLs generated on demand. |
@@ -138,6 +145,25 @@ sequenceDiagram
 5. Supabase Postgres and pgvector return structured and semantic results.
 6. The response formatter turns the result into a WhatsApp-ready answer.
 
+## Generated Invoice Flow
+
+Users can generate outgoing invoices from either channel:
+
+- WhatsApp: send a message such as "Create an invoice for Acme for $500 consulting due next month."
+- Website: use **Generate invoice** in the Receipts workspace.
+
+The flow is the same in both cases:
+
+1. Resolve the active internal `users.id` from Clerk or WhatsApp number.
+2. Load saved company, client, currency, tax, and payment defaults from `users.preferences`.
+3. Merge the current transaction details over those defaults.
+4. Generate the invoice document with `services/invoice_template_service.py`.
+5. Upload generated invoice files to the private Supabase Storage bucket.
+6. Persist invoice metadata in `generated_invoices` and line items in `generated_invoice_items`.
+7. Refresh website analytics so generated invoices are visible with uploaded receipts for the same user.
+
+When the web form is submitted with **Save defaults** enabled, those seller/client defaults are reused the next time the same user generates an invoice from WhatsApp or the website.
+
 ## Identity Model
 
 Clerk owns website authentication, while the application keeps `users.id` as the internal owner for invoices, media, messages, and embeddings. A user signs in on the web UI, selects **Link WhatsApp**, and enters the WhatsApp number they use for receipt uploads. The backend stores the Clerk subject in `users.clerk_user_id` on the row with the same `users.whatsapp_number`.
@@ -146,7 +172,7 @@ After linking, web uploads, WhatsApp uploads, dashboard counts, receipt lists, a
 
 ## Storage and Embeddings
 
-This project uses Supabase Storage instead of S3 for receipt files because the application already depends on Supabase Postgres and pgvector. Supabase keeps receipt storage, signed URL generation, database records, and access policy management in one platform. The file handler stores only normalized metadata in Postgres and generates signed links when the UI or agent needs to display a file.
+This project uses Supabase Storage instead of S3 for receipt and generated-invoice files because the application already depends on Supabase Postgres and pgvector. Supabase keeps private file storage, signed URL generation, database records, and access policy management in one platform. The file handlers store only normalized metadata in Postgres and generate signed links when the UI or agent needs to display a file.
 
 Embeddings are generated with OpenAI `text-embedding-3-small` and stored in pgvector-enabled columns. The application should fail clearly when embedding generation is unavailable rather than silently writing fake vectors.
 
@@ -169,7 +195,7 @@ Open `http://localhost:5001` for the operator UI.
 
 | Service | Required | Used For |
 | --- | --- | --- |
-| Supabase project | Yes | Postgres, pgvector, receipt storage bucket, API keys. |
+| Supabase project | Yes | Postgres, pgvector, receipt/generated-invoice storage bucket, API keys. |
 | OpenAI API key | Yes | LLM reasoning and embeddings. |
 | Twilio WhatsApp sandbox or sender | Required for WhatsApp | Incoming WhatsApp text and media webhooks. |
 | MongoDB | Optional | Persistent memory and workflow checkpoints. |

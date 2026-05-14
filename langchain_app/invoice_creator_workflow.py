@@ -131,12 +131,23 @@ async def process_invoice_creation(
                 "confidence": 0.4
             }
 
-        # Store invoice in database (would be implemented here)
-        logger.info(f"Saving invoice to database for user {user_id}")
-        # db_service.save_invoice(validated_invoice, user_id)
+        generated_invoice = None
+        pdf_url = None
+        if user_id:
+            from services.generated_invoice_service import generate_and_persist_invoice
 
-        # Generate invoice PDF
-        pdf_url = generate_invoice_pdf(validated_invoice, user_id)
+            generated_invoice = generate_and_persist_invoice(
+                validated_invoice,
+                user_id=int(user_id),
+                source="whatsapp_chat",
+            )
+            pdf_url = (
+                generated_invoice.get("pdf_url")
+                or generated_invoice.get("document_url")
+            )
+        else:
+            logger.warning("No user_id provided; generating invoice without persistence")
+            pdf_url = generate_invoice_pdf(validated_invoice, user_id)
 
         # Format response
         response_payload = await format_invoice_creation_response(validated_invoice, pdf_url)
@@ -153,6 +164,7 @@ async def process_invoice_creation(
                 "success": True,
                 "invoice": validated_invoice,
                 "invoice_data": validated_invoice,
+                "generated_invoice": generated_invoice,
                 "pdf_path": pdf_url,
                 "pdf_url": pdf_url,
                 "intent": "invoice_creator"
@@ -324,60 +336,49 @@ def validate_invoice_entities(entities: Dict[str, Any], user_id: Optional[str] =
     # This is important to do first so entity extraction data can override it if needed
     if user_id:
         try:
-            from database.connection import db_session
+            from database.connection import get_db_session
 
-            with db_session() as session:
+            session = get_db_session()
+            try:
                 from services.user_data_service import get_user_data, get_invoice_defaults
                 from database.schemas import User
                 import json
 
-                # CRITICAL FIX: Direct database query to get preferences
-                user = session.query(User).filter(User.id == user_id).first()
+                user = session.query(User).filter(User.id == int(user_id)).first()
                 user_preferences = {}
 
                 if user and hasattr(user, 'preferences') and user.preferences:
                     try:
-                        # Parse preferences JSON
                         if isinstance(user.preferences, str):
                             user_preferences = json.loads(user.preferences)
                         else:
                             user_preferences = user.preferences
-
-                            # Log the preferences for debugging
-                            logger.info(f"User preferences from database: {user_preferences}")
+                        logger.info(f"User preferences from database: {user_preferences}")
                     except Exception as e:
                         logger.error(f"Error parsing preferences JSON: {str(e)}")
 
-                # Get user data and defaults
                 user_data = get_user_data(user_id, session)
-
-                # Determine invoice type for defaults
                 invoice_type = entities.get("invoice_type", "service_invoice")
-
-                # Get default values based on user data
                 defaults = get_invoice_defaults(invoice_type, user_data)
 
                 if defaults:
                     logger.info(f"Retrieved company profile defaults for user {user_id}")
-
-                    # Initialize validated with defaults first
                     validated = defaults.copy()
 
-                    # CRITICAL FIX: Directly apply preferences values with highest priority
                     if 'company_name' in user_preferences:
                         validated['company_name'] = user_preferences['company_name']
                         logger.info(f"Using company_name from preferences: {validated['company_name']}")
 
-                    # Apply other important preference fields
                     for key in ['company_address', 'company_email', 'company_phone', 'company_website']:
                         if key in user_preferences:
                             validated[key] = user_preferences[key]
                             logger.info(f"Using {key} from preferences: {validated[key]}")
 
-                    # Log populated fields
                     logger.info(f"Populated fields from user profile: {', '.join(defaults.keys())}")
                 else:
                     logger.warning(f"No company profile data found for user {user_id}")
+            finally:
+                session.close()
         except Exception as e:
             logger.warning(f"Failed to retrieve company profile: {str(e)}")
 
@@ -740,11 +741,7 @@ async def format_invoice_creation_response(invoice_data: Dict[str, Any], pdf_url
             # If the agent returned a response but it doesn't include the document URL,
             # manually add the document link to the response
             if pdf_url and pdf_url not in result.content:
-                # Extract just the filename from the path
-                import os
-                doc_filename = os.path.basename(pdf_url)
-                # Format the URL for display in the UI
-                doc_url = f"/uploads/{doc_filename}"
+                doc_url = _document_link_from_path(pdf_url)
                 # Add the document link to the response
                 result.content += f"\n\n📄 <a href='{doc_url}' download class='btn btn-primary'>Download Invoice Document</a>"
 
@@ -777,11 +774,7 @@ async def format_invoice_creation_response(invoice_data: Dict[str, Any], pdf_url
 
         # Add the document URL to the message with a proper HTML link
         if pdf_url:
-            # Extract just the filename from the path
-            import os
-            doc_filename = os.path.basename(pdf_url)
-            # Format the URL for display in the UI
-            doc_url = f"/uploads/{doc_filename}"
+            doc_url = _document_link_from_path(pdf_url)
             # Add the document link to the response with formatting
             message += f"\n\n📄 <a href='{doc_url}' download class='btn btn-primary'>Download Invoice Document</a>"
 
@@ -790,6 +783,16 @@ async def format_invoice_creation_response(invoice_data: Dict[str, Any], pdf_url
     except Exception as e:
         logger.exception(f"Error formatting invoice creation response: {str(e)}")
         return CREATION_FALLBACKS["creation_success"]
+
+
+def _document_link_from_path(path_or_url: str) -> str:
+    """Return a browser-usable document link from a local path or URL."""
+
+    if not path_or_url:
+        return ""
+    if path_or_url.startswith(("http://", "https://", "/")):
+        return path_or_url
+    return f"/uploads/{os.path.basename(path_or_url)}"
 
 
 def check_missing_fields(enriched_data: Dict[str, Any], user_id: Optional[str] = None, db_session: Optional[Session] = None) -> Dict[str, Any]:

@@ -109,6 +109,63 @@ class InvoiceResponse(InvoiceBase):
     items: List[ItemResponse] = []
 
 
+class GeneratedInvoiceItemBase(BaseModel):
+    """Base outgoing invoice item model."""
+    description: Optional[str] = None
+    quantity: Optional[float] = None
+    unit_price: Optional[float] = None
+    total_price: Optional[float] = None
+    sort_order: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class GeneratedInvoiceItemCreate(GeneratedInvoiceItemBase):
+    """Outgoing invoice item creation model."""
+    pass
+
+
+class GeneratedInvoiceBase(BaseModel):
+    """Base outgoing generated invoice model."""
+    source: Optional[str] = None
+    status: Optional[str] = "generated"
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[datetime] = None
+    due_date: Optional[datetime] = None
+    client_name: Optional[str] = None
+    client_company: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    currency: Optional[str] = None
+    subtotal: Optional[float] = None
+    tax_amount: Optional[float] = None
+    discount_amount: Optional[float] = None
+    total_amount: Optional[float] = None
+    payment_terms: Optional[str] = None
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class GeneratedInvoiceCreate(GeneratedInvoiceBase):
+    """Outgoing generated invoice creation model."""
+    user_id: int
+    items: Optional[List[GeneratedInvoiceItemCreate]] = Field(default_factory=list)
+
+
+class GeneratedInvoiceResponse(GeneratedInvoiceBase):
+    """Outgoing generated invoice response model."""
+    id: int
+    user_id: int
+    document_url: Optional[str] = None
+    pdf_url: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    items: List[GeneratedInvoiceItemCreate] = Field(default_factory=list)
+
+
 class MediaBase(BaseModel):
     """Base media file model."""
     filename: str

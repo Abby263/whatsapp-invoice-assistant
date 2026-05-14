@@ -298,8 +298,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
 
 def extract_user_id_from_sender(sender: str) -> Optional[str]:
     """
-    Extract a user ID from the sender identifier.
-    In a real implementation, this would look up the user in the database.
+    Resolve the internal app user ID from a WhatsApp sender identifier.
     
     Args:
         sender: The sender identifier (usually a phone number)
@@ -307,9 +306,27 @@ def extract_user_id_from_sender(sender: str) -> Optional[str]:
     Returns:
         User ID if found, None otherwise
     """
-    # In a real implementation, this would query the database
-    # For now, we'll just use the sender as the user ID
-    return sender
+    whatsapp_number = (sender or "").replace("whatsapp:", "").strip()
+    if not whatsapp_number:
+        return None
+
+    try:
+        from database.connection import get_db_session
+        from database.user_utils import create_user
+
+        session = get_db_session()
+        try:
+            user = create_user(
+                session=session,
+                whatsapp_number=whatsapp_number,
+                name=f"WhatsApp User {whatsapp_number}",
+            )
+            return str(user.get("id"))
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning("Could not resolve WhatsApp sender %s to user: %s", sender, exc)
+        return None
 
 
 async def load_conversation_history(user_id: Optional[str]) -> List[Dict[str, Any]]:
@@ -325,4 +342,4 @@ async def load_conversation_history(user_id: Optional[str]) -> List[Dict[str, An
     """
     # In a real implementation, this would load from the database
     # For now, return an empty list
-    return [] 
+    return []

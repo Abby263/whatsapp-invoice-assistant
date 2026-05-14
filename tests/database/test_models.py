@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from database.schemas import (
     Base, User, Invoice, Item, Conversation,
     Message, WhatsAppMessage, Media, Usage,
+    GeneratedInvoice, GeneratedInvoiceItem,
     MessageRole, WhatsAppMessageStatus
 )
 
@@ -113,6 +114,56 @@ def test_invoice_model_with_items(test_db):
     # Check total amount matches sum of items
     item_total = sum(float(item.total_price) for item in saved_invoice.items)
     assert float(saved_invoice.total_amount) == item_total
+
+
+def test_generated_invoice_model_with_items(test_db):
+    """Test outgoing generated invoice records and item relationships."""
+    user = User(
+        whatsapp_number="+1234567890",
+        name="Test User"
+    )
+    test_db.add(user)
+    test_db.commit()
+
+    invoice = GeneratedInvoice(
+        user_id=user.id,
+        source="web",
+        status="generated",
+        invoice_number="OUT-001",
+        invoice_date=datetime.utcnow(),
+        client_name="Acme Operations",
+        currency="USD",
+        subtotal=350.00,
+        tax_amount=0.00,
+        total_amount=350.00,
+        document_path="1/generated-invoices/out-001.docx",
+    )
+    test_db.add(invoice)
+    test_db.commit()
+
+    item = GeneratedInvoiceItem(
+        generated_invoice_id=invoice.id,
+        description="Consulting services",
+        quantity=1,
+        unit_price=350.00,
+        total_price=350.00,
+        sort_order=0,
+    )
+    test_db.add(item)
+    test_db.commit()
+
+    saved_invoice = (
+        test_db.query(GeneratedInvoice)
+        .filter(GeneratedInvoice.invoice_number == "OUT-001")
+        .first()
+    )
+
+    assert saved_invoice is not None
+    assert saved_invoice.user_id == user.id
+    assert saved_invoice.user.whatsapp_number == "+1234567890"
+    assert saved_invoice.client_name == "Acme Operations"
+    assert len(saved_invoice.items) == 1
+    assert saved_invoice.items[0].description == "Consulting services"
 
 
 def test_conversation_with_messages(test_db):

@@ -578,6 +578,13 @@ input, select, textarea {
     padding: 18px 20px 6px;
 }
 
+.card-head-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 .card-head h3 {
     font-size: 15.5px;
     font-weight: 700;
@@ -599,6 +606,78 @@ input, select, textarea {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+}
+
+.generated-invoice-list {
+    display: grid;
+    gap: 10px;
+}
+
+.generated-invoice-row {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) minmax(130px, 0.7fr) minmax(110px, auto);
+    gap: 14px;
+    align-items: center;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+}
+
+.generated-invoice-main {
+    min-width: 0;
+}
+
+.generated-invoice-main strong {
+    display: block;
+    color: var(--ink);
+    font-size: 14px;
+}
+
+.generated-invoice-main span,
+.generated-invoice-meta span {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12.5px;
+}
+
+.generated-invoice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.generated-invoice-actions a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 11px;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-decoration: none;
+    font-size: 12.5px;
+    font-weight: 700;
+    background: var(--surface);
+}
+
+.empty-state {
+    display: grid;
+    place-items: center;
+    gap: 8px;
+    min-height: 130px;
+    padding: 22px;
+    border: 1px dashed var(--line);
+    border-radius: var(--radius-md);
+    color: var(--muted);
+    text-align: center;
+}
+
+.empty-state i {
+    color: var(--brand-strong);
+    font-size: 22px;
 }
 
 /* ===================== Buttons ===================== */
@@ -1579,6 +1658,7 @@ input, select, textarea {
 
 .form-group input,
 .form-group textarea,
+.form-group select,
 .company-profile-modal textarea {
     width: 100%;
     padding: 10px 12px;
@@ -1593,9 +1673,41 @@ input, select, textarea {
 
 .form-group input:focus,
 .form-group textarea:focus,
+.form-group select:focus,
 .company-profile-modal textarea:focus {
     border-color: var(--brand);
     box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+}
+
+.form-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--surface-muted);
+    border: 1px solid var(--line);
+}
+
+.checkbox-row input {
+    width: auto;
+    margin-top: 3px;
+}
+
+.checkbox-row span {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.generated-invoice-modal .modal-content {
+    max-width: 760px;
 }
 
 .action-btn {
@@ -1630,19 +1742,22 @@ input, select, textarea {
     max-width: 720px;
 }
 
-.company-profile-modal .form-section {
+.company-profile-modal .form-section,
+.generated-invoice-modal .form-section {
     margin-bottom: 22px;
     padding-bottom: 18px;
     border-bottom: 1px dashed var(--line);
 }
 
-.company-profile-modal .form-section:last-child {
+.company-profile-modal .form-section:last-child,
+.generated-invoice-modal .form-section:last-child {
     border-bottom: none;
     margin-bottom: 0;
     padding-bottom: 0;
 }
 
-.company-profile-modal .form-section h5 {
+.company-profile-modal .form-section h5,
+.generated-invoice-modal .form-section h5 {
     margin-bottom: 12px;
     font-size: 13px;
     font-weight: 700;
@@ -1858,6 +1973,19 @@ input, select, textarea {
     .db-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .generated-invoice-row {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .generated-invoice-actions {
+        justify-content: flex-start;
+    }
+
+    .form-grid-2 {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 640px) {
@@ -1909,6 +2037,12 @@ input, select, textarea {
 
     .topbar-github-link span {
         display: none;
+    }
+
+    .card-head,
+    .card-head-actions {
+        align-items: stretch;
+        flex-direction: column;
     }
 
     .view-chat {
