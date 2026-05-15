@@ -2615,35 +2615,3 @@ function saveCompanyProfile(profileData) {
         hideLoading();
     });
 }
-
-// Replace the last bot message with a new one
-function replaceLastBotMessage(newMessage) {
-    const chatMessages = document.getElementById('chatMessages');
-    const messages = chatMessages.querySelectorAll('.message:not(.user)');
-
-    if (messages.length > 0) {
-        const lastMessage = messages[messages.length - 1];
-
-        // Update content
-        const contentElement = lastMessage.querySelector('.message-content');
-        contentElement.innerHTML = formatMessage(newMessage.content);
-
-        // Update timestamp if needed
-        const timestampElement = lastMessage.querySelector('.message-time');
-        if (timestampElement) {
-            timestampElement.textContent = formatMessageTime(newMessage.timestamp);
-        }
-    } else {
-        // If no bot message exists, just add a new one
-        addMessageToChat(newMessage);
-    }
-}
-
-// Backward-compatible entry point for older templates that call generateInvoice().
-function generateInvoice() {
-    showGeneratedInvoiceModal();
-}
-
-function addPDFGenerationButton() {
-    return null;
-}

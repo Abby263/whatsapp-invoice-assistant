@@ -26,9 +26,6 @@ logs_dir = get_logs_directory()
 log_file = os.path.join(logs_dir, 'api.log')
 logger = setup_logger("api", log_file)
 
-# Import API routes
-# from api.routes import webhooks, memory, health
-
 # Load environment variables
 load_dotenv()
 
@@ -207,12 +204,7 @@ async def delete_memory(user_id: str):
             detail=str(e)
         )
 
-# Include other route modules when they're created
-# app.include_router(webhooks.router)
-# app.include_router(memory.router)
-# app.include_router(health.router)
-
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", "8000"))
-    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=True) 
+    uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=True)

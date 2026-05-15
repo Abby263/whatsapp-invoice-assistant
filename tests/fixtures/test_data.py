@@ -2,18 +2,16 @@
 Test data fixtures for WhatsApp Invoice Assistant tests.
 """
 
-import os
 from pathlib import Path
 from typing import Dict, List, Any
 
 # Base directories
-DATA_DIR = Path("data")
-VALID_INVOICES_DIR = DATA_DIR / "valid_invoices"
-INVALID_INVOICES_DIR = DATA_DIR / "invalid_invoice"
+FIXTURES_DIR = Path(__file__).parent
+FILE_FIXTURES_DIR = FIXTURES_DIR / "files"
 
 # Paths to invoice files
-VALID_INVOICE_PATH = VALID_INVOICES_DIR / "image.png"
-INVALID_INVOICE_PATH = INVALID_INVOICES_DIR / "invoice.png"
+VALID_INVOICE_PATH = FILE_FIXTURES_DIR / "valid_invoice.png"
+INVALID_INVOICE_PATH = FILE_FIXTURES_DIR / "invalid_invoice.png"
 
 # Sample text inputs by intent type
 GREETING_INPUTS = [
