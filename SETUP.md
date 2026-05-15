@@ -170,7 +170,7 @@ OPENAI_API_KEY=<your-openai-api-key>
 OPENAI_API_MODEL=gpt-4o-mini
 ```
 
-Embeddings use `text-embedding-3-small` in `utils/vector_utils.py` and `config/env.yaml`.
+Embeddings use `text-embedding-3-small` in `utils/vector_utils.py`; copy `config/env.yaml.example` to ignored `config/env.yaml` only if you prefer YAML-based local overrides.
 
 ## 5. WhatsApp and Twilio Setup
 

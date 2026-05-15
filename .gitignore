@@ -33,6 +33,8 @@ venv.bak/
 # IDE specific files
 .idea/
 .vscode/
+.claude/
+.deepeval/
 *.swp
 *.swo
 .DS_Store
@@ -61,6 +63,7 @@ log/
 .env.development.local
 .env.test.local
 .env.production.local
+config/env.yaml
 
 # Database
 *.db

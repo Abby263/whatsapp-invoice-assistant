@@ -14,7 +14,7 @@ print_header() {
     echo -e "${BLUE}==========================================================${NC}\n"
 }
 
-# Function to extract default values from config/env.yaml
+# Function to extract optional default values from local config/env.yaml
 extract_config_defaults() {
     echo -e "${YELLOW}Extracting default configuration values...${NC}"
 
