@@ -238,7 +238,7 @@ The most important variables are:
 | `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
 | `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase key; accepted as a fallback, but not enough for private storage in most production setups. |
 | `SUPABASE_STORAGE_BUCKET` | Private receipt bucket name, default `receipts`. |
-| `CLERK_PUBLISHABLE_KEY` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key used to load the sign-in UI. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key used to load the sign-in UI. |
 | `CLERK_SECRET_KEY` | Clerk server key kept for production auth configuration. |
 | `CLERK_REQUIRE_AUTH` | Set `true` to require sign-in and WhatsApp linking for web APIs. |
 | `CLERK_AUTHORIZED_PARTIES` | Comma-separated allowed origins for Clerk token `azp` validation. |
@@ -250,7 +250,7 @@ The most important variables are:
 | `MONGODB_URI` | Optional MongoDB connection string. |
 | `USE_MONGODB` | Set `true` for persistent memory, `false` for local UI-only testing. |
 
-See [SETUP.md](SETUP.md) for exact source locations in Supabase, Clerk, OpenAI, and Twilio dashboards.
+Run `python3 scripts/validate_env.py --env-file .env` before real testing. The validator rejects placeholder-length values and project mismatches without printing secrets. See [SETUP.md](SETUP.md) for exact source locations in Supabase, Clerk, OpenAI, and Twilio dashboards.
 
 ## Production Readiness Notes
 

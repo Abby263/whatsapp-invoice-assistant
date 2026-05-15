@@ -155,16 +155,12 @@ Use:
 ```env
 SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_KEY=<anon-or-publishable-key>
 SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
-SUPABASE_SERVICE_ROLE_KEY=<legacy-service-role-key-if-shown>
 SUPABASE_SECRET_KEY=<sb_secret_...>
-SUPABASE_PROJECT_ID=<project-ref>
-SUPABASE_DB_PASSWORD=<database-password>
 ```
 
-Important: `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_SECRET_KEY` must only be used server-side. Do not expose either key in client-side code or a `NEXT_PUBLIC_*` variable. The app accepts `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for compatibility, but private bucket uploads and signed URLs should use `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in production.
+Important: `SUPABASE_SECRET_KEY` must only be used server-side. Do not expose it in client-side code or a `NEXT_PUBLIC_*` variable. The app accepts `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for compatibility, but private bucket uploads and signed URLs should use `SUPABASE_SECRET_KEY` in production. If your Supabase dashboard only shows the legacy service-role key, the runtime also accepts `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## 4. OpenAI Setup
 
@@ -244,18 +240,6 @@ https://<your-backend-domain>/webhook
 
 The current `https://whatsapp-invoice-assistant.vercel.app` deployment is a hosted UI demo unless you deploy the FastAPI backend/runtime behind it.
 
-### 5.4 Meta WhatsApp Cloud API Variables
-
-`.env.example` also includes:
-
-```env
-WHATSAPP_PHONE_NUMBER_ID=<phone-number-id>
-WHATSAPP_API_VERSION=v18.0
-WHATSAPP_ACCESS_TOKEN=<meta-cloud-api-token>
-```
-
-These are useful if you extend the app to use Meta Cloud API directly. The current webhook path is Twilio-compatible.
-
 ## 6. Clerk Authentication Setup
 
 Clerk is used for website sign-in. The app still stores receipts and invoices under the internal `users.id`, while Clerk provides the web identity. A signed-in user links their WhatsApp number once; after that, website activity and WhatsApp receipt uploads resolve to the same `users` row.
@@ -271,13 +255,12 @@ Clerk is used for website sign-in. The app still stores receipts and invoices un
 Add:
 
 ```env
-CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 CLERK_SECRET_KEY=<clerk-secret-key>
 CLERK_REQUIRE_AUTH=true
 ```
 
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is included because Vercel/Clerk integrations commonly provision that name. The Flask UI also accepts `CLERK_PUBLISHABLE_KEY`.
+The Flask UI also accepts `CLERK_PUBLISHABLE_KEY`, but `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is the preferred name because Clerk and Vercel commonly provision it.
 
 ### 6.2 Production Hardening
 
@@ -357,23 +340,17 @@ REDIS_URL=redis://localhost:6379/0
 
 ```env
 DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
-SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_KEY=<anon-or-publishable-key>
-SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SECRET_KEY=<sb_secret_...>
-SUPABASE_SERVICE_ROLE_KEY=<legacy-service-role-key-if-shown>
-SUPABASE_PROJECT_ID=<project-ref>
-SUPABASE_DB_PASSWORD=<database-password>
 SUPABASE_STORAGE_BUCKET=receipts
-SUPABASE_STORAGE_TIMEOUT=30
 
-CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 CLERK_SECRET_KEY=<clerk-secret-key>
-CLERK_REQUIRE_AUTH=true
 CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
+CLERK_REQUIRE_AUTH=true
 
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_API_MODEL=gpt-5.4-mini
@@ -405,8 +382,7 @@ For real-time testing, these variables are mandatory in whichever runtime hosts 
 | `SUPABASE_STORAGE_BUCKET` | Storage | Use `receipts` unless you created a different bucket. |
 | `OPENAI_API_KEY` | Extraction, chat, embeddings | Required for real agent execution. |
 | `OPENAI_API_MODEL` | Chat and image extraction | Set to `gpt-5.4-mini` if your OpenAI project has access. |
-| `CLERK_PUBLISHABLE_KEY` | Web auth | Browser key for the Clerk sign-in UI. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Web auth | Same value as `CLERK_PUBLISHABLE_KEY`; useful for Vercel/Clerk conventions. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Web auth | Browser key for the Clerk sign-in UI. |
 | `CLERK_SECRET_KEY` | Web auth | Server-side key. |
 | `CLERK_REQUIRE_AUTH` | Web auth | Set `true` for user-level receipt and invoice isolation. |
 | `CLERK_AUTHORIZED_PARTIES` | Web auth | Include `https://whatsapp-invoice-assistant.vercel.app` and local URLs used for testing. |
@@ -419,7 +395,19 @@ For real-time testing, these variables are mandatory in whichever runtime hosts 
 
 For local development, keep these in `.env`. For Vercel or another host, add them in that platform's environment variable manager and redeploy.
 
-### 10.2 Using Supabase/Vercel-Style Variable Names
+### 10.2 Validate Environment Values
+
+Before real testing, run:
+
+```bash
+python3 scripts/validate_env.py --env-file .env
+```
+
+The validator prints only status lines; it never prints secret values. Treat any `MISSING` line as a blocker for real WhatsApp/Supabase/OpenAI testing. Redacted placeholder values such as `sb`, `sk-pro`, `AC2`, or `cf3` are intentionally rejected because they look configured in dashboards but fail at runtime.
+
+Make sure `DATABASE_URL` and any legacy service-role JWT belong to the same project ref as `NEXT_PUBLIC_SUPABASE_URL`; do not reuse credentials from another Supabase project.
+
+### 10.3 Using Supabase/Vercel-Style Variable Names
 
 The runtime accepts these aliases:
 
@@ -601,20 +589,21 @@ Add required variables to production:
 
 ```bash
 npx vercel env add DATABASE_URL production
-npx vercel env add SUPABASE_URL production
 npx vercel env add NEXT_PUBLIC_SUPABASE_URL production
+npx vercel env add SUPABASE_URL production
 npx vercel env add SUPABASE_SECRET_KEY production
-npx vercel env add SUPABASE_SERVICE_ROLE_KEY production
-npx vercel env add SUPABASE_PUBLISHABLE_KEY production
 npx vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production
+npx vercel env add SUPABASE_PUBLISHABLE_KEY production
 npx vercel env add SUPABASE_STORAGE_BUCKET production
 npx vercel env add OPENAI_API_KEY production
 npx vercel env add OPENAI_API_MODEL production
-npx vercel env add CLERK_PUBLISHABLE_KEY production
 npx vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY production
 npx vercel env add CLERK_SECRET_KEY production
 npx vercel env add CLERK_REQUIRE_AUTH production
 npx vercel env add CLERK_AUTHORIZED_PARTIES production
+npx vercel env add TWILIO_ACCOUNT_SID production
+npx vercel env add TWILIO_AUTH_TOKEN production
+npx vercel env add TWILIO_PHONE_NUMBER production
 ```
 
 If you only have the Supabase values from `Project Settings` -> `API`, add one of these database options too:
@@ -627,14 +616,11 @@ npx vercel env add SUPABASE_DATABASE_URL production
 npx vercel env add SUPABASE_DB_PASSWORD production
 ```
 
-For private receipt storage, add `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is safe for browsers, but should not be the only key configured for server-side private storage.
+For private receipt storage, add `SUPABASE_SECRET_KEY` or the legacy `SUPABASE_SERVICE_ROLE_KEY`. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is safe for browsers, but should not be the only key configured for server-side private storage.
 
-Only add Twilio and MongoDB variables to Vercel if the Vercel app is changed to run the real backend paths:
+Only add MongoDB and Redis variables to Vercel if the Vercel app is changed to run the real backend paths that need them:
 
 ```bash
-npx vercel env add TWILIO_ACCOUNT_SID production
-npx vercel env add TWILIO_AUTH_TOKEN production
-npx vercel env add TWILIO_PHONE_NUMBER production
 npx vercel env add USE_MONGODB production
 npx vercel env add MONGODB_URI production
 npx vercel env add REDIS_URL production
