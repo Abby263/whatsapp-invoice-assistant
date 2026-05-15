@@ -44,12 +44,12 @@ class OpenAIService:
         if not self.api_key:
             logger.error("OpenAI API key not found. Please set OPENAI_API_KEY environment variable.")
             raise ValueError("OpenAI API key not found")
-            
+
         # Initialize OpenAI client
         self.client = OpenAI(api_key=self.api_key)
-        
+
         # Default configuration
-        self.default_model = Models.GPT_4O_MINI
+        self.default_model = os.environ.get("OPENAI_API_MODEL", Models.GPT_4O_MINI)
         self.default_temperature = TemperatureSettings.DEFAULT
         self.default_max_tokens = TokenLimits.DEFAULT_MAX_OUTPUT_TOKENS
         
@@ -265,4 +265,4 @@ class OpenAIService:
         )
         
         # In a real implementation, you would store this in a database
-        # to track usage and costs over time 
+        # to track usage and costs over time

@@ -64,6 +64,10 @@ class LLMFactory:
         self.prompt_cache = {}
         self.config = DEFAULT_LLM_CONFIG.copy()
 
+        env_model = os.environ.get("OPENAI_API_MODEL")
+        if env_model:
+            self.config["model"] = env_model
+
         if config_override:
             self.config.update(config_override)
 
@@ -465,7 +469,7 @@ class LLMFactory:
 
         # Very simplified cost calculation
         # Actual implementation would use the correct pricing for each model
-        cost_per_1k_tokens = 0.002  # Example rate for gpt-4o-mini
+        cost_per_1k_tokens = 0.002  # Placeholder rate; update when adding exact model pricing.
         cost = (total_tokens / 1000) * cost_per_1k_tokens
 
         usage_info = {
@@ -742,7 +746,7 @@ class LLMFactory:
                 )
 
             if is_image:
-                # For image content, use GPT-4o-mini with vision capabilities
+                # For image content, use the configured vision-capable model.
                 try:
                     from openai import OpenAI
 
@@ -771,9 +775,14 @@ class LLMFactory:
                         }
                     ]
 
-                    # Call the model with vision capabilities
+                    model_name = self.get_task_config("data_extraction").get(
+                        "model",
+                        self.config.get("model", Models.DEFAULT),
+                    )
+
+                    # Call the configured model with vision capabilities
                     response = client.chat.completions.create(
-                        model="gpt-4o-mini",  # Use GPT-4o-mini for vision
+                        model=model_name,
                         messages=messages,
                         temperature=TemperatureSettings.DATA_EXTRACTION,
                         max_tokens=TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM
@@ -781,7 +790,7 @@ class LLMFactory:
 
                     # Extract the response content
                     extracted_data = response.choices[0].message.content
-                    logger.info("Successfully extracted data from image using GPT-4o-mini")
+                    logger.info("Successfully extracted data from image using %s", model_name)
 
                     return extracted_data
 
@@ -798,7 +807,7 @@ class LLMFactory:
                     })
 
                 except Exception as e:
-                    logger.error(f"Error in GPT-4o-mini image processing: {str(e)}")
+                    logger.error("Error in configured image processing model: %s", str(e))
                     # Return error as JSON string
                     return json.dumps({
                         "vendor": {},

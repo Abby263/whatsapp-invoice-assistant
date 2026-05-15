@@ -234,15 +234,16 @@ The most important variables are:
 | Variable | Description |
 | --- | --- |
 | `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Supabase Postgres connection string. |
-| `SUPABASE_URL` | Supabase project URL. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
+| `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL. |
+| `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
+| `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase key; accepted as a fallback, but not enough for private storage in most production setups. |
 | `SUPABASE_STORAGE_BUCKET` | Private receipt bucket name, default `receipts`. |
 | `CLERK_PUBLISHABLE_KEY` or `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key used to load the sign-in UI. |
 | `CLERK_SECRET_KEY` | Clerk server key kept for production auth configuration. |
 | `CLERK_REQUIRE_AUTH` | Set `true` to require sign-in and WhatsApp linking for web APIs. |
 | `CLERK_AUTHORIZED_PARTIES` | Comma-separated allowed origins for Clerk token `azp` validation. |
 | `OPENAI_API_KEY` | OpenAI API key. |
-| `OPENAI_API_MODEL` | Chat model, default in this repo is `gpt-4o-mini`. |
+| `OPENAI_API_MODEL` | Chat and image extraction model, for example `gpt-5.4-mini` if enabled for your OpenAI project. |
 | `TWILIO_ACCOUNT_SID` | Twilio account SID. |
 | `TWILIO_AUTH_TOKEN` | Twilio auth token. |
 | `TWILIO_PHONE_NUMBER` | Twilio WhatsApp-enabled sender. |

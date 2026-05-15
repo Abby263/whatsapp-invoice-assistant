@@ -13,6 +13,18 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+ENV_ALIASES = {
+    "SUPABASE_URL": ("NEXT_PUBLIC_SUPABASE_URL",),
+    "SUPABASE_KEY": (
+        "SUPABASE_PUBLISHABLE_KEY",
+        "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+        "SUPABASE_ANON_KEY",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    ),
+    "SUPABASE_SERVICE_ROLE_KEY": ("SUPABASE_SECRET_KEY",),
+    "CLERK_PUBLISHABLE_KEY": ("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",),
+}
+
 # Load configuration from env.yaml
 config_path = Path(__file__).parent / "env.yaml"
 _config: Dict[str, Any] = {}
@@ -23,9 +35,14 @@ try:
             _config = yaml.safe_load(f)
         logger.info(f"Loaded configuration from {config_path}")
     else:
-        logger.warning(f"Configuration file not found at {config_path}")
+        logger.debug(f"Configuration file not found at {config_path}")
 except Exception as e:
     logger.error(f"Error loading configuration from {config_path}: {str(e)}")
+
+
+def _candidate_env_names(name: str) -> tuple[str, ...]:
+    return (name, *ENV_ALIASES.get(name, ()))
+
 
 def get_env_variable(name: str, default: Optional[str] = None) -> str:
     """
@@ -41,10 +58,11 @@ def get_env_variable(name: str, default: Optional[str] = None) -> str:
     Raises:
         ValueError: If the variable is not found and no default is provided
     """
-    # First check actual environment variables
-    value = os.environ.get(name)
-    if value is not None:
-        return value
+    # First check actual environment variables, including deployment aliases.
+    for candidate_name in _candidate_env_names(name):
+        value = os.environ.get(candidate_name)
+        if value is not None:
+            return value
 
     # Next check in nested config
     path_parts = name.lower().split('_')
@@ -70,7 +88,7 @@ def get_env_variable(name: str, default: Optional[str] = None) -> str:
             for key, value in section.items():
                 if isinstance(value, str) and value.startswith("${") and value.endswith("}"):
                     env_var = value[2:-1]
-                    if env_var == name:
+                    if env_var in _candidate_env_names(name):
                         # Look up the actual environment variable
                         actual_value = os.environ.get(env_var)
                         if actual_value is not None:

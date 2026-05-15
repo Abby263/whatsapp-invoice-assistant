@@ -42,7 +42,7 @@ from utils.clerk_auth import (
 # Load environment variables from .env file
 load_dotenv()
 
-# Ensure AWS credentials are available in environment
+# Ensure local .env values are available when the UI is started directly
 if os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')):
     with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'), 'r') as f:
         for line in f:

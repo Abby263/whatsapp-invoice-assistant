@@ -24,6 +24,14 @@ class StorageConfigurationError(RuntimeError):
     """Raised when Supabase Storage is not configured."""
 
 
+def _first_env(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name)
+        if value:
+            return value
+    return ""
+
+
 class SupabaseStorageHandler:
     """Upload, sign, and delete files in Supabase Storage."""
 
@@ -33,26 +41,47 @@ class SupabaseStorageHandler:
         api_key: Optional[str] = None,
         bucket_name: Optional[str] = None,
     ) -> None:
-        self.supabase_url = (supabase_url or os.environ.get("SUPABASE_URL") or "").rstrip("/")
-        self.api_key = (
-            api_key
-            or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-            or os.environ.get("SUPABASE_KEY")
-            or ""
+        self.supabase_url = (
+            supabase_url
+            or _first_env("SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL")
+        ).rstrip("/")
+        secret_key = _first_env("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+        publishable_key = _first_env(
+            "SUPABASE_KEY",
+            "SUPABASE_ANON_KEY",
+            "SUPABASE_PUBLISHABLE_KEY",
+            "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY",
         )
-        self.bucket_name = (
-            bucket_name
-            or os.environ.get("SUPABASE_STORAGE_BUCKET")
-            or os.environ.get("SUPABASE_RECEIPTS_BUCKET")
-            or "receipts"
+        self.api_key = api_key or secret_key or publishable_key or ""
+        self.key_source = (
+            "explicit"
+            if api_key
+            else "secret"
+            if secret_key
+            else "publishable"
+            if publishable_key
+            else "missing"
         )
+        if self.key_source == "publishable":
+            logger.warning(
+                "Supabase Storage is using a publishable/anon key. Private bucket uploads "
+                "and signed URLs usually require SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY."
+            )
+        self.bucket_name = bucket_name or _first_env(
+            "SUPABASE_STORAGE_BUCKET",
+            "SUPABASE_RECEIPTS_BUCKET",
+        ) or "receipts"
         self.timeout = float(os.environ.get("SUPABASE_STORAGE_TIMEOUT", "30"))
 
         if not self.supabase_url:
-            raise StorageConfigurationError("SUPABASE_URL is required for file storage")
+            raise StorageConfigurationError(
+                "SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL is required for file storage"
+            )
         if not self.api_key:
             raise StorageConfigurationError(
-                "SUPABASE_SERVICE_ROLE_KEY or SUPABASE_KEY is required for file storage"
+                "SUPABASE_SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_KEY, "
+                "or NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is required for file storage"
             )
 
     def upload_file(

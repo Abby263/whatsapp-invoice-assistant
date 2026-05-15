@@ -28,10 +28,10 @@ You are ready to test real data only after all of these are true:
 
 | Area | Required before real-time testing |
 | --- | --- |
-| Supabase Postgres | `DATABASE_URL` or `SUPABASE_DATABASE_URL` points to the target Supabase database. |
+| Supabase Postgres | `DATABASE_URL` or `SUPABASE_DATABASE_URL` points to the target Supabase database, or `SUPABASE_DB_PASSWORD` is set with the Supabase URL/project ref. |
 | Migrations | `PYTHONPATH=. poetry run alembic upgrade head` has completed successfully. |
 | pgvector | `create extension if not exists vector;` has run in Supabase SQL editor. |
-| Supabase Storage | Private `receipts` bucket exists and `SUPABASE_SERVICE_ROLE_KEY` can write to it. |
+| Supabase Storage | Private `receipts` bucket exists and `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` can write to it. |
 | OpenAI | `OPENAI_API_KEY` is set and the account has access/billing for chat and embeddings. |
 | Clerk | Publishable/secret keys are set, `CLERK_REQUIRE_AUTH=true`, and authorized parties include the live URL. |
 | WhatsApp/Twilio | Twilio inbound webhook points to a publicly reachable `/webhook` endpoint. |
@@ -114,6 +114,9 @@ The app resolves database configuration in this order:
 1. `DATABASE_URL`
 2. `SUPABASE_DATABASE_URL`
 3. `SUPABASE_PROJECT_ID` plus `SUPABASE_DB_PASSWORD`
+4. `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` plus `SUPABASE_DB_PASSWORD`
+
+The Supabase project URL and publishable key are API settings, not database credentials. For real testing you still need one database credential path above.
 
 ### 3.3 Enable pgvector
 
@@ -151,13 +154,17 @@ Use:
 
 ```env
 SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_KEY=<anon-public-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_KEY=<anon-or-publishable-key>
+SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+SUPABASE_SERVICE_ROLE_KEY=<legacy-service-role-key-if-shown>
+SUPABASE_SECRET_KEY=<sb_secret_...>
 SUPABASE_PROJECT_ID=<project-ref>
 SUPABASE_DB_PASSWORD=<database-password>
 ```
 
-Important: `SUPABASE_SERVICE_ROLE_KEY` must only be used server-side. Do not expose it in client-side code.
+Important: `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_SECRET_KEY` must only be used server-side. Do not expose either key in client-side code or a `NEXT_PUBLIC_*` variable. The app accepts `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for compatibility, but private bucket uploads and signed URLs should use `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` in production.
 
 ## 4. OpenAI Setup
 
@@ -167,10 +174,10 @@ Important: `SUPABASE_SERVICE_ROLE_KEY` must only be used server-side. Do not exp
 
 ```env
 OPENAI_API_KEY=<your-openai-api-key>
-OPENAI_API_MODEL=gpt-4o-mini
+OPENAI_API_MODEL=gpt-5.4-mini
 ```
 
-Embeddings use `text-embedding-3-small` in `utils/vector_utils.py`; copy `config/env.yaml.example` to ignored `config/env.yaml` only if you prefer YAML-based local overrides.
+The code now reads `OPENAI_API_MODEL` for chat and image extraction. Make sure your OpenAI project has access to the model ID you configure. Embeddings use `text-embedding-3-small` in `utils/vector_utils.py`; copy `config/env.yaml.example` to ignored `config/env.yaml` only if you prefer YAML-based local overrides.
 
 ## 5. WhatsApp and Twilio Setup
 
@@ -194,7 +201,25 @@ TWILIO_AUTH_TOKEN=<auth-token>
 TWILIO_PHONE_NUMBER=whatsapp:+14155238886
 ```
 
-### 5.2 Webhook URL
+`whatsapp:+14155238886` is Twilio's sandbox sender. Use it only while testing inside the sandbox.
+
+### 5.2 Use a Purchased Twilio Number for WhatsApp
+
+A purchased Twilio phone number can be used only after it is approved/onboarded as a WhatsApp sender. Buying an SMS/voice number is not enough by itself.
+
+1. In Twilio Console, open `Messaging` -> `Senders` -> `WhatsApp senders`.
+2. Start the WhatsApp sender onboarding flow.
+3. Choose or register the purchased Twilio number you want to use.
+4. Complete Meta Business/WhatsApp Business approval if Twilio asks for it.
+5. After the sender is approved, set:
+
+```env
+TWILIO_PHONE_NUMBER=whatsapp:+1<your-approved-twilio-number>
+```
+
+Keep the `whatsapp:` prefix. Inbound webhook payloads will still use `From=whatsapp:+<customer-number>` and `To=whatsapp:+<your-approved-twilio-number>`.
+
+### 5.3 Webhook URL
 
 For local webhook testing, expose FastAPI with a secure tunnel such as ngrok:
 
@@ -211,7 +236,15 @@ https://<your-ngrok-domain>/webhook
 
 Use `POST` as the method.
 
-### 5.3 Meta WhatsApp Cloud API Variables
+For production, the webhook URL should point to the real backend host, not the current Vercel demo UI:
+
+```text
+https://<your-backend-domain>/webhook
+```
+
+The current `https://whatsapp-invoice-assistant.vercel.app` deployment is a hosted UI demo unless you deploy the FastAPI backend/runtime behind it.
+
+### 5.4 Meta WhatsApp Cloud API Variables
 
 `.env.example` also includes:
 
@@ -325,8 +358,12 @@ REDIS_URL=redis://localhost:6379/0
 ```env
 DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
 SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_KEY=<anon-or-publishable-key>
+SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
+SUPABASE_SECRET_KEY=<sb_secret_...>
+SUPABASE_SERVICE_ROLE_KEY=<legacy-service-role-key-if-shown>
 SUPABASE_PROJECT_ID=<project-ref>
 SUPABASE_DB_PASSWORD=<database-password>
 SUPABASE_STORAGE_BUCKET=receipts
@@ -339,11 +376,11 @@ CLERK_REQUIRE_AUTH=true
 CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 
 OPENAI_API_KEY=<openai-api-key>
-OPENAI_API_MODEL=gpt-4o-mini
+OPENAI_API_MODEL=gpt-5.4-mini
 
 TWILIO_ACCOUNT_SID=<twilio-account-sid>
 TWILIO_AUTH_TOKEN=<twilio-auth-token>
-TWILIO_PHONE_NUMBER=whatsapp:+14155238886
+TWILIO_PHONE_NUMBER=whatsapp:+1<approved-twilio-whatsapp-sender>
 
 MONGODB_URI=mongodb://localhost:27017/whatsapp_invoice_assistant
 USE_MONGODB=false
@@ -361,12 +398,13 @@ For real-time testing, these variables are mandatory in whichever runtime hosts 
 
 | Variable | Required for | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Database | Use the Supabase Postgres direct or pooler connection string. |
-| `SUPABASE_URL` | Storage | Supabase project URL, for example `https://<project-ref>.supabase.co`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | Storage and private server access | Server-side only. Required for private bucket uploads and signed URLs. |
+| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Database | Use the Supabase Postgres direct or pooler connection string. Required unless `SUPABASE_DB_PASSWORD` is provided with a Supabase URL/project ref. |
+| `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Storage | Supabase project URL, for example `https://<project-ref>.supabase.co`. |
+| `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Storage and private server access | Server-side only. Required for private bucket uploads and signed URLs. |
+| `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase API access | Accepted as a fallback, but not recommended for private server storage operations. |
 | `SUPABASE_STORAGE_BUCKET` | Storage | Use `receipts` unless you created a different bucket. |
 | `OPENAI_API_KEY` | Extraction, chat, embeddings | Required for real agent execution. |
-| `OPENAI_API_MODEL` | Chat | Repo default is `gpt-4o-mini`; change only after validating model access. |
+| `OPENAI_API_MODEL` | Chat and image extraction | Set to `gpt-5.4-mini` if your OpenAI project has access. |
 | `CLERK_PUBLISHABLE_KEY` | Web auth | Browser key for the Clerk sign-in UI. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Web auth | Same value as `CLERK_PUBLISHABLE_KEY`; useful for Vercel/Clerk conventions. |
 | `CLERK_SECRET_KEY` | Web auth | Server-side key. |
@@ -374,12 +412,40 @@ For real-time testing, these variables are mandatory in whichever runtime hosts 
 | `CLERK_AUTHORIZED_PARTIES` | Web auth | Include `https://whatsapp-invoice-assistant.vercel.app` and local URLs used for testing. |
 | `TWILIO_ACCOUNT_SID` | WhatsApp | Required when Twilio downloads media or sends responses. |
 | `TWILIO_AUTH_TOKEN` | WhatsApp | Required for authenticated Twilio media URLs. |
-| `TWILIO_PHONE_NUMBER` | WhatsApp | Twilio WhatsApp sender, for example `whatsapp:+14155238886`. |
+| `TWILIO_PHONE_NUMBER` | WhatsApp | Twilio WhatsApp sender, for example sandbox `whatsapp:+14155238886` or approved sender `whatsapp:+1...`. |
 | `USE_MONGODB` | Memory | Set `false` unless MongoDB is configured and reachable. |
 | `MONGODB_URI` | Memory | Required only when `USE_MONGODB=true`. |
 | `REDIS_URL` | Background jobs | Optional for current local testing. |
 
 For local development, keep these in `.env`. For Vercel or another host, add them in that platform's environment variable manager and redeploy.
+
+### 10.2 Using Supabase/Vercel-Style Variable Names
+
+The runtime accepts these aliases:
+
+| Existing app name | Also accepted |
+| --- | --- |
+| `SUPABASE_URL` | `NEXT_PUBLIC_SUPABASE_URL` |
+| `SUPABASE_KEY` | `SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SECRET_KEY` |
+| `CLERK_PUBLISHABLE_KEY` | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
+
+If your Vercel project currently has only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, add at least one database credential and one server-side storage/admin key before real receipt testing:
+
+```env
+# Database, choose one:
+DATABASE_URL=<supabase-postgres-url>
+SUPABASE_DATABASE_URL=<supabase-pooler-url>
+# or
+SUPABASE_DB_PASSWORD=<supabase-database-password>
+
+# Private storage/admin access:
+SUPABASE_SECRET_KEY=<sb_secret_...>
+# or legacy:
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+```
+
+Also set `CLERK_REQUIRE_AUTH=true` in production when receipts and generated invoices must be user-scoped.
 
 ## 11. Database Migration
 
@@ -536,7 +602,11 @@ Add required variables to production:
 ```bash
 npx vercel env add DATABASE_URL production
 npx vercel env add SUPABASE_URL production
+npx vercel env add NEXT_PUBLIC_SUPABASE_URL production
+npx vercel env add SUPABASE_SECRET_KEY production
 npx vercel env add SUPABASE_SERVICE_ROLE_KEY production
+npx vercel env add SUPABASE_PUBLISHABLE_KEY production
+npx vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production
 npx vercel env add SUPABASE_STORAGE_BUCKET production
 npx vercel env add OPENAI_API_KEY production
 npx vercel env add OPENAI_API_MODEL production
@@ -546,6 +616,18 @@ npx vercel env add CLERK_SECRET_KEY production
 npx vercel env add CLERK_REQUIRE_AUTH production
 npx vercel env add CLERK_AUTHORIZED_PARTIES production
 ```
+
+If you only have the Supabase values from `Project Settings` -> `API`, add one of these database options too:
+
+```bash
+npx vercel env add DATABASE_URL production
+# or
+npx vercel env add SUPABASE_DATABASE_URL production
+# or, if the code should derive the project ref from NEXT_PUBLIC_SUPABASE_URL:
+npx vercel env add SUPABASE_DB_PASSWORD production
+```
+
+For private receipt storage, add `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is safe for browsers, but should not be the only key configured for server-side private storage.
 
 Only add Twilio and MongoDB variables to Vercel if the Vercel app is changed to run the real backend paths:
 
@@ -598,7 +680,7 @@ The compose file includes local Postgres and MongoDB containers for development.
 - Use managed Supabase Postgres with automated backups.
 - Enable `vector` in Supabase.
 - Keep the receipt bucket private.
-- Store `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, and Twilio secrets in your platform secret manager.
+- Store `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, and Twilio secrets in your platform secret manager.
 - Restrict CORS in `api/main.py` to trusted origins.
 - Put the API behind HTTPS.
 - Configure Twilio webhook retries and monitor non-2xx responses.
@@ -616,6 +698,7 @@ Set one of:
 - `DATABASE_URL`
 - `SUPABASE_DATABASE_URL`
 - `SUPABASE_PROJECT_ID` and `SUPABASE_DB_PASSWORD`
+- `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` plus `SUPABASE_DB_PASSWORD`
 
 ### `could not translate host name db.<project>.supabase.co`
 
@@ -625,8 +708,8 @@ Your runtime cannot resolve the Supabase hostname. Check network access, DNS, VP
 
 Check:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`
+- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET`
 - Whether the bucket exists
 - Whether the key belongs to the same Supabase project
@@ -636,7 +719,7 @@ Check:
 Check:
 
 - `generated_invoices` and `generated_invoice_items` tables exist.
-- `SUPABASE_SERVICE_ROLE_KEY` is set in the runtime that generates the invoice.
+- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` is set in the runtime that generates the invoice.
 - `SUPABASE_STORAGE_BUCKET=receipts` points to an existing private bucket.
 - The runtime is not the Vercel demo `app.py` route. Demo generated invoices are in memory only.
 - Production logs do not show `Generated invoice storage is not available`.
