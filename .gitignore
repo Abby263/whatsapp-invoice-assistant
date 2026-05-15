@@ -175,3 +175,4 @@ poetry.lock
 !docker-run.sh
 !uploads/.gitkeep
 .vercel
+.env*.local
