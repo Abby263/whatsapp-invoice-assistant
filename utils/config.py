@@ -18,12 +18,19 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     SUPABASE_DATABASE_URL: Optional[str] = None
     SUPABASE_URL: Optional[str] = None
+    NEXT_PUBLIC_SUPABASE_URL: Optional[str] = None
     SUPABASE_KEY: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_PUBLISHABLE_KEY: Optional[str] = None
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: Optional[str] = None
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_SECRET_KEY: Optional[str] = None
     SUPABASE_STORAGE_BUCKET: str = "receipts"
 
     # OpenAI settings
     OPENAI_API_KEY: str
+    OPENAI_API_MODEL: str = "gpt-4o-mini"
 
     # Twilio settings
     TWILIO_ACCOUNT_SID: str

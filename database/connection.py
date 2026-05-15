@@ -8,6 +8,7 @@ import logging
 import asyncpg
 from contextlib import contextmanager
 from typing import Iterator, Optional, Dict, Any
+from urllib.parse import urlparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -17,6 +18,17 @@ logger = logging.getLogger(__name__)
 
 # Define the base model class
 Base = declarative_base()
+
+
+def _project_id_from_supabase_url() -> Optional[str]:
+    supabase_url = get_env_variable("SUPABASE_URL", None)
+    if not supabase_url:
+        return None
+    hostname = urlparse(supabase_url).hostname or ""
+    if hostname.endswith(".supabase.co"):
+        return hostname.split(".")[0]
+    return None
+
 
 # Create engine and session factory
 # Check for Supabase DATABASE_URL
@@ -28,7 +40,7 @@ if not SQLALCHEMY_DATABASE_URL:
 
 if not SQLALCHEMY_DATABASE_URL:
     # Try to build URL from Supabase specific components
-    supabase_project_id = get_env_variable("SUPABASE_PROJECT_ID", None)
+    supabase_project_id = get_env_variable("SUPABASE_PROJECT_ID", None) or _project_id_from_supabase_url()
     supabase_password = get_env_variable("SUPABASE_DB_PASSWORD", None)
 
     if supabase_project_id and supabase_password:
@@ -37,7 +49,7 @@ if not SQLALCHEMY_DATABASE_URL:
         logger.info("Using Supabase direct connection format")
     else:
         # No Supabase connection details found
-        error_msg = "No Supabase connection details found. Please set DATABASE_URL, SUPABASE_DATABASE_URL, or SUPABASE_PROJECT_ID and SUPABASE_DB_PASSWORD."
+        error_msg = "No Supabase connection details found. Please set DATABASE_URL, SUPABASE_DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL."
         logger.error(error_msg)
         raise ValueError(error_msg)
 
@@ -117,7 +129,7 @@ async def get_connection_string():
         return supabase_db_url
 
     # Check for Supabase components
-    supabase_project_id = get_env_variable("SUPABASE_PROJECT_ID", None)
+    supabase_project_id = get_env_variable("SUPABASE_PROJECT_ID", None) or _project_id_from_supabase_url()
     supabase_password = get_env_variable("SUPABASE_DB_PASSWORD", None)
 
     if supabase_project_id and supabase_password:
@@ -125,7 +137,7 @@ async def get_connection_string():
         return f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
 
     # No valid connection configuration found
-    error_msg = "No Supabase connection details found. Please set DATABASE_URL, SUPABASE_DATABASE_URL, or SUPABASE_PROJECT_ID and SUPABASE_DB_PASSWORD."
+    error_msg = "No Supabase connection details found. Please set DATABASE_URL, SUPABASE_DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL."
     logger.error(error_msg)
     raise ValueError(error_msg)
 
