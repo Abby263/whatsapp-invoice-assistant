@@ -242,8 +242,34 @@ def detect_file_type(file_path: str, mime_type: str) -> str:
         elif 'csv' in mime_lower:
             return FileType.CSV.value
 
+    sniffed_file_type = _sniff_file_type_from_content(file_path)
+    if sniffed_file_type:
+        return sniffed_file_type
+
     # Default to binary
     return FileType.BINARY.value
+
+
+def _sniff_file_type_from_content(file_path: str) -> Optional[str]:
+    """Detect common supported files when upstream MIME/extension data is missing."""
+
+    try:
+        with open(file_path, "rb") as handle:
+            header = handle.read(16)
+    except OSError:
+        return None
+
+    if header.startswith(b"%PDF"):
+        return FileType.PDF.value
+
+    try:
+        from PIL import Image
+
+        with Image.open(file_path) as image:
+            image.verify()
+        return FileType.IMAGE.value
+    except Exception:
+        return None
 
 
 async def process_invoice_file(
@@ -995,67 +1021,14 @@ async def format_unsupported_format_response(
     Returns:
         Dict containing the formatted response
     """
-    llm_factory = LLMFactory()
-    agent = ResponseFormatterAgent(llm_factory=llm_factory)
-
-    # Create a proper AgentInput object
-    agent_input = AgentInput(
-        content="Format unsupported format response",
-        metadata={
+    logger.info("Unsupported file format received: %s (%s)", file_name, file_type)
+    return {
+        "content": FILE_PROCESSING_FALLBACKS["unsupported_format"],
+        "metadata": {
             "intent": IntentType.FILE_PROCESSING.value,
             "file_name": file_name,
             "file_type": file_type,
-            "response_type": "error",  # Specify the type of response
-            "error_type": "unsupported_file_format",  # Categorize the error type
-            "suggestion": "Please upload an invoice file (PDF, image, Excel, or CSV)."
-        }
-    )
-
-    try:
-        # Generate response with the formatter agent
-        result = await agent.process(agent_input)
-
-        # Only proceed if we got some response content
-        if result and hasattr(result, "content") and result.content:
-            # Validate the response quality using LLM-based validation
-            validation_context = {
-                "file_type": file_type,
-                "file_name": file_name,
-                "expected_formats": ["PDF", "image", "Excel", "CSV"]
-            }
-
-            validation_result = await llm_factory.validate_response(
-                response_content=result.content,
-                response_type="error",
-                context=validation_context
-            )
-
-            # Check if the response is valid based on validation results
-            if validation_result.get("is_valid", False) and validation_result.get("confidence", 0) >= 0.6:
-                logger.info(f"Unsupported format response validation successful: {validation_result.get('confidence')}")
-                return {
-                    "content": result.content,
-                    "confidence": result.confidence
-                }
-            else:
-                # Log why validation failed
-                issues = validation_result.get("issues", [])
-                logger.warning(f"Unsupported format response validation failed: {', '.join(issues)}")
-        else:
-            logger.warning("ResponseFormatterAgent returned no content for unsupported format response")
-
-        # Fallback response if formatter failed or validation failed
-        response = FILE_PROCESSING_FALLBACKS["unsupported_format"]
-
-        return {
-            "content": response,
-            "confidence": 0.6
-        }
-
-    except Exception as e:
-        logger.exception(f"Error formatting unsupported format response: {str(e)}")
-        return {
-            "content": FILE_PROCESSING_FALLBACKS["unsupported_format"],
-            "metadata": {"intent": IntentType.FILE_PROCESSING.value, "success": False},
-            "confidence": 0.5
-        }
+            "success": False,
+        },
+        "confidence": 0.6,
+    }

@@ -8,11 +8,13 @@ correctly and integrate properly with each other.
 import pytest
 import os
 import asyncio
+import io
 from typing import Dict, Any, List, Optional
 from unittest.mock import MagicMock, patch
 import tempfile
 import logging
 from pathlib import Path
+from PIL import Image
 
 from langchain_app.text_processing_workflow import process_text_message, classify_intent
 from langchain_app.general_response_workflow import process_general_response, process_greeting
@@ -347,6 +349,19 @@ async def test_file_type_detection():
     
     # Test fallback to binary
     assert detect_file_type("/path/to/file.unknown", "application/octet-stream") == FileType.BINARY.value
+
+
+def test_file_type_detection_sniffs_extensionless_supported_files(tmp_path):
+    image_path = tmp_path / "ME1ce8073d278cdb7bd026fbc9090b5eba"
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), color=(255, 255, 255)).save(buffer, format="JPEG")
+    image_path.write_bytes(buffer.getvalue())
+
+    pdf_path = tmp_path / "receipt_upload"
+    pdf_path.write_bytes(b"%PDF-1.4\n%test\n")
+
+    assert detect_file_type(str(image_path), "") == FileType.IMAGE.value
+    assert detect_file_type(str(pdf_path), "application/octet-stream") == FileType.PDF.value
 
 
 def test_storable_extraction_detection():
