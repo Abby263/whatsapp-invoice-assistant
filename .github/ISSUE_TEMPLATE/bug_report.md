@@ -30,7 +30,7 @@ If applicable, add screenshots to help explain your problem.
 - Database Version: [e.g. PostgreSQL 14.5]
 - MongoDB Version: [e.g. 5.0.9]
 - Browser (if UI-related): [e.g. Chrome 108.0.5359.124]
-- Environment: [e.g. Docker, local development]
+- Environment: [e.g. Vercel production, local development]
 
 ## Logs
 ```
@@ -41,4 +41,4 @@ Paste any relevant logs or error messages here
 Add any other context about the problem here.
 
 ## Possible Solution
-If you have ideas on how to fix the issue, please share them here. 
+If you have ideas on how to fix the issue, please share them here.

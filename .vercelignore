@@ -21,8 +21,6 @@ uploads/
 ui/uploads/
 output/
 
-docker/
-helm/
 images/
 scripts/
 /templates/
@@ -32,7 +30,5 @@ workflows/
 docs/assets/
 poetry.lock
 pyproject.toml
-docker-compose.yml
-docker-run.sh
 Makefile
 alembic.ini

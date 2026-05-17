@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests for different model configurations
   - Tests for error handling and edge cases
 
+### Removed
+
+- Removed legacy alternate API and container/Kubernetes deployment paths from the active repository.
+- Removed stale deployment and query walkthrough docs that no longer matched the Vercel/Supabase production path.
+- Removed unused invoice-template conversion utilities and unreferenced template files.
+
 ## [0.1.0] - 2023-04-04
 
 ### Added
@@ -63,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Poetry configuration for dependency management
 - Pre-commit hooks for code quality
 - Makefile with commands for common operations
-- Docker configuration for development environment
+- Legacy container configuration for development environment
 - Environment variable template and example file
 
 #### Configuration System
@@ -106,4 +112,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Not applicable for initial release
 
 ### Fixed
-- Not applicable for initial release 
+- Not applicable for initial release

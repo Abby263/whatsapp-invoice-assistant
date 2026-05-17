@@ -68,7 +68,18 @@ class WorkflowAppAdapter:
         self._app = app
 
     def invoke(self, *args, **kwargs):
-        result = self._app.invoke(*args, **kwargs)
+        try:
+            result = self._app.invoke(*args, **kwargs)
+        except KeyError as exc:
+            if exc.args != ("__start__",):
+                raise
+            logger.warning(
+                "LangGraph invocation failed on missing __start__ checkpoint state; "
+                "falling back to linear workflow execution"
+            )
+            if not args:
+                raise
+            result = _invoke_linear_workflow(args[0])
         return _coerce_workflow_state(result)
 
     def __getattr__(self, name: str):
@@ -81,6 +92,35 @@ def _coerce_workflow_state(result: Any) -> Any:
     if isinstance(result, dict):
         return WorkflowState(**result)
     return result
+
+
+def _is_file_valid(state: WorkflowState) -> bool:
+    validation = state.file_validation
+    if validation is None:
+        return False
+    if isinstance(validation, dict):
+        return bool(validation.get("is_valid"))
+    return bool(getattr(validation, "is_valid", False))
+
+
+def _invoke_linear_workflow(initial_state: Any) -> WorkflowState:
+    """Execute the workflow nodes directly when LangGraph cannot run locally."""
+
+    state = _coerce_workflow_state(initial_state)
+    state = _coerce_workflow_state(input_classifier(state))
+
+    if state.input_type == InputType.TEXT:
+        state = _coerce_workflow_state(text_intent_classifier(state))
+        if state.intent == IntentType.INVOICE_QUERY:
+            state = _coerce_workflow_state(sql_query_generator(state))
+        elif state.intent == IntentType.INVOICE_CREATOR:
+            state = _coerce_workflow_state(invoice_entity_extractor(state))
+        return _coerce_workflow_state(response_formatter(state))
+
+    state = _coerce_workflow_state(file_validator(state))
+    if _is_file_valid(state):
+        state = _coerce_workflow_state(data_extractor(state))
+    return _coerce_workflow_state(response_formatter(state))
 
 
 def _run_coro_sync(coro):
@@ -173,8 +213,6 @@ def create_workflow_graph() -> StateGraph:
     # Response formatter is the final step
     workflow.add_edge("response_formatter", END)
 
-    # Compile the graph
-    workflow.compile()
     workflow._graph = type(
         "WorkflowGraphView",
         (),

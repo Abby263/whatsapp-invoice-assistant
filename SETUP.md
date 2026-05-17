@@ -87,14 +87,13 @@ Optional local-only variables:
 ```env
 USE_MONGODB=false
 MONGODB_URI=mongodb://localhost:27017/whatsapp_invoice_assistant
-REDIS_URL=redis://localhost:6379/0
 DEBUG=false
 LOG_LEVEL=INFO
 PORT=8000
 HOST=0.0.0.0
 ```
 
-MongoDB and Redis are not required for the current Vercel real-time WhatsApp test path.
+MongoDB is not required for the current Vercel real-time WhatsApp test path.
 
 ## Supabase Setup
 
@@ -339,14 +338,7 @@ Open:
 http://localhost:5001
 ```
 
-Run the alternate FastAPI webhook locally only when you need local API testing:
-
-```bash
-make start
-curl http://localhost:8000/health
-```
-
-Local Twilio webhook testing requires a public HTTPS tunnel, but production Twilio should use the Vercel webhook URL.
+Local Twilio webhook testing requires a public HTTPS tunnel that forwards to the Flask app. Production Twilio should use the Vercel webhook URL.
 
 ## End-to-End Test Plan
 

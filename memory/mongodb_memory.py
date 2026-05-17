@@ -64,21 +64,6 @@ class MongoDBMemory:
         self.db_name = db_name or mongodb_config.get("db_name", "whatsapp_invoice_assistant")
         self._fallback_mode = False
 
-        # Adjust URI for Docker environment
-        if (os.environ.get("PYTHONPATH") == "/app" or
-            os.environ.get("IN_DOCKER") == "true" or
-            os.path.exists("/.dockerenv")):
-            # If MONGODB_URI explicitly contains container name, use it
-            if "whatsapp-invoice-assistant-mongodb" in self.mongo_uri:
-                logger.info(f"Using provided MongoDB URI in Docker: {self.mongo_uri}")
-            # Otherwise fix the hostname for Docker environment
-            elif "mongodb://" in self.mongo_uri and "localhost" in self.mongo_uri:
-                self.mongo_uri = self.mongo_uri.replace("localhost", "whatsapp-invoice-assistant-mongodb")
-                logger.info(f"Adjusted MongoDB URI for Docker environment: {self.mongo_uri}")
-            elif "mongodb://mongodb" in self.mongo_uri:
-                self.mongo_uri = self.mongo_uri.replace("mongodb://mongodb", "mongodb://whatsapp-invoice-assistant-mongodb")
-                logger.info(f"Adjusted MongoDB URI from 'mongodb' to container name: {self.mongo_uri}")
-
         # Initialize MongoDB client and collections
         self._init_mongodb()
 
