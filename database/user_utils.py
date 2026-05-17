@@ -9,10 +9,17 @@ from sqlalchemy.orm import Session
 
 from database import crud, models
 from database.schemas import User
+from utils.phone_numbers import normalize_whatsapp_number
 
 # Configure logging
 logger = logging.getLogger(__name__)
 PLACEHOLDER_WHATSAPP_NUMBERS = {"+1234567890"}
+
+
+def _ensure_application_schema() -> None:
+    from database.connection import ensure_application_schema
+
+    ensure_application_schema()
 
 
 def _apply_profile_updates(
@@ -49,6 +56,9 @@ def create_user(
     Returns:
         Dictionary with user information including ID
     """
+    _ensure_application_schema()
+    whatsapp_number = normalize_whatsapp_number(whatsapp_number)
+
     # Check if user already exists
     existing_user = crud.user.get_by_whatsapp_number(session, whatsapp_number)
     
@@ -113,6 +123,7 @@ def serialize_user(user: User, is_new: bool = False) -> Dict[str, Any]:
 def get_user_by_clerk_id(session: Session, clerk_user_id: str) -> Optional[User]:
     """Return the app user linked to a Clerk user id."""
 
+    _ensure_application_schema()
     return session.query(User).filter(User.clerk_user_id == clerk_user_id).first()
 
 
@@ -130,9 +141,8 @@ def link_clerk_user_to_whatsapp(
     the same account after the user signs in on the website.
     """
 
-    whatsapp_number = (whatsapp_number or "").strip()
-    if whatsapp_number.startswith("whatsapp:"):
-        whatsapp_number = whatsapp_number.replace("whatsapp:", "", 1)
+    _ensure_application_schema()
+    whatsapp_number = normalize_whatsapp_number(whatsapp_number)
     if not whatsapp_number:
         raise ValueError("WhatsApp number is required")
 

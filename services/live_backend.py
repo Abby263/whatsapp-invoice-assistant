@@ -19,6 +19,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
+from utils.phone_numbers import normalize_whatsapp_number as normalize_phone_number
 
 
 DEFAULT_WHATSAPP_NUMBER = "+1234567890"
@@ -193,8 +194,10 @@ def list_users(auth_context: Any = None) -> Dict[str, Any]:
         return {"status": "success", "users": [], "needs_link": True}
 
     from database.connection import get_db_session
+    from database.connection import ensure_application_schema
     from database.schemas import User
 
+    ensure_application_schema()
     session = get_db_session()
     try:
         users = session.query(User).order_by(User.id.asc()).limit(100).all()
@@ -480,9 +483,10 @@ def generated_analytics(auth_context: Any, query: Optional[Dict[str, Any]] = Non
 def database_status(auth_context: Any = None) -> Dict[str, Any]:
     from sqlalchemy import func, text
 
-    from database.connection import SessionLocal, engine
+    from database.connection import SessionLocal, engine, ensure_application_schema
     from database.schemas import GeneratedInvoice, Invoice, InvoiceEmbedding, Item, Media
 
+    ensure_application_schema()
     user = None
     if auth_context:
         linked = get_linked_user(auth_context.clerk_user_id)
@@ -552,9 +556,10 @@ def database_status(auth_context: Any = None) -> Dict[str, Any]:
 def latest_file_storage(auth_context: Any = None) -> Dict[str, Any]:
     from sqlalchemy import text
 
-    from database.connection import get_db_session
+    from database.connection import get_db_session, ensure_application_schema
     from storage import SupabaseStorageHandler
 
+    ensure_application_schema()
     linked_user = get_linked_user(auth_context.clerk_user_id) if auth_context else None
     session = get_db_session()
     try:
@@ -612,10 +617,7 @@ def latest_file_storage(auth_context: Any = None) -> Dict[str, Any]:
 
 
 def normalize_whatsapp_number(value: Optional[str], default: Optional[str] = DEFAULT_WHATSAPP_NUMBER) -> str:
-    value = (value or default or "").strip()
-    if value.startswith("whatsapp:"):
-        value = value.replace("whatsapp:", "", 1)
-    return value
+    return normalize_phone_number(value, default=default)
 
 
 def _conversation_key(user_id: str) -> str:

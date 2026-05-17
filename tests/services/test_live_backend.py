@@ -46,3 +46,5 @@ def test_backend_configuration_rejects_unescaped_database_password(monkeypatch):
 def test_normalize_whatsapp_number_can_require_explicit_value():
     assert live_backend.normalize_whatsapp_number(None, default="") == ""
     assert live_backend.normalize_whatsapp_number("whatsapp:+15551234567", default="") == "+15551234567"
+    assert live_backend.normalize_whatsapp_number("whatsapp:+91 97871 17947", default="") == "+919787117947"
+    assert live_backend.normalize_whatsapp_number("16473628073", default="") == "+16473628073"
