@@ -270,6 +270,14 @@ If Twilio shows `11200` and the URL is an old ngrok domain, the webhook is still
 
 For media uploads, the app sends a short processing acknowledgement first and then sends the extraction summary as a separate outbound Twilio message. If several images are forwarded together and Twilio delivers them as separate webhooks, the acknowledgement is rate-limited per sender while each file still gets processed.
 
+How to read multi-image results:
+
+- A `Document extraction result` message is for one file only.
+- A `Batch processing result` message is only for attachments Twilio delivered inside the same webhook.
+- If six images are forwarded and Twilio splits them, expect six final file-status messages.
+- Every processed financial document reply follows fixed keys such as `document_type`, `vendor.name`, `transaction.date`, `financial.total`, and `items.count`.
+- Non-financial images receive `Document not processed` with `status: rejected` and are not stored as expenses.
+
 ## Vercel Setup
 
 ### 1. Link Project

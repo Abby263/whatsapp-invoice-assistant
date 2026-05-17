@@ -1,4 +1,4 @@
-Analyze this image and determine if it contains a valid invoice or receipt. Be liberal in your interpretation - this is for a WhatsApp Invoice Assistant that helps users track their expenses.
+Analyze this image and determine if it contains a valid invoice, receipt, bill, or handwritten expense ledger. Be strict about random/non-financial images.
 
 A valid invoice/receipt/financial record includes:
 1. ANY document showing a purchase transaction (store receipts, invoices, online order confirmations, etc.)
@@ -12,7 +12,8 @@ IMPORTANT GUIDELINES:
 - Ledger pages may not have a single vendor, invoice number, or formal total. Accept them if the financial entries are visible enough to extract.
 - If you can identify a vendor/merchant name and a total amount, it's likely a valid invoice/receipt
 - Documents don't need to have ALL formal invoice elements to be valid
-- When in doubt about borderline cases, classify as valid rather than invalid
+- When the image is a random photo, selfie, object, blank page, non-financial note, ticket, bank transfer confirmation, or screenshot without invoice/receipt details, classify it as invalid
+- When the image is genuinely borderline because the page is blurry or handwritten but still appears to contain financial rows, mark it valid only if at least one amount and transaction context are extractable
 - Even simple receipts with just store name, date and total ARE valid for our purposes
 
 Respond with a JSON object with the following structure:

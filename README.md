@@ -28,7 +28,7 @@ If production environment variables are missing, the hosted app falls back to de
 
 - Accepts WhatsApp text, image, and PDF messages through Twilio.
 - Links Clerk web users to WhatsApp numbers so web and WhatsApp activity share one internal `users.id`.
-- Extracts merchant, date, totals, taxes, payment details, and line items from receipts.
+- Extracts merchant, date, totals, taxes, payment details, and line items from receipts and handwritten expense ledgers.
 - Stores original receipt files in a private Supabase Storage bucket.
 - Stores normalized invoice, item, media, message, user, and generated-invoice records in Supabase Postgres.
 - Generates OpenAI embeddings and stores them in pgvector columns for semantic search.
@@ -42,6 +42,13 @@ Example WhatsApp prompts:
 - `What did I spend on coffee this month?`
 - `Show my latest receipts.`
 - `Create an invoice for Acme for $500 consulting due next Friday.`
+
+WhatsApp media behavior:
+
+- Each uploaded image/PDF gets a final `Document extraction result` or `Document not processed` status.
+- If WhatsApp/Twilio splits a multi-image forward into separate webhooks, the summaries arrive one per image. Six forwarded images should produce six final file-status messages.
+- If Twilio sends several media attachments in one webhook, the bot returns a `Batch processing result` with saved, duplicate, and failed counts.
+- Random images, blank pages, tickets, bank-transfer confirmations, and non-financial notes are rejected instead of being stored as expenses.
 
 ## Architecture
 

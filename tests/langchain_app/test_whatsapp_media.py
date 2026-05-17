@@ -84,6 +84,10 @@ async def test_process_whatsapp_message_handles_multiple_media_and_batch_duplica
     assert result["metadata"]["media_count"] == 3
     assert result["metadata"]["saved_count"] == 2
     assert result["metadata"]["duplicate_count"] == 1
+    assert "Batch processing result" in result["message"]
+    assert "attachments.received: 3" in result["message"]
+    assert "status: saved" in result["message"]
+    assert "status: duplicate" in result["message"]
     assert len(processed) == 2
     assert processed[0]["file_metadata"]["twilio_media_index"] == 0
     assert processed[1]["file_metadata"]["twilio_media_index"] == 2
@@ -226,6 +230,38 @@ async def test_process_file_message_short_circuits_previous_duplicate(tmp_path, 
 
 
 @pytest.mark.asyncio
+async def test_format_extraction_response_uses_fixed_document_schema():
+    result = await file_processing_workflow.format_extraction_response(
+        {
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "transaction": {"date": "2026-02-15"},
+                "financial": {"total": 7825.0, "currency": "INR"},
+                "additional_info": {"document_type": "handwritten_ledger"},
+                "items": [
+                    {
+                        "description": "Printing Aminabad Adv.",
+                        "transaction_date": "2026-02-15",
+                        "total_price": 500.0,
+                        "entry_type": "expense",
+                    }
+                ],
+            },
+            "metadata": {"invoice_id": 7},
+        },
+        "ledger.jpg",
+    )
+
+    content = result["content"]
+    assert "Document extraction result" in content
+    assert "scope: this file only" in content
+    assert "document_type: handwritten_ledger" in content
+    assert "transaction.date: 2026-02-15" in content
+    assert "financial.total: 7825.0 INR" in content
+    assert "items.count: 1" in content
+
+
+@pytest.mark.asyncio
 async def test_process_file_message_stores_original_before_validation(tmp_path, monkeypatch):
     file_path = tmp_path / "receipt.jpg"
     file_path.write_bytes(b"receipt-bytes")
@@ -266,7 +302,8 @@ async def test_process_file_message_stores_original_before_validation(tmp_path, 
     )
 
     assert calls == {"uploads": 1, "media": 2}
-    assert "valid invoice" in result["content"].lower()
+    assert "Document not processed" in result["content"]
+    assert "status: rejected" in result["content"]
 
 
 def test_supabase_upload_is_idempotent_for_existing_content_addressed_object(monkeypatch):
