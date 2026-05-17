@@ -259,6 +259,113 @@ class LLMFactory:
         # Return the client
         return client
 
+    def _uses_max_completion_tokens(self, model_name: str) -> bool:
+        """Return whether a chat model expects max_completion_tokens."""
+
+        normalized_model = (model_name or "").lower()
+        return normalized_model.startswith(("gpt-5", "o1", "o3", "o4"))
+
+    def _build_openai_chat_params(
+        self,
+        model_name: str,
+        messages: List[Dict[str, Any]],
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+    ) -> Dict[str, Any]:
+        params: Dict[str, Any] = {
+            "model": model_name,
+            "messages": messages,
+        }
+
+        if temperature is not None:
+            params["temperature"] = temperature
+
+        if max_tokens is not None:
+            token_param = (
+                "max_completion_tokens"
+                if self._uses_max_completion_tokens(model_name)
+                else "max_tokens"
+            )
+            params[token_param] = max_tokens
+
+        return params
+
+    def _should_retry_without_temperature(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "temperature" in message and (
+            "unsupported" in message
+            or "not support" in message
+            or "does not support" in message
+        )
+
+    def _should_retry_with_max_completion_tokens(self, exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "max_tokens" in message and "max_completion_tokens" in message
+
+    def _create_openai_chat_completion(
+        self,
+        client: Any,
+        *,
+        model_name: str,
+        messages: List[Dict[str, Any]],
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+    ) -> Any:
+        params = self._build_openai_chat_params(
+            model_name=model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        for attempt in range(3):
+            try:
+                return client.chat.completions.create(**params)
+            except Exception as exc:
+                retried = False
+                if self._should_retry_with_max_completion_tokens(exc) and "max_tokens" in params:
+                    params["max_completion_tokens"] = params.pop("max_tokens")
+                    retried = True
+                if self._should_retry_without_temperature(exc) and "temperature" in params:
+                    params.pop("temperature", None)
+                    retried = True
+                if not retried or attempt == 2:
+                    raise
+
+        raise RuntimeError("OpenAI chat completion retry loop exited unexpectedly")
+
+    async def _acreate_openai_chat_completion(
+        self,
+        client: Any,
+        *,
+        model_name: str,
+        messages: List[Dict[str, Any]],
+        temperature: Optional[float],
+        max_tokens: Optional[int],
+    ) -> Any:
+        params = self._build_openai_chat_params(
+            model_name=model_name,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+        for attempt in range(3):
+            try:
+                return await client.chat.completions.create(**params)
+            except Exception as exc:
+                retried = False
+                if self._should_retry_with_max_completion_tokens(exc) and "max_tokens" in params:
+                    params["max_completion_tokens"] = params.pop("max_tokens")
+                    retried = True
+                if self._should_retry_without_temperature(exc) and "temperature" in params:
+                    params.pop("temperature", None)
+                    retried = True
+                if not retried or attempt == 2:
+                    raise
+
+        raise RuntimeError("OpenAI chat completion retry loop exited unexpectedly")
+
     def generate_completion(
         self,
         prompt: str,
@@ -291,11 +398,12 @@ class LLMFactory:
         # Generate completion based on provider
         if provider == ModelProvider.OPENAI:
             client = self._create_openai_instance(config)
-            response = client.chat.completions.create(
-                model=model_name,
+            response = self._create_openai_chat_completion(
+                client,
+                model_name=model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
             )
             return response.choices[0].message.content
 
@@ -373,14 +481,15 @@ class LLMFactory:
                     prompt,
                     task_name,
                     config_override,
-                )
+            )
 
             client = AsyncOpenAI(api_key=self.api_keys[ModelProvider.OPENAI])
-            response = await client.chat.completions.create(
-                model=model_name,
+            response = await self._acreate_openai_chat_completion(
+                client,
+                model_name=model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=temperature,
-                max_tokens=max_tokens
+                max_tokens=max_tokens,
             )
             return response.choices[0].message.content
 
@@ -781,11 +890,12 @@ class LLMFactory:
                     )
 
                     # Call the configured model with vision capabilities
-                    response = client.chat.completions.create(
-                        model=model_name,
+                    response = self._create_openai_chat_completion(
+                        client,
+                        model_name=model_name,
                         messages=messages,
                         temperature=TemperatureSettings.DATA_EXTRACTION,
-                        max_tokens=TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM
+                        max_tokens=TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM,
                     )
 
                     # Extract the response content
@@ -1068,64 +1178,46 @@ class LLMFactory:
         # Load the response formatting prompt template
         prompt_template = self.load_prompt_template("response_formatting_prompt")
 
+        # Use custom encoder for handling datetime and Decimal objects.
+        class CustomEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, datetime):
+                    return obj.isoformat()
+                if isinstance(obj, Decimal):
+                    return float(obj)
+                return super().default(obj)
+
+        # Create input data structure if not already in correct format.
+        if not isinstance(content, dict) or "type" not in content:
+            input_data = {
+                "type": format_type,
+                "content": content
+            }
+        else:
+            input_data = content
+
         try:
-            # Use custom encoder for handling datetime and Decimal objects
-            class CustomEncoder(json.JSONEncoder):
-                def default(self, obj):
-                    if isinstance(obj, datetime):
-                        return obj.isoformat()
-                    if isinstance(obj, Decimal):
-                        return float(obj)
-                    return super().default(obj)
-
-            # Create input data structure if not already in correct format
-            if not isinstance(content, dict) or "type" not in content:
-                input_data = {
+            formatted_input = json.dumps(input_data, indent=2, cls=CustomEncoder)
+        except TypeError:
+            logger.warning("Response formatting input was not JSON serializable; sending string content to LLM")
+            formatted_input = json.dumps(
+                {
                     "type": format_type,
-                    "content": content
-                }
-            else:
-                input_data = content
-
-            # Format the prompt with the content
-            prompt = f"{prompt_template}\n\nInput:\n{json.dumps(input_data, indent=2, cls=CustomEncoder)}\n\nOutput:"
-
-            # Generate the completion
-            logger.debug("Sending format prompt to LLM")
-            formatted_response = await self.agenerate_completion(
-                prompt,
-                task_name="response_formatting"
+                    "content": str(content),
+                },
+                indent=2,
             )
 
-            logger.debug(f"Formatted response (first 100 chars): {formatted_response[:100]}...")
-            return formatted_response
+        prompt = f"{prompt_template}\n\nInput:\n{formatted_input}\n\nOutput:"
 
-        except Exception as e:
-            logger.error(f"Error in format_response: {str(e)}", exc_info=True)
-            logger.warning(f"Error serializing input data to JSON: {str(e)}")
+        logger.debug("Sending format prompt to LLM")
+        formatted_response = await self.agenerate_completion(
+            prompt,
+            task_name="response_formatting"
+        )
 
-            # Fallback: Simple formatting for when JSON serialization fails
-            try:
-                # Create a simple response based on the query result content
-                if isinstance(content, dict):
-                    query_type = content.get("type", format_type)
-                    if query_type == "query_result":
-                        query_content = content.get("content", {})
-                        query = query_content.get("query", "your query")
-                        results = query_content.get("results", [])
-                        count = len(results)
-
-                        if count > 0:
-                            return f"I found {count} results for {query}. Here's a summary of what I found."
-                        else:
-                            return f"I couldn't find any results for {query}. Please try a different query."
-                    else:
-                        return f"I found some information related to your request, but encountered an issue formatting it."
-                else:
-                    return "I found some information related to your request, but encountered an issue with the formatting."
-            except Exception as e2:
-                logger.error(f"Error in fallback formatting: {str(e2)}", exc_info=True)
-                return "I found some information related to your request, but encountered an issue with the formatting."
+        logger.debug(f"Formatted response (first 100 chars): {formatted_response[:100]}...")
+        return formatted_response
 
     async def generate_sql_from_query(
         self,
