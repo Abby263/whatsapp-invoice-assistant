@@ -103,6 +103,75 @@ async def test_process_text_message_loads_and_saves_memory(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_text_message_ignores_untrusted_supplied_history_for_user(monkeypatch):
+    captured = {}
+
+    async def fake_process_text(text_content, user_id=None, conversation_history=None):
+        captured["conversation_history"] = conversation_history
+        return {
+            "content": "Scoped answer.",
+            "error": None,
+            "status": "success",
+            "metadata": {"intent": "invoice_query"},
+            "confidence": 0.9,
+        }
+
+    async def fake_load_conversation_history(user_id):
+        assert user_id == "9"
+        return [{"role": "user", "content": "User 9 previous question"}]
+
+    monkeypatch.setattr(api, "process_text", fake_process_text)
+    monkeypatch.setattr(api, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(api, "save_conversation_turn", lambda *args, **kwargs: None)
+
+    await api.process_text_message(
+        message="Follow up",
+        sender="whatsapp:+15551234567",
+        user_id="9",
+        conversation_history=[{"role": "user", "content": "Other user private context"}],
+    )
+
+    assert captured["conversation_history"] == [
+        {"role": "user", "content": "User 9 previous question"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_process_file_message_ignores_untrusted_supplied_history_for_user(monkeypatch, tmp_path):
+    captured = {}
+    receipt_path = tmp_path / "receipt.jpg"
+    receipt_path.write_bytes(b"receipt")
+
+    async def fake_process_file(**kwargs):
+        captured["conversation_history"] = kwargs["conversation_history"]
+        return {
+            "content": "File processed.",
+            "metadata": {"intent": "file_processing"},
+        }
+
+    async def fake_load_conversation_history(user_id):
+        assert user_id == "11"
+        return [{"role": "assistant", "content": "User 11 scoped context"}]
+
+    monkeypatch.setattr(api, "process_file", fake_process_file)
+    monkeypatch.setattr(api, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(api, "save_conversation_turn", lambda *args, **kwargs: None)
+
+    await api.process_file_message(
+        file_path=str(receipt_path),
+        file_name="receipt.jpg",
+        mime_type="image/jpeg",
+        sender="whatsapp:+15551234567",
+        user_id="11",
+        conversation_history=[{"role": "assistant", "content": "Other user file context"}],
+    )
+
+    assert captured["conversation_history"] == [
+        {"role": "assistant", "content": "User 11 scoped context"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_process_whatsapp_message_returns_greeting_content(monkeypatch):
     async def fake_process_text(text_content, user_id=None, conversation_history=None):
         return {

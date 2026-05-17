@@ -62,6 +62,7 @@ async def process_text_message(
     conversation_id: Optional[str] = None,
     db_session: Optional[Session] = None,
     whatsapp_message_sid: Optional[str] = None,
+    conversation_history_trusted: bool = False,
 ) -> Dict[str, Any]:
     """
     Process a text message through the text processing workflow.
@@ -87,9 +88,11 @@ async def process_text_message(
             else:
                 logger.warning("Could not resolve text-message user_id from sender %s", sender)
 
-        active_history = conversation_history
-        if active_history is None and user_id is not None:
-            active_history = await load_conversation_history(user_id)
+        active_history = await _resolve_user_scoped_history(
+            user_id=user_id,
+            conversation_history=conversation_history,
+            conversation_history_trusted=conversation_history_trusted,
+        )
 
         # Process the text message through the specialized workflow
         result = await process_text(
@@ -174,6 +177,7 @@ async def process_file_message(
     db_session: Optional[Session] = None,
     file_metadata: Optional[Dict[str, Any]] = None,
     persist_conversation: bool = True,
+    conversation_history_trusted: bool = False,
 ) -> Dict[str, Any]:
     """
     Process a file message through the file processing workflow.
@@ -197,12 +201,17 @@ async def process_file_message(
     try:
         # Process the file through the specialized workflow
         logger.info(f"Calling process_file with user_id: {user_id}")
+        active_history = await _resolve_user_scoped_history(
+            user_id=user_id,
+            conversation_history=conversation_history,
+            conversation_history_trusted=conversation_history_trusted,
+        )
         result = await process_file(
             file_path=file_path,
             file_type=mime_type,
             file_name=file_name,
             user_id=user_id,
-            conversation_history=conversation_history or [],
+            conversation_history=active_history,
             file_metadata=file_metadata,
         )
         
@@ -288,6 +297,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 conversation_history,
                 user_id,
                 whatsapp_message_sid=_message_sid_from_payload(message_data),
+                conversation_history_trusted=True,
             )
             
         elif message_data.get("NumMedia", "0") != "0":
@@ -392,6 +402,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                                 "checksum_sha256": checksum,
                             },
                             persist_conversation=False,
+                            conversation_history_trusted=True,
                         )
                         result.setdefault("metadata", {})
                         result["metadata"]["media_index"] = index
@@ -460,6 +471,26 @@ def _message_sid_from_payload(message_data: Optional[Dict[str, Any]]) -> Optiona
     if not isinstance(message_data, dict):
         return None
     return message_data.get("MessageSid") or message_data.get("SmsMessageSid")
+
+
+async def _resolve_user_scoped_history(
+    *,
+    user_id: Optional[Union[str, UUID]],
+    conversation_history: Optional[List[Dict[str, Any]]],
+    conversation_history_trusted: bool,
+) -> List[Dict[str, Any]]:
+    """Return conversation memory without trusting caller-supplied history across users."""
+
+    if user_id is None:
+        return conversation_history or []
+    if conversation_history_trusted:
+        return conversation_history or []
+    if conversation_history:
+        logger.warning(
+            "Ignoring untrusted supplied conversation history for user-scoped request user_id=%s",
+            user_id,
+        )
+    return await load_conversation_history(user_id)
 
 
 def _media_memory_user_message(message_data: Dict[str, Any], media_count: int) -> str:

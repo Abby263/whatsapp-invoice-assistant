@@ -191,6 +191,8 @@ The application stores user-scoped operational data in Supabase Postgres:
 
 Uploaded receipt files and generated invoice documents are stored in the private Supabase Storage bucket configured by `SUPABASE_STORAGE_BUCKET`, defaulting to `receipts`. The database stores metadata and storage paths; the app generates signed URLs when users need to view a file.
 
+Conversation memory is user scoped. For production WhatsApp and web requests, the agent loads memory from `conversations` and `messages` by the resolved internal `users.id`; caller-supplied history is ignored unless it comes from an internal trusted workflow path.
+
 Receipt extraction uses a WhatsApp human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web history view, but invoice rows, line items, embeddings, and analytics are created only after the same linked WhatsApp user replies `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
 
 ## Why Supabase Storage Instead Of S3
