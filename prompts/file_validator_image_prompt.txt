@@ -1,12 +1,15 @@
 Analyze this image and determine if it contains a valid invoice or receipt. Be liberal in your interpretation - this is for a WhatsApp Invoice Assistant that helps users track their expenses.
 
-A valid invoice/receipt includes:
+A valid invoice/receipt/financial record includes:
 1. ANY document showing a purchase transaction (store receipts, invoices, online order confirmations, etc.)
 2. Documents showing goods or services purchased with pricing
 3. Any payment confirmation with vendor and amount information
+4. Handwritten expense ledgers, account-book pages, diary pages, or notebook pages that list transaction dates/descriptions and monetary amounts
 
 IMPORTANT GUIDELINES:
 - Retail receipts, store receipts, and simple payment confirmations ARE valid invoice documents
+- Handwritten ledger/account pages ARE valid when they contain multiple financial rows, dates or row references, descriptions/names, and amounts
+- Ledger pages may not have a single vendor, invoice number, or formal total. Accept them if the financial entries are visible enough to extract.
 - If you can identify a vendor/merchant name and a total amount, it's likely a valid invoice/receipt
 - Documents don't need to have ALL formal invoice elements to be valid
 - When in doubt about borderline cases, classify as valid rather than invalid

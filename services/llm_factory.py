@@ -895,7 +895,7 @@ class LLMFactory:
                         model_name=model_name,
                         messages=messages,
                         temperature=TemperatureSettings.DATA_EXTRACTION,
-                        max_tokens=TokenLimits.MAX_OUTPUT_TOKENS_MEDIUM,
+                        max_tokens=TokenLimits.MAX_OUTPUT_TOKENS_LONG,
                     )
 
                     # Extract the response content

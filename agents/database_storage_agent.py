@@ -279,8 +279,10 @@ class DatabaseStorageAgent(BaseAgent):
                         unit_price = total_price / quantity
                     unit_price = unit_price if unit_price is not None else 0.0
                     total_price = total_price if total_price is not None else 0.0
-                    item_category = item.get("item_category")  # Get item_category
-                    item_code = item.get("item_code")  # Get item_code
+                    item_category = item.get("item_category") or item.get("entry_type")
+                    item_code = item.get("item_code") or item.get("transaction_date") or item.get("raw_date")
+                    if item_code is not None:
+                        item_code = str(item_code)[:50]
 
                     # Log item values for debugging
                     logger.info(f"Item details - description: {description}, quantity: {quantity}, "
@@ -563,7 +565,16 @@ class DatabaseStorageAgent(BaseAgent):
         total, _, _ = self._extract_financial_fields(invoice_data)
         items = invoice_data.get("items") or []
         item_text = "; ".join(
-            item.get("description") or item.get("name") or ""
+            " ".join(
+                str(part)
+                for part in [
+                    item.get("transaction_date") or item.get("raw_date") or item.get("item_code"),
+                    item.get("entry_type"),
+                    item.get("description") or item.get("name") or "",
+                    item.get("total_price") or item.get("amount"),
+                ]
+                if part not in (None, "")
+            )
             for item in items
             if isinstance(item, dict) and (item.get("description") or item.get("name"))
         )

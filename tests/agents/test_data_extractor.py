@@ -122,6 +122,59 @@ async def test_extract_data_from_unsupported_file(data_extractor_agent, monkeypa
     
     logger.info(f"Error extracting from unsupported file: {result.error}")
 
+
+@pytest.mark.asyncio
+async def test_extract_handwritten_ledger_rows_without_vendor(data_extractor_agent, monkeypatch):
+    """Handwritten ledger pages should be storable even without a formal vendor."""
+
+    async def mock_extract_invoice_data(*args, **kwargs):
+        return json.dumps({
+            "vendor": {"name": None},
+            "transaction": {"date": None, "page_number": "6"},
+            "items": [
+                {
+                    "description": "Printing Aminabad Adv.",
+                    "quantity": 1,
+                    "amount": "500",
+                    "transaction_date": "2026-02-15",
+                    "raw_date": "15.2.26",
+                    "entry_type": "expense",
+                },
+                {
+                    "description": "Ram Co. Marker Pen Register etc.",
+                    "quantity": 1,
+                    "total_price": 825,
+                    "transaction_date": "2026-02-15",
+                    "raw_date": "15.2.26",
+                    "entry_type": "expense",
+                },
+            ],
+            "financial": {"currency": "INR"},
+            "additional_info": {
+                "document_type": "handwritten_ledger",
+                "source_language": "Hindi/English",
+            },
+            "confidence_score": 0.72,
+        })
+
+    monkeypatch.setattr(data_extractor_agent.llm_factory, "extract_invoice_data", mock_extract_invoice_data)
+
+    agent_input = AgentInput(
+        content=b"not-a-real-image-but-llm-is-mocked",
+        content_type="image",
+        metadata={"file_path": "ledger.jpg", "input_type": "image"},
+    )
+
+    result = await data_extractor_agent.process(agent_input)
+
+    assert result.status == "success"
+    assert result.content["vendor"]["name"] == "Handwritten ledger"
+    assert result.content["financial"]["total"] == 1325.0
+    assert result.content["financial"]["currency"] == "INR"
+    assert result.content["items"][0]["item_code"] == "2026-02-15"
+    assert result.content["items"][0]["unit_price"] == 500.0
+    assert "15.2.26" in result.content["items"][0]["description"]
+
 @pytest.mark.asyncio
 async def test_handle_different_file_types(data_extractor_agent, monkeypatch):
     """Test handling different file types."""

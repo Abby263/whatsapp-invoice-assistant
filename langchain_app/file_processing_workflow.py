@@ -801,6 +801,13 @@ async def format_extraction_response(
     def create_formatted_response(data, file_url=None):
         vendor = data.get("vendor", {})
         vendor_name = vendor.get("name", "Unknown Vendor") if isinstance(vendor, dict) else vendor
+        additional_info = data.get("additional_info", {})
+        document_type = (
+            additional_info.get("document_type")
+            if isinstance(additional_info, dict)
+            else ""
+        )
+        is_ledger = "ledger" in str(document_type or "").lower()
 
         transaction = data.get("transaction", {})
         invoice_number = transaction.get("invoice_number", "Unknown") if isinstance(transaction, dict) else None
@@ -819,8 +826,10 @@ async def format_extraction_response(
 
         items_text = ""
         if items and len(items) > 0:
-            items_text = "\n\n📋 Items:"
-            for item in items:
+            label = "Ledger entries" if is_ledger else "Items"
+            items_text = f"\n\n📋 {label}:"
+            visible_items = items[:8]
+            for item in visible_items:
                 if not isinstance(item, dict):
                     continue
                 description = item.get("description", "Item")
@@ -828,10 +837,14 @@ async def format_extraction_response(
                 unit_price = item.get("unit_price", 0)
                 total_price = item.get("total_price", 0)
                 items_text += f"\n- {description}: {quantity} x {unit_price} {currency} = {total_price} {currency}"
+            remaining = len(items) - len(visible_items)
+            if remaining > 0:
+                items_text += f"\n- ...and {remaining} more saved entries."
 
-        response = f"✅ I've successfully processed your invoice from {file_name}!\n\n"
-        response += f"🏢 Vendor: {vendor_name}\n"
-        if invoice_number:
+        document_label = "ledger page" if is_ledger else "invoice"
+        response = f"✅ I've successfully processed your {document_label} from {file_name}!\n\n"
+        response += f"🏢 Vendor: {vendor_name}\n" if not is_ledger else ""
+        if invoice_number and invoice_number != "Unknown":
             response += f"📝 Invoice #{invoice_number}\n"
         response += f"💰 Total: {total} {currency}\n"
         if date and date != "Unknown Date":
