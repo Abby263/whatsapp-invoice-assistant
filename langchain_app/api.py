@@ -490,6 +490,10 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         result for result in results
         if _media_result_state(result) == "saved"
     ]
+    pending = [
+        result for result in results
+        if _media_result_state(result) == "awaiting approval"
+    ]
 
     if len(results) == 1:
         return results[0]
@@ -499,6 +503,7 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         "scope: this WhatsApp webhook only",
         f"attachments.received: {len(results)}",
         f"attachments.saved: {len(stored)}",
+        f"attachments.awaiting_approval: {len(pending)}",
         f"attachments.duplicates: {len(duplicates)}",
         f"attachments.failed: {len(errors)}",
         "",
@@ -520,6 +525,7 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "intent": IntentType.FILE_PROCESSING.value,
             "media_count": len(results),
             "saved_count": len(stored),
+            "pending_approval_count": len(pending),
             "duplicate_count": len(duplicates),
             "failed_count": len(errors),
             "results": results,
@@ -529,6 +535,8 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def _media_result_state(result: Dict[str, Any]) -> str:
     metadata = result.get("metadata", {}) if isinstance(result.get("metadata"), dict) else {}
+    if metadata.get("hitl_status") == "awaiting_confirmation":
+        return "awaiting approval"
     if metadata.get("duplicate"):
         return "duplicate"
     if metadata.get("success") is False:

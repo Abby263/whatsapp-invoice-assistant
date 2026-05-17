@@ -1812,6 +1812,8 @@ def history_api():
         status_code = 200
         if result.get('status') == 'not_found':
             status_code = 404
+        elif result.get('status') == 'needs_confirmation':
+            status_code = 428
         elif result.get('status') == 'error':
             status_code = 409
         return jsonify(result), status_code

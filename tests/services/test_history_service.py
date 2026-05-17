@@ -100,6 +100,11 @@ def _seed_history(session_factory):
             file_url="",
             content_type="image/jpeg",
             status="uploaded",
+            processing_metadata={
+                "hitl_status": "awaiting_confirmation",
+                "hitl_approval_command": "APPROVE 2",
+                "hitl_rejection_command": "REJECT 2",
+            },
         ),
         Media(
             user_id=other_user.id,
@@ -164,7 +169,25 @@ def test_list_user_history_returns_documents_and_generated_invoices(monkeypatch,
     assert result["counts"]["documents"] == 2
     assert result["counts"]["generated_invoices"] == 1
     assert {record["kind"] for record in result["documents"]} == {"invoice", "media"}
+    pending_upload = next(record for record in result["documents"] if record["kind"] == "media")
+    assert pending_upload["hitl_status"] == "awaiting_confirmation"
+    assert pending_upload["approval_command"] == "APPROVE 2"
     assert result["generated_invoices"][0]["invoice_number"] == "OUT-001"
+
+
+def test_delete_history_requires_confirmation(monkeypatch, session_factory):
+    _patch_connection(monkeypatch, session_factory)
+    ids = _seed_history(session_factory)
+
+    result = history_service.delete_user_history(ids["user_id"], {"scope": "all"})
+
+    assert result["status"] == "needs_confirmation"
+    session = session_factory()
+    try:
+        assert session.query(Invoice).filter(Invoice.user_id == ids["user_id"]).count() == 1
+        assert session.query(Media).filter(Media.user_id == ids["user_id"]).count() == 2
+    finally:
+        session.close()
 
 
 def test_delete_all_history_removes_user_rows_and_storage_files(monkeypatch, session_factory):
@@ -174,7 +197,7 @@ def test_delete_all_history_removes_user_rows_and_storage_files(monkeypatch, ses
     _FakeStorage.failed = False
     ids = _seed_history(session_factory)
 
-    result = history_service.delete_user_history(ids["user_id"], {"scope": "all"})
+    result = history_service.delete_user_history(ids["user_id"], {"scope": "all", "confirmed": True})
 
     assert result["status"] == "success"
     assert result["deleted"]["documents"] == 1
@@ -211,7 +234,7 @@ def test_delete_history_rolls_back_if_storage_delete_fails(monkeypatch, session_
 
     result = history_service.delete_user_history(
         ids["user_id"],
-        {"scope": "document", "kind": "invoice", "id": ids["invoice_id"]},
+        {"scope": "document", "kind": "invoice", "id": ids["invoice_id"], "confirmed": True},
     )
 
     assert result["status"] == "error"

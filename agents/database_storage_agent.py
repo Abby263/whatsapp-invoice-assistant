@@ -7,6 +7,7 @@ in the database using appropriate schema mapping and data validation.
 
 import logging
 import json
+import os
 from typing import Dict, Any, Optional, Union
 from datetime import date, datetime
 from uuid import UUID
@@ -102,6 +103,20 @@ class DatabaseStorageAgent(BaseAgent):
                     content={"error": error_message},
                     status="error",
                     error=error_message
+                )
+
+            if self._human_approval_required() and not self._has_human_storage_approval(
+                agent_input,
+                context,
+                extraction_result,
+            ):
+                error_message = "Human approval is required before storing extracted data."
+                logger.warning(error_message)
+                return AgentOutput(
+                    content={"error": error_message, "hitl_required": True},
+                    status="error",
+                    error=error_message,
+                    metadata={"hitl_required": True},
                 )
 
             # Log structured data availability before storage
@@ -384,6 +399,35 @@ class DatabaseStorageAgent(BaseAgent):
         finally:
             # Always close the session
             db.close()
+
+    def _human_approval_required(self) -> bool:
+        return os.environ.get("HITL_CONFIRMATION_REQUIRED", "true").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+
+    def _has_human_storage_approval(
+        self,
+        agent_input: AgentInput,
+        context: AgentContext,
+        extraction_result: Dict[str, Any],
+    ) -> bool:
+        metadata_sources = [
+            agent_input.metadata if isinstance(agent_input.metadata, dict) else {},
+            context.session_data if context and isinstance(context.session_data, dict) else {},
+        ]
+        if isinstance(extraction_result, dict):
+            metadata = extraction_result.get("metadata")
+            if isinstance(metadata, dict):
+                metadata_sources.append(metadata)
+
+        for metadata in metadata_sources:
+            value = metadata.get("hitl_confirmed")
+            if value is True or str(value).strip().lower() in {"true", "1", "yes"}:
+                return True
+        return False
 
     def _coerce_user_id(self, user_id: Union[str, UUID, int]) -> int:
         if isinstance(user_id, int):

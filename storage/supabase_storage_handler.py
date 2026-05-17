@@ -202,6 +202,26 @@ class SupabaseStorageHandler:
             return signed_path
         return f"{self.supabase_url}{signed_path}"
 
+    def download_file(self, file_key: str) -> bytes:
+        """Download a private object from Supabase Storage."""
+        object_path = str(file_key or "").strip().lstrip("/")
+        if not object_path:
+            raise ValueError("file_key is required")
+
+        url = (
+            f"{self.supabase_url}/storage/v1/object/authenticated/"
+            f"{quote(self.bucket_name, safe='')}/{quote(object_path, safe='/')}"
+        )
+        headers = self._headers(content_type="application/octet-stream")
+        with httpx.Client(timeout=self.timeout) as client:
+            response = client.get(url, headers=headers)
+
+        if response.status_code >= 400:
+            raise RuntimeError(
+                f"Supabase Storage download failed ({response.status_code}): {response.text}"
+            )
+        return response.content
+
     def delete_file(self, file_key: str) -> bool:
         """Delete a file from Supabase Storage."""
         result = self.delete_files([file_key])

@@ -59,7 +59,11 @@ def list_user_history(user_id: int, limit: int = 50) -> Dict[str, Any]:
 
         media_only = (
             session.query(Media)
-            .filter(Media.user_id == user_id, Media.invoice_id.is_(None))
+            .filter(
+                Media.user_id == user_id,
+                Media.invoice_id.is_(None),
+                or_(Media.status.is_(None), Media.status != "error"),
+            )
             .order_by(Media.created_at.desc())
             .limit(limit)
             .all()
@@ -110,6 +114,16 @@ def delete_user_history(user_id: int, payload: Dict[str, Any]) -> Dict[str, Any]
     scope = str(payload.get("scope") or "document").strip().lower()
     kind = str(payload.get("kind") or "").strip().lower()
     record_id = payload.get("id")
+
+    if payload.get("confirmed") is not True:
+        return {
+            "status": "needs_confirmation",
+            "message": "Deletion requires explicit human confirmation before anything is removed.",
+            "confirmation_required": True,
+            "scope": scope,
+            "kind": kind,
+            "id": record_id,
+        }
 
     session = get_db_session()
     try:
@@ -324,6 +338,7 @@ def _serialize_invoice_document(invoice: Any, media_records: Sequence[Any], item
 
 
 def _serialize_media_document(media: Any) -> Dict[str, Any]:
+    metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
     return {
         "kind": "media",
         "id": str(media.id),
@@ -336,6 +351,11 @@ def _serialize_media_document(media: Any) -> Dict[str, Any]:
         "currency": None,
         "item_count": 0,
         "status": media.status or "uploaded",
+        "processing_status": metadata.get("processing_status"),
+        "hitl_status": metadata.get("hitl_status"),
+        "hitl_action": metadata.get("hitl_action"),
+        "approval_command": metadata.get("hitl_approval_command"),
+        "rejection_command": metadata.get("hitl_rejection_command"),
         "created_at": _iso(media.created_at),
         "file_path": media.file_path,
     }

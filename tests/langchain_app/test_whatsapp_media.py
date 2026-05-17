@@ -262,6 +262,34 @@ async def test_format_extraction_response_uses_fixed_document_schema():
 
 
 @pytest.mark.asyncio
+async def test_format_extraction_response_requests_whatsapp_approval():
+    result = await file_processing_workflow.format_extraction_response(
+        {
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "transaction": {"date": "2026-02-15"},
+                "financial": {"total": 7825.0, "currency": "INR"},
+                "additional_info": {"document_type": "handwritten_ledger"},
+                "items": [{"description": "Printing", "total_price": 500.0}],
+            },
+            "metadata": {
+                "hitl_status": "awaiting_confirmation",
+                "hitl_approval_command": "APPROVE 99",
+                "hitl_rejection_command": "REJECT 99",
+                "file_storage": {"file_key": "users/1/invoices/aa/checksum"},
+            },
+        },
+        "ledger.jpg",
+    )
+
+    content = result["content"]
+    assert "status: awaiting WhatsApp approval" in content
+    assert "No invoice or line-item rows have been added to analytics yet." in content
+    assert "APPROVE 99" in content
+    assert "REJECT 99" in content
+
+
+@pytest.mark.asyncio
 async def test_process_file_message_stores_original_before_validation(tmp_path, monkeypatch):
     file_path = tmp_path / "receipt.jpg"
     file_path.write_bytes(b"receipt-bytes")
@@ -365,6 +393,45 @@ def test_supabase_user_path_sanitizes_segments():
     )
 
     assert handler.generate_user_path("../user/1", "invoice files") == "users/user-1/invoice-files"
+
+
+def test_supabase_download_private_object_uses_authenticated_url(monkeypatch):
+    class _FakeSyncResponse:
+        status_code = 200
+        text = ""
+        content = b"file-bytes"
+
+    class _FakeSyncClient:
+        requests = []
+
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url, **kwargs):
+            self.__class__.requests.append((url, kwargs))
+            return _FakeSyncResponse()
+
+    monkeypatch.setattr("storage.supabase_storage_handler.httpx.Client", _FakeSyncClient)
+
+    handler = SupabaseStorageHandler(
+        supabase_url="https://example.supabase.co",
+        api_key="service-role-key",
+        bucket_name="receipts",
+    )
+
+    content = handler.download_file("users/1/invoices/a")
+
+    assert content == b"file-bytes"
+    assert _FakeSyncClient.requests[0][0] == (
+        "https://example.supabase.co/storage/v1/object/authenticated/receipts/users/1/invoices/a"
+    )
+    assert _FakeSyncClient.requests[0][1]["headers"]["Authorization"] == "Bearer service-role-key"
 
 
 def test_supabase_delete_files_batches_and_deduplicates(monkeypatch):

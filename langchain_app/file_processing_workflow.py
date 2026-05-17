@@ -304,6 +304,7 @@ async def process_invoice_file(
     validation_result: Optional[Dict[str, Any]] = None,
     best_effort: bool = False,
     file_metadata: Optional[Dict[str, Any]] = None,
+    hitl_confirmed: bool = False,
 ) -> Dict[str, Any]:
     """
     Process a valid invoice file by extracting data.
@@ -340,7 +341,37 @@ async def process_invoice_file(
             "confidence": 0.4
         }
 
-    # Store invoice data in database
+    if user_id is not None and _hitl_required() and not hitl_confirmed:
+        pending_metadata = _mark_media_awaiting_approval(
+            user_id=user_id,
+            file_metadata=file_metadata or {},
+            extraction_result=extraction_result,
+            validation_result=validation_result,
+        )
+        extraction_result.setdefault("metadata", {}).update(pending_metadata)
+        response = await format_extraction_response(extraction_result, file_name or file_path)
+        return {
+            "content": response.get("content", ""),
+            "metadata": {
+                "intent": IntentType.FILE_PROCESSING.value,
+                "file_type": file_type,
+                "extraction_results": extraction_result,
+                "invoice_data": extraction_result.get("data", {}),
+                "stored_in_database": False,
+                "storage_status": "awaiting_human_confirmation",
+                "hitl_required": True,
+                "hitl_status": "awaiting_confirmation",
+                "hitl_action": "store_extraction",
+                "hitl_approval_command": pending_metadata.get("hitl_approval_command"),
+                "hitl_rejection_command": pending_metadata.get("hitl_rejection_command"),
+                "media_id": pending_metadata.get("media_id"),
+                "best_effort_extraction": best_effort,
+                "validation_result": validation_result,
+            },
+            "confidence": response.get("confidence", 0.7),
+        }
+
+    # Store invoice data in database after HITL confirmation
     invoice_id = None
     item_ids = []
     storage_error = None
@@ -351,6 +382,7 @@ async def process_invoice_file(
         storage_agent = DatabaseStorageAgent()
 
         # Convert extraction_result to JSON string to satisfy AgentInput requirements
+        extraction_result.setdefault("metadata", {})["hitl_confirmed"] = True
         extraction_result_json = json.dumps(extraction_result)
         logger.info(f"Preparing to store invoice data for user_id: {user_id}, data size: {len(extraction_result_json)} bytes")
 
@@ -358,7 +390,7 @@ async def process_invoice_file(
             # Create agent input with the extraction result as JSON string
             agent_input = AgentInput(
                 content=extraction_result_json,
-                metadata={"user_id": user_id}
+                metadata={"user_id": user_id, "hitl_confirmed": True}
             )
 
             # Create agent context with the user_id
@@ -627,6 +659,61 @@ def _should_try_best_effort_extraction(file_type: str, validation_result: Dict[s
     return any(keyword in reason for keyword in uncertainty_keywords) or confidence_value <= 0.35
 
 
+def _hitl_required() -> bool:
+    return os.environ.get("HITL_CONFIRMATION_REQUIRED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _mark_media_awaiting_approval(
+    user_id: Union[str, UUID],
+    file_metadata: Dict[str, Any],
+    extraction_result: Dict[str, Any],
+    validation_result: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Persist only approval state for an extracted upload; do not store invoice/items."""
+
+    metadata = extraction_result.get("metadata") if isinstance(extraction_result.get("metadata"), dict) else {}
+    file_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
+    media_id = (
+        file_storage.get("media_id")
+        or (file_metadata.get("media_record") or {}).get("media_id")
+        or (file_metadata.get("file_storage") or {}).get("media_id")
+    )
+    approval_command = f"APPROVE {media_id}" if media_id else None
+    rejection_command = f"REJECT {media_id}" if media_id else None
+
+    hitl_metadata = {
+        "hitl_status": "awaiting_confirmation",
+        "hitl_action": "store_extraction",
+        "hitl_requested_at": datetime.utcnow().isoformat(),
+        "hitl_approval_command": approval_command,
+        "hitl_rejection_command": rejection_command,
+        "media_id": str(media_id) if media_id else None,
+    }
+    if validation_result:
+        hitl_metadata["validation_result"] = validation_result
+
+    _update_media_status(
+        user_id=user_id,
+        file_metadata=file_metadata,
+        status="uploaded",
+        processing_metadata={
+            **hitl_metadata,
+            "processing_status": "awaiting_human_confirmation",
+            "extraction_quality": (
+                extraction_result.get("data", {}).get("extraction_quality")
+                if isinstance(extraction_result.get("data"), dict)
+                else None
+            ),
+        },
+    )
+    return hitl_metadata
+
+
 def _prepare_file_metadata(
     file_path: str,
     file_metadata: Optional[Dict[str, Any]] = None,
@@ -814,22 +901,44 @@ async def format_duplicate_file_response(
     file_metadata: Dict[str, Any],
 ) -> Dict[str, Any]:
     invoice_id = media.get("invoice_id")
-    content = (
-        f"I already processed {file_name} earlier."
-        + (f" It is linked to invoice #{invoice_id}." if invoice_id else "")
-    )
+    media_id = media.get("id")
+    media_metadata = media.get("processing_metadata") if isinstance(media.get("processing_metadata"), dict) else {}
+    hitl_pending = media_metadata.get("hitl_status") == "awaiting_confirmation" and not invoice_id
+    if hitl_pending:
+        approval_command = media_metadata.get("hitl_approval_command") or (
+            f"APPROVE {media_id}" if media_id else None
+        )
+        rejection_command = media_metadata.get("hitl_rejection_command") or (
+            f"REJECT {media_id}" if media_id else None
+        )
+        content = (
+            f"{file_name} is already waiting for WhatsApp approval."
+            + (
+                f" Reply {approval_command} to save, or {rejection_command} to discard."
+                if approval_command and rejection_command
+                else ""
+            )
+        )
+    else:
+        content = (
+            f"I already processed {file_name} earlier."
+            + (f" It is linked to receipt #{invoice_id}." if invoice_id else "")
+        )
     return {
         "content": content,
         "metadata": {
             "intent": IntentType.FILE_PROCESSING.value,
             "file_type": file_type,
             "duplicate": True,
-            "stored_in_database": True,
-            "storage_status": "duplicate",
+            "stored_in_database": bool(invoice_id),
+            "storage_status": "awaiting_human_confirmation" if hitl_pending else "duplicate",
+            "hitl_status": "awaiting_confirmation" if hitl_pending else None,
+            "hitl_approval_command": media_metadata.get("hitl_approval_command"),
+            "hitl_rejection_command": media_metadata.get("hitl_rejection_command"),
             "invoice_id": str(invoice_id) if invoice_id else None,
-            "media_id": str(media.get("id")) if media.get("id") else None,
+            "media_id": str(media_id) if media_id else None,
             "file_metadata": file_metadata,
-            "file_storage": media.get("processing_metadata") or {},
+            "file_storage": media_metadata.get("file_storage") or media_metadata,
         },
         "confidence": 1.0,
     }
@@ -1000,7 +1109,14 @@ async def format_extraction_response(
 
     fields = _document_response_fields(invoice_data)
     metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result.get("metadata"), dict) else {}
-    status = "saved" if metadata.get("invoice_id") or file_storage else "processed"
+    hitl_pending = metadata.get("hitl_status") == "awaiting_confirmation"
+    status = (
+        "awaiting WhatsApp approval"
+        if hitl_pending
+        else "saved"
+        if metadata.get("invoice_id") or file_storage
+        else "processed"
+    )
     items = [item for item in fields["items"] if isinstance(item, dict)]
     item_label = "entries" if fields["is_ledger"] else "items"
     extraction_quality = fields.get("extraction_quality") or {}
@@ -1046,7 +1162,16 @@ async def format_extraction_response(
         lines.append("storage: original file saved privately")
 
     lines.append("")
-    lines.append("Next: ask \"What did I spend on printing?\"")
+    if hitl_pending:
+        approval_command = metadata.get("hitl_approval_command")
+        rejection_command = metadata.get("hitl_rejection_command")
+        lines.append("No invoice or line-item rows have been added to analytics yet.")
+        if approval_command and rejection_command:
+            lines.append(f"Reply {approval_command} to save, or {rejection_command} to discard.")
+        else:
+            lines.append("Open the website to review this pending upload.")
+    else:
+        lines.append("Next: ask \"What did I spend on printing?\"")
     response = compact_whatsapp_message("\n".join(lines), max_chars=1000)
     return {
         "content": response,

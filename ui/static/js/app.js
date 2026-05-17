@@ -1908,11 +1908,15 @@ function renderHistory(records) {
         const title = isGenerated
             ? (record.invoice_number || `Generated invoice #${record.id}`)
             : (record.title || record.filename || `Receipt #${record.id}`);
+        const pendingApproval = record.hitl_status === 'awaiting_confirmation';
+        const recordStatus = pendingApproval
+            ? `Awaiting WhatsApp approval${record.approval_command ? ` (${record.approval_command})` : ''}`
+            : record.status;
         const subtitle = isGenerated
             ? (record.client_name || record.client_company || 'Generated invoice')
             : [
                 record.filename,
-                record.status,
+                recordStatus,
                 record.item_count != null ? `${record.item_count} items` : null
             ].filter(Boolean).join(' · ');
         const amount = record.total_amount != null
@@ -1949,8 +1953,8 @@ function deleteHistoryRecord(record) {
     }
 
     const payload = record.kind === 'generated_invoice'
-        ? {scope: 'generated_invoice', id: record.id, user_id: userId}
-        : {scope: 'document', kind: record.kind, id: record.id, user_id: userId};
+        ? {scope: 'generated_invoice', id: record.id, user_id: userId, confirmed: true}
+        : {scope: 'document', kind: record.kind, id: record.id, user_id: userId, confirmed: true};
 
     deleteHistory(payload, `Deleted ${label}.`);
 }
@@ -1959,7 +1963,7 @@ function deleteAllHistory() {
     if (!confirm('Delete all saved receipt history, generated invoices, conversation history, and stored files for this linked user?')) {
         return;
     }
-    deleteHistory({scope: 'all', user_id: userId}, 'Deleted all saved history for this user.');
+    deleteHistory({scope: 'all', user_id: userId, confirmed: true}, 'Deleted all saved history for this user.');
 }
 
 function deleteHistory(payload, successMessage) {
