@@ -8,6 +8,13 @@ from database.schemas import Base, User
 from database.user_utils import link_clerk_user_to_whatsapp
 
 
+@pytest.fixture(autouse=True)
+def skip_application_schema_check(monkeypatch):
+    """These tests use isolated SQLite tables, not the configured Supabase engine."""
+
+    monkeypatch.setattr("database.user_utils._ensure_application_schema", lambda: None)
+
+
 @pytest.fixture
 def test_db():
     """Create an in-memory SQLite database for identity-linking tests."""

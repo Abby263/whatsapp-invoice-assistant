@@ -53,43 +53,91 @@ WhatsApp media behavior:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    W["WhatsApp user"] --> TW["Twilio WhatsApp sender"]
-    TW --> WH["Vercel Flask /webhook"]
-    B["Clerk browser user"] --> UI["Vercel Flask web app"]
-    UI --> LINK["Link WhatsApp number"]
+flowchart TB
+    subgraph Clients["Clients"]
+        WU["WhatsApp user"]
+        WEB["Signed-in web user"]
+    end
 
-    WH --> API["langchain_app API"]
-    UI --> API
-    LINK --> USER["users.clerk_user_id + users.whatsapp_number"]
-    USER --> API
+    subgraph Edge["Vercel Flask application"]
+        TW["Twilio WhatsApp"]
+        WH["POST /webhook"]
+        DASH["Receipt Intelligence UI"]
+        AUTH["Clerk auth and WhatsApp linking"]
+        API["Authenticated app APIs"]
+    end
 
-    API --> ROUTER["Input router"]
-    ROUTER -->|Text| INTENT["Intent classifier"]
-    ROUTER -->|Media| VALIDATE["File validator"]
+    subgraph Workflows["Agent workflows"]
+        POLICY["Conversation policy"]
+        ROUTER["Text and media router"]
+        VALIDATOR["Document validator"]
+        EXTRACTOR["Structured document extraction"]
+        SQL["User-scoped Text-to-SQL"]
+        RAG["Vector search"]
+        GENERATOR["Invoice generation"]
+        FORMATTER["Compact WhatsApp formatter"]
+    end
 
-    VALIDATE --> EXTRACT["Receipt extraction"]
-    EXTRACT --> STORE["Supabase Storage"]
-    EXTRACT --> DB["Supabase Postgres"]
-    EXTRACT --> EMB["OpenAI embeddings"]
-    EMB --> VEC["pgvector"]
+    subgraph AI["OpenAI"]
+        CHAT["gpt-5.4-mini chat and vision"]
+        EMBED["Embedding model"]
+    end
 
-    INTENT -->|Query| SQL["Text-to-SQL and vector search"]
+    subgraph Data["Supabase"]
+        DB["Postgres tables: users, media, invoices, items, generated invoices, messages"]
+        STORAGE["Private Storage bucket with user-scoped paths"]
+        VECTOR["pgvector indexes"]
+    end
+
+    WU -->|"text, image, PDF"| TW
+    TW --> WH
+    WEB --> DASH
+    DASH --> AUTH
+    AUTH --> API
+    API --> ROUTER
+    WH --> POLICY
+    POLICY --> ROUTER
+
+    ROUTER -->|"receipt or ledger media"| VALIDATOR
+    VALIDATOR --> CHAT
+    VALIDATOR --> EXTRACTOR
+    EXTRACTOR --> CHAT
+    EXTRACTOR --> STORAGE
+    EXTRACTOR --> DB
+    EXTRACTOR --> EMBED
+    EMBED --> VECTOR
+
+    ROUTER -->|"spend question"| SQL
+    SQL --> CHAT
     SQL --> DB
-    SQL --> VEC
+    SQL --> RAG
+    RAG --> VECTOR
 
-    INTENT -->|Generate invoice| GEN["Generated invoice service"]
-    GEN --> DOC["DOCX/PDF template generator"]
-    DOC --> STORE
-    GEN --> DB
+    ROUTER -->|"create invoice"| GENERATOR
+    GENERATOR --> CHAT
+    GENERATOR --> DB
+    GENERATOR --> STORAGE
 
-    INTENT -->|General| RESP["LLM response formatter"]
-    EXTRACT --> RESP
-    SQL --> RESP
-    GEN --> RESP
-    RESP --> WH
-    RESP --> UI
+    ROUTER -->|"greeting or help"| CHAT
+    CHAT --> FORMATTER
+    SQL --> FORMATTER
+    EXTRACTOR --> FORMATTER
+    GENERATOR --> FORMATTER
+    FORMATTER --> TW
+    FORMATTER --> DASH
 ```
+
+### Processing Contract
+
+Every uploaded file follows the same contract before it reaches analytics:
+
+1. Twilio delivers media to `/webhook` with the sender WhatsApp number.
+2. The app resolves that number to the linked `users.id`.
+3. The validator rejects unsupported, duplicate, blank, or non-financial images before expense storage.
+4. Valid files are uploaded to Supabase Storage under a user-scoped path and registered in `media`.
+5. The extractor returns the canonical schema from [schemas/llm_outputs/document_extraction.py](schemas/llm_outputs/document_extraction.py).
+6. Normalized invoice rows, item rows, embeddings, and processing metadata are written with the same `user_id`.
+7. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
 
 ## Runtime Components
 
@@ -100,8 +148,11 @@ flowchart LR
 | [services/live_backend.py](services/live_backend.py) | Production bridge from Flask routes to Supabase, Clerk identity, Twilio media, receipt processing, and invoice generation. |
 | [langchain_app/](langchain_app) | Text, file, query, and invoice-generation workflow routing. |
 | [agents/](agents) | LLM-backed intent classification, validation, extraction, SQL generation, RAG, and response formatting. |
+| [prompts/](prompts) | Prompt templates grouped by conversation, document processing, SQL, and storage tasks. |
+| [schemas/llm_outputs/](schemas/llm_outputs) | Canonical structured-output contracts for LLM parsing. |
 | [database/](database) | SQLAlchemy models, connection handling, CRUD helpers, and Alembic migrations. |
 | [storage/supabase_storage_handler.py](storage/supabase_storage_handler.py) | Private Supabase Storage uploads and signed URL generation. |
+| [storage/user_uploads.py](storage/user_uploads.py) | User-scoped upload paths, media registry writes, and duplicate lookup metadata. |
 | [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
 | [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
 | [memory/](memory) | In-memory conversation state with optional MongoDB persistence when explicitly enabled. |

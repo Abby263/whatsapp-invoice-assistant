@@ -1841,7 +1841,7 @@ input, select, textarea {
     margin-right: 5px;
 }
 
-.s3-storage-info {
+.file-storage-info {
     padding: 12px;
     background: var(--surface-muted);
     border-radius: 10px;
@@ -1873,9 +1873,9 @@ input, select, textarea {
     font-size: 12.5px;
 }
 
-#s3UrlContainer { flex: 1; }
+#fileStorageUrlContainer { flex: 1; }
 
-#s3Url {
+#fileStorageUrl {
     display: inline-block;
     color: var(--brand);
     text-decoration: none;
@@ -1887,7 +1887,7 @@ input, select, textarea {
     font-size: 12.5px;
 }
 
-#s3Url:hover { text-decoration: underline; }
+#fileStorageUrl:hover { text-decoration: underline; }
 
 /* ===================== Loading overlay ===================== */
 

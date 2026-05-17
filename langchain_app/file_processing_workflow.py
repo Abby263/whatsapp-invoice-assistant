@@ -425,7 +425,6 @@ async def process_invoice_file(
 
     if file_storage:
         response_metadata["file_storage"] = file_storage
-        response_metadata["s3_storage"] = file_storage  # Backward-compatible UI key.
     if storage_error:
         response_metadata["storage_error"] = storage_error
 
@@ -992,10 +991,7 @@ async def format_extraction_response(
     """
     file_storage = None
     if "metadata" in extraction_result:
-        file_storage = (
-            extraction_result["metadata"].get("file_storage")
-            or extraction_result["metadata"].get("s3_storage")
-        )
+        file_storage = extraction_result["metadata"].get("file_storage")
 
     # Get the invoice data
     invoice_data = extraction_result.get("data", {})

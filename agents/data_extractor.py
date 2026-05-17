@@ -57,10 +57,7 @@ class DataExtractorAgent(BaseAgent):
                 or 'unknown'
             )
             content_type = agent_input.content_type or file_type
-            storage_metadata = (
-                agent_input.metadata.get("file_storage")
-                or agent_input.metadata.get("s3_storage")
-            )
+            storage_metadata = agent_input.metadata.get("file_storage")
 
             # Check if file content is empty
             if not file_content:

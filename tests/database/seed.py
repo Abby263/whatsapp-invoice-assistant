@@ -346,7 +346,7 @@ def seed_media(db: Session, users: dict, invoices: dict) -> None:
             user_id=users["john"].id,
             invoice_id=invoices["office_supplies"].id,
             filename="office_supplies.pdf",
-            file_path="s3://whatsapp-invoice-assistant/john/office_supplies.pdf",
+            file_path=f"users/{users['john'].id}/invoices/sample/office_supplies.pdf",
             mime_type="application/pdf",
             file_size=1024 * 250  # 250 KB
         ),
@@ -355,7 +355,7 @@ def seed_media(db: Session, users: dict, invoices: dict) -> None:
             user_id=users["john"].id,
             invoice_id=invoices["software"].id,
             filename="software_invoice.pdf",
-            file_path="s3://whatsapp-invoice-assistant/john/software_invoice.pdf",
+            file_path=f"users/{users['john'].id}/invoices/sample/software_invoice.pdf",
             mime_type="application/pdf",
             file_size=1024 * 180  # 180 KB
         ),
@@ -364,7 +364,7 @@ def seed_media(db: Session, users: dict, invoices: dict) -> None:
             user_id=users["jane"].id,
             invoice_id=invoices["consulting"].id,
             filename="consulting_invoice.pdf",
-            file_path="s3://whatsapp-invoice-assistant/jane/consulting_invoice.pdf",
+            file_path=f"users/{users['jane'].id}/invoices/sample/consulting_invoice.pdf",
             mime_type="application/pdf",
             file_size=1024 * 320  # 320 KB
         )
@@ -453,4 +453,4 @@ def seed_database(db: Session = None) -> None:
 
 
 if __name__ == "__main__":
-    seed_database() 
+    seed_database()
