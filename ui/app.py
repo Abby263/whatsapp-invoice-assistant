@@ -523,7 +523,9 @@ def auth_link_whatsapp():
         return auth_error_response(exc)
 
     data = request.json or {}
-    whatsapp_number = data.get('whatsapp_number')
+    whatsapp_number = (data.get('whatsapp_number') or '').strip()
+    if whatsapp_number.startswith('whatsapp:'):
+        whatsapp_number = whatsapp_number.replace('whatsapp:', '', 1)
     if not whatsapp_number:
         return jsonify({
             "status": "error",
@@ -1494,7 +1496,9 @@ def create_user():
         data = request.json
 
         # Extract required field
-        whatsapp_number = data.get('whatsapp_number')
+        whatsapp_number = (data.get('whatsapp_number') or '').strip()
+        if whatsapp_number.startswith('whatsapp:'):
+            whatsapp_number = whatsapp_number.replace('whatsapp:', '', 1)
 
         # Extract optional fields
         name = data.get('name')

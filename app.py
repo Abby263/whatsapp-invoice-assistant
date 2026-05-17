@@ -426,7 +426,12 @@ def auth_link_whatsapp():
         )
 
     data = request.get_json(silent=True) or {}
-    whatsapp_number = data.get("whatsapp_number") or DEFAULT_WHATSAPP_NUMBER
+    whatsapp_number = live_backend.normalize_whatsapp_number(
+        data.get("whatsapp_number"),
+        default="",
+    )
+    if not whatsapp_number:
+        return jsonify({"status": "error", "message": "WhatsApp number is required"}), 400
     linked_user = {
         "id": f"demo-{auth_context.clerk_user_id}",
         "name": data.get("name") or "Authenticated User",
@@ -514,7 +519,12 @@ def create_user():
             return _live_error(exc, 409)
         except Exception as exc:
             return _live_error(exc)
-    whatsapp_number = data.get("whatsapp_number") or DEFAULT_WHATSAPP_NUMBER
+    whatsapp_number = live_backend.normalize_whatsapp_number(
+        data.get("whatsapp_number"),
+        default="",
+    )
+    if not whatsapp_number:
+        return jsonify({"status": "error", "message": "WhatsApp number is required"}), 400
     user = {
         "id": f"demo-{whatsapp_number.replace('+', '').replace(' ', '')}",
         "name": data.get("name") or "Demo User",

@@ -3,6 +3,11 @@
 import app as hosted_app
 
 
+class _AuthContext:
+    clerk_user_id = "clerk_test"
+    session_id = "sess_test"
+
+
 def test_demo_users_do_not_expose_default_whatsapp_number(monkeypatch):
     monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
     monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
@@ -30,3 +35,31 @@ def test_demo_init_starts_without_default_whatsapp_number(monkeypatch):
     assert data["status"] == "success"
     assert data["user_id"] is None
     assert data["whatsapp_number"] is None
+
+
+def test_demo_link_whatsapp_requires_explicit_number(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: _AuthContext())
+    hosted_app.DEMO_LINKS.clear()
+
+    client = hosted_app.app.test_client()
+    response = client.post("/api/auth/link-whatsapp", json={})
+
+    assert response.status_code == 400
+    assert hosted_app.DEMO_LINKS == {}
+
+
+def test_demo_link_whatsapp_normalizes_number(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: _AuthContext())
+    hosted_app.DEMO_LINKS.clear()
+
+    client = hosted_app.app.test_client()
+    response = client.post(
+        "/api/auth/link-whatsapp",
+        json={"whatsapp_number": "whatsapp:+15551234567"},
+    )
+
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data["user"]["whatsapp_number"] == "+15551234567"
