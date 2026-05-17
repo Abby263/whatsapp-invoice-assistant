@@ -8,6 +8,7 @@ agent workflows, handling request parsing and response formatting.
 import logging
 import os
 import hashlib
+import io
 import tempfile
 import shutil
 from typing import Dict, Any, List, Optional, Union
@@ -24,6 +25,28 @@ from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
 
 logger = logging.getLogger(__name__)
+
+GENERIC_MEDIA_CONTENT_TYPES = {
+    "",
+    "application/octet-stream",
+    "binary/octet-stream",
+    "application/x-download",
+}
+
+MEDIA_CONTENT_TYPE_EXTENSIONS = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/gif": ".gif",
+    "image/bmp": ".bmp",
+    "image/tiff": ".tiff",
+    "image/webp": ".webp",
+    "text/csv": ".csv",
+    "application/csv": ".csv",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+}
 
 
 async def process_text_message(
@@ -253,7 +276,6 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                             continue
 
                         file_name = _twilio_media_filename(media_url, media_content_type, index)
-                        file_path = temp_dir / f"{index}_{file_name}"
                         auth = _twilio_media_auth(media_url)
                         response = await client.get(media_url, auth=auth, follow_redirects=True)
                         if response.status_code != 200:
@@ -266,6 +288,17 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                             continue
 
                         file_bytes = response.content
+                        effective_content_type = _sniff_twilio_media_content_type(
+                            file_bytes,
+                            media_content_type,
+                            file_name,
+                        )
+                        file_name = _ensure_media_filename_extension(
+                            file_name,
+                            effective_content_type,
+                            index,
+                        )
+                        file_path = temp_dir / f"{index}_{file_name}"
                         checksum = hashlib.sha256(file_bytes).hexdigest()
                         if checksum in seen_checksums:
                             logger.info("Skipping duplicate media in same WhatsApp message: index=%s", index)
@@ -284,11 +317,20 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
 
                         with open(file_path, "wb") as f:
                             f.write(file_bytes)
+                        logger.info(
+                            "Downloaded Twilio media message_sid=%s index=%s declared_type=%s effective_type=%s filename=%s bytes=%s",
+                            message_data.get("MessageSid") or message_data.get("SmsMessageSid"),
+                            index,
+                            media_content_type or "",
+                            effective_content_type,
+                            file_name,
+                            len(file_bytes),
+                        )
 
                         result = await process_file_message(
                             str(file_path),
                             file_name,
-                            media_content_type,
+                            effective_content_type,
                             sender,
                             conversation_history,
                             user_id,
@@ -351,11 +393,58 @@ def _parse_num_media(value: Any) -> int:
 
 def _twilio_media_filename(media_url: str, media_content_type: str, index: int) -> str:
     file_name = os.path.basename((media_url or "").split("?", 1)[0]) or f"receipt_{index + 1}"
-    if "." not in file_name:
-        guessed_ext = mimetypes.guess_extension((media_content_type or "").split(";", 1)[0])
-        if guessed_ext:
-            file_name = f"{file_name}{guessed_ext}"
+    return _ensure_media_filename_extension(file_name, media_content_type, index)
+
+
+def _ensure_media_filename_extension(file_name: str, content_type: str, index: int) -> str:
+    file_name = file_name or f"receipt_{index + 1}"
+    if Path(file_name).suffix:
+        return file_name
+
+    normalized_content_type = _normalize_media_content_type(content_type)
+    guessed_ext = (
+        MEDIA_CONTENT_TYPE_EXTENSIONS.get(normalized_content_type)
+        or mimetypes.guess_extension(normalized_content_type)
+    )
+    if guessed_ext:
+        return f"{file_name}{guessed_ext}"
     return file_name
+
+
+def _normalize_media_content_type(content_type: str) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
+def _sniff_twilio_media_content_type(
+    file_bytes: bytes,
+    declared_content_type: str,
+    file_name: str,
+) -> str:
+    declared_type = _normalize_media_content_type(declared_content_type)
+    if declared_type not in GENERIC_MEDIA_CONTENT_TYPES:
+        return declared_type
+
+    guessed_type, _ = mimetypes.guess_type(file_name)
+    guessed_type = _normalize_media_content_type(guessed_type or "")
+    if guessed_type and guessed_type not in GENERIC_MEDIA_CONTENT_TYPES:
+        return guessed_type
+
+    if file_bytes.startswith(b"%PDF"):
+        return "application/pdf"
+
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(file_bytes)) as image:
+            image_format = (image.format or "").lower()
+        if image_format in {"jpeg", "jpg"}:
+            return "image/jpeg"
+        if image_format:
+            return f"image/{image_format}"
+    except Exception:
+        pass
+
+    return declared_type or "application/octet-stream"
 
 
 def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:

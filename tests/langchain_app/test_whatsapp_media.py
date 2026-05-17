@@ -1,8 +1,10 @@
 """Tests for WhatsApp media webhook handling."""
 
 import hashlib
+import io
 
 import pytest
+from PIL import Image
 
 from langchain_app import api
 from langchain_app import file_processing_workflow
@@ -29,6 +31,12 @@ class _FakeAsyncClient:
         if payload is None:
             return _FakeResponse(b"", status_code=404)
         return _FakeResponse(payload)
+
+
+def _image_bytes(image_format: str = "PNG") -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), color=(255, 255, 255)).save(buffer, format=image_format)
+    return buffer.getvalue()
 
 
 @pytest.mark.asyncio
@@ -79,6 +87,48 @@ async def test_process_whatsapp_message_handles_multiple_media_and_batch_duplica
     assert len(processed) == 2
     assert processed[0]["file_metadata"]["twilio_media_index"] == 0
     assert processed[1]["file_metadata"]["twilio_media_index"] == 2
+
+
+@pytest.mark.asyncio
+async def test_process_whatsapp_message_sniffs_extensionless_twilio_images(monkeypatch):
+    _FakeAsyncClient.payloads = {
+        "https://api.twilio.com/2010-04-01/Accounts/AC/Messages/SM123/Media/ME123": _image_bytes("PNG"),
+    }
+
+    processed = []
+
+    async def fake_process_file_message(file_path, file_name, mime_type, *args, **kwargs):
+        processed.append({
+            "file_path": file_path,
+            "file_name": file_name,
+            "mime_type": mime_type,
+        })
+        return {
+            "status": "success",
+            "message": "saved",
+            "metadata": {"stored_in_database": True, "invoice_id": "1"},
+        }
+
+    async def fake_load_conversation_history(user_id):
+        return []
+
+    monkeypatch.setattr(api.httpx, "AsyncClient", _FakeAsyncClient, raising=False)
+    monkeypatch.setattr(api, "extract_user_id_from_sender", lambda sender: "1")
+    monkeypatch.setattr(api, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(api, "process_file_message", fake_process_file_message)
+
+    result = await api.process_whatsapp_message({
+        "From": "whatsapp:+15551234567",
+        "NumMedia": "1",
+        "MessageSid": "SM123",
+        "MediaUrl0": "https://api.twilio.com/2010-04-01/Accounts/AC/Messages/SM123/Media/ME123",
+    })
+
+    assert result["status"] == "success"
+    assert len(processed) == 1
+    assert processed[0]["mime_type"] == "image/png"
+    assert processed[0]["file_name"].endswith(".png")
+    assert processed[0]["file_path"].endswith(".png")
 
 
 @pytest.mark.asyncio
