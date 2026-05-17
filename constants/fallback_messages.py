@@ -39,18 +39,19 @@ FILE_PROCESSING_FALLBACKS = {
 # File validation fallback prompts
 FILE_VALIDATION_PROMPTS = {
     "image_validation": """
-Analyze this image and determine if it contains a valid invoice or receipt. Be liberal in your interpretation - this is for a WhatsApp Invoice Assistant that helps users track their expenses.
+Analyze this image and determine if it contains a valid invoice, receipt, bill, or handwritten expense ledger. Be strict about random/non-financial images.
 
 A valid invoice/receipt includes:
 1. ANY document showing a purchase transaction (store receipts, invoices, online order confirmations, etc.)
 2. Documents showing goods or services purchased with pricing
 3. Any payment confirmation with vendor and amount information
+4. Handwritten expense ledgers that list transaction context and at least one monetary amount
 
 IMPORTANT GUIDELINES:
 - Retail receipts, store receipts, and simple payment confirmations ARE valid invoice documents
 - If you can identify a vendor/merchant name and a total amount, it's likely a valid invoice/receipt
 - Documents don't need to have ALL formal invoice elements to be valid
-- When in doubt about borderline cases, classify as valid rather than invalid
+- Random photos, blank pages, non-financial notes, tickets, bank transfer confirmations, and screenshots without invoice/receipt details are invalid
 - Even simple receipts with just store name, date and total ARE valid for our purposes
 
 Respond with a JSON object with the following structure:

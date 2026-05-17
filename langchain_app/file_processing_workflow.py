@@ -22,13 +22,14 @@ from sqlalchemy.orm import Session
 
 from agents.file_validator import FileValidatorAgent
 from agents.data_extractor import DataExtractorAgent
-from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
 from services.conversation_policy import compact_whatsapp_message
 from langchain_app.state import IntentType, FileType
 from utils.base_agent import AgentInput, AgentContext
 from constants.fallback_messages import FILE_PROCESSING_FALLBACKS
 from storage import StorageConfigurationError, record_media_upload, store_user_upload
+from schemas.llm_outputs import is_ledger_document
+from schemas.llm_outputs.document_extraction import coerce_number
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ async def process_file_message(
     # even though the vision model can still extract useful structured fields.
     # Try one best-effort extraction for supported visual documents, then only
     # keep it when meaningful fields are present.
-    if _supports_best_effort_extraction(normalized_file_type):
+    if _should_try_best_effort_extraction(normalized_file_type, validation_result):
         best_effort_result = await process_invoice_file(
             file_path,
             normalized_file_type,
@@ -131,14 +132,14 @@ async def process_file_message(
         if _has_storable_extraction_data(extraction_data):
             return best_effort_result
 
-    # Handle non-invoice but valid files
+    # Supported file type, but validation did not find a financial document.
     _update_media_status(
         user_id=user_id,
         file_metadata=prepared_file_metadata,
         status="error",
-        processing_metadata={"validation_result": validation_result, "reason": "unsupported_format"},
+        processing_metadata={"validation_result": validation_result, "reason": "non_financial_document"},
     )
-    return await format_unsupported_format_response(file_name or file_path, normalized_file_type)
+    return await format_invalid_file_response(validation_result, file_name or file_path)
 
 
 async def validate_file(
@@ -596,6 +597,37 @@ def _supports_best_effort_extraction(file_type: str) -> bool:
     return file_type in {FileType.IMAGE.value, FileType.PDF.value}
 
 
+def _should_try_best_effort_extraction(file_type: str, validation_result: Dict[str, Any]) -> bool:
+    """Allow extraction only when validation was uncertain, not clearly negative."""
+
+    if not _supports_best_effort_extraction(file_type):
+        return False
+
+    confidence = validation_result.get("confidence")
+    if confidence is None:
+        return False
+    try:
+        confidence_value = float(confidence)
+    except (TypeError, ValueError):
+        return False
+
+    reason = str(validation_result.get("reason") or "").lower()
+    uncertainty_keywords = {
+        "unclear",
+        "blur",
+        "low quality",
+        "poor quality",
+        "partial",
+        "handwritten",
+        "ledger",
+        "could not determine",
+        "not enough visible",
+    }
+    if confidence_value >= 0.7 and not any(keyword in reason for keyword in uncertainty_keywords):
+        return False
+    return any(keyword in reason for keyword in uncertainty_keywords) or confidence_value <= 0.35
+
+
 def _prepare_file_metadata(
     file_path: str,
     file_metadata: Optional[Dict[str, Any]] = None,
@@ -864,6 +896,86 @@ def _first_number(*values: Any) -> Optional[float]:
     return None
 
 
+def _document_response_fields(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract canonical response fields from normalized or legacy document data."""
+
+    if not isinstance(data, dict):
+        data = {}
+
+    vendor = data.get("vendor", {})
+    vendor_name = vendor.get("name") if isinstance(vendor, dict) else vendor
+    vendor_name = str(vendor_name or "").strip() or "Not visible"
+
+    transaction = data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
+    financial = data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
+    additional_info = data.get("additional_info", {}) if isinstance(data.get("additional_info"), dict) else {}
+
+    document_type = str(additional_info.get("document_type") or "").strip()
+    if not document_type:
+        if is_ledger_document(data):
+            document_type = "handwritten_ledger"
+        elif transaction.get("receipt_no"):
+            document_type = "receipt"
+        elif transaction.get("invoice_number") or data.get("invoice_number"):
+            document_type = "invoice"
+        else:
+            document_type = "financial_document"
+
+    transaction_date = (
+        transaction.get("date")
+        or data.get("date")
+        or data.get("invoice_date")
+        or "Not visible"
+    )
+    invoice_number = transaction.get("invoice_number") or data.get("invoice_number") or None
+    receipt_no = transaction.get("receipt_no") or data.get("receipt_no") or None
+    total_amount = _first_number(
+        financial.get("total"),
+        financial.get("total_amount"),
+        data.get("total_amount"),
+        data.get("total"),
+    )
+    currency = (
+        financial.get("currency")
+        or data.get("currency")
+        or ("INR" if is_ledger_document(data) else "USD")
+    )
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+
+    return {
+        "document_type": document_type,
+        "vendor_name": vendor_name,
+        "transaction_date": transaction_date,
+        "invoice_number": invoice_number,
+        "receipt_no": receipt_no,
+        "total_amount": total_amount,
+        "currency": str(currency or "").upper() or "USD",
+        "items": items,
+        "is_ledger": is_ledger_document(data),
+    }
+
+
+def _format_money(value: Optional[float], currency: str) -> str:
+    if value is None:
+        return "Not visible"
+    return f"{round(float(value), 2)} {currency}"
+
+
+def _format_item_line(item: Dict[str, Any], currency: str, is_ledger: bool) -> str:
+    description = str(item.get("description") or "Entry").strip()
+    amount = _first_number(item.get("total_price"), item.get("amount"), item.get("unit_price"))
+    if is_ledger:
+        row_date = item.get("transaction_date") or item.get("raw_date") or "no date"
+        return f"{row_date} | {description} | {_format_money(amount, currency)}"
+
+    quantity = coerce_number(item.get("quantity"), 1.0) or 1.0
+    unit_price = _first_number(item.get("unit_price"), item.get("price"))
+    return (
+        f"{description} | qty {quantity:g} | unit {_format_money(unit_price, currency)} "
+        f"| total {_format_money(amount, currency)}"
+    )
+
+
 async def format_extraction_response(
     extraction_result: Dict[str, Any],
     file_name: str
@@ -888,99 +1000,44 @@ async def format_extraction_response(
     # Get the invoice data
     invoice_data = extraction_result.get("data", {})
 
-    # Check for sample data flag in the raw extraction metadata
-    is_sample_data = False
+    fields = _document_response_fields(invoice_data)
+    metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result.get("metadata"), dict) else {}
+    status = "saved" if metadata.get("invoice_id") or file_storage else "processed"
+    items = [item for item in fields["items"] if isinstance(item, dict)]
+    item_label = "entries" if fields["is_ledger"] else "items"
 
-    # Check if this is sample data
-    if "file_path" in extraction_result and isinstance(invoice_data, dict):
-        file_path = extraction_result.get("file_path", "")
-        if "is_sample_data" in extraction_result:
-            is_sample_data = extraction_result.get("is_sample_data", False)
-        # Also check the data directly, which might come from the DataExtractorAgent
-        elif "metadata" in extraction_result and isinstance(extraction_result["metadata"], dict):
-            is_sample_data = extraction_result["metadata"].get("is_sample_data", False)
+    lines = [
+        "Document extraction result",
+        f"status: {status}",
+        "scope: this file only",
+        f"file: {file_name}",
+        f"document_type: {fields['document_type']}",
+        f"vendor.name: {fields['vendor_name']}",
+        f"transaction.date: {fields['transaction_date']}",
+        f"financial.total: {_format_money(fields['total_amount'], fields['currency'])}",
+        f"items.count: {len(items)}",
+    ]
+    if fields["invoice_number"]:
+        lines.append(f"transaction.invoice_number: {fields['invoice_number']}")
+    if fields["receipt_no"]:
+        lines.append(f"transaction.receipt_no: {fields['receipt_no']}")
 
-    # Use a specialized function to create a formatted response from the invoice data
-    def create_formatted_response(data, file_url=None):
-        vendor = data.get("vendor", {})
-        vendor_name = vendor.get("name", "Unknown Vendor") if isinstance(vendor, dict) else vendor
-        additional_info = data.get("additional_info", {})
-        document_type = (
-            additional_info.get("document_type")
-            if isinstance(additional_info, dict)
-            else ""
-        )
-        is_ledger = "ledger" in str(document_type or "").lower()
+    if items:
+        lines.append("")
+        lines.append(f"sample_{item_label}:")
+        for index, item in enumerate(items[:4], start=1):
+            lines.append(f"{index}. {_format_item_line(item, fields['currency'], fields['is_ledger'])}")
+        remaining = len(items) - 4
+        if remaining > 0:
+            lines.append(f"... {remaining} more {item_label} saved")
 
-        transaction = data.get("transaction", {})
-        invoice_number = transaction.get("invoice_number", "Unknown") if isinstance(transaction, dict) else None
-        date = transaction.get("date", "Unknown Date") if isinstance(transaction, dict) else data.get("date", "Unknown Date")
-        due_date = transaction.get("due_date", "Unknown") if isinstance(transaction, dict) else data.get("due_date", "Unknown")
+    if file_storage:
+        lines.append("")
+        lines.append("storage: original file saved privately")
 
-        financial = data.get("financial", {})
-        if isinstance(financial, dict):
-            total = financial.get("total", 0)
-            currency = financial.get("currency", "USD")
-        else:
-            total = data.get("total_amount", 0)
-            currency = data.get("currency", "USD")
-
-        items = data.get("items", [])
-        if not isinstance(items, list):
-            items = []
-
-        items_text = ""
-        if items and len(items) > 0:
-            label = "Entries" if is_ledger else "Items"
-            items_text = f"\n\n{label} saved: {len(items)}"
-            visible_items = items[:4]
-            for item in visible_items:
-                if not isinstance(item, dict):
-                    continue
-                description = item.get("description", "Item")
-                quantity = item.get("quantity", 1)
-                total_price = item.get("total_price", 0)
-                if is_ledger:
-                    items_text += f"\n- {description}: {total_price} {currency}"
-                else:
-                    unit_price = item.get("unit_price", 0)
-                    items_text += f"\n- {description}: {quantity} x {unit_price} = {total_price} {currency}"
-            remaining = len(items) - len(visible_items)
-            if remaining > 0:
-                items_text += f"\n- {remaining} more saved"
-
-        document_label = "ledger page" if is_ledger else "invoice"
-        response = f"Saved {document_label}: {file_name}\n\n"
-        response += f"Vendor: {vendor_name}\n" if not is_ledger else ""
-        if invoice_number and invoice_number != "Unknown":
-            response += f"Invoice: {invoice_number}\n"
-        response += f"Total: {total} {currency}\n"
-        if date and date != "Unknown Date":
-            response += f"Date: {date}\n"
-        if due_date and due_date != "Unknown":
-            response += f"Due: {due_date}\n"
-        response += items_text
-
-        if file_url:
-            response += "\n\nOriginal file is saved privately to your workspace."
-
-        response += "\n\nAsk a question like: What did I spend on printing?"
-
-        return compact_whatsapp_message(response, max_chars=900)
-
-    # For sample data, use a templated response
-    if is_sample_data:
-        logger.info(f"Using templated response for sample invoice data")
-        file_url = file_storage.get("url") if file_storage else None
-        response = create_formatted_response(invoice_data, file_url)
-
-        return {
-            "content": response,
-            "confidence": 0.9
-        }
-
-    file_url = file_storage.get("url") if file_storage else None
-    response = create_formatted_response(invoice_data, file_url)
+    lines.append("")
+    lines.append("Next: ask \"What did I spend on printing?\"")
+    response = compact_whatsapp_message("\n".join(lines), max_chars=1000)
     return {
         "content": response,
         "confidence": 0.85,
@@ -991,80 +1048,28 @@ async def format_invalid_file_response(
     validation_result: Dict[str, Any],
     file_name: str
 ) -> Dict[str, Any]:
-    """
-    Format response for invalid files.
+    """Return a deterministic rejection message for non-financial uploads."""
 
-    Args:
-        validation_result: Validation results containing error reason
-        file_name: Original filename
-
-    Returns:
-        Dict containing the formatted response
-    """
-    llm_factory = LLMFactory()
-    agent = ResponseFormatterAgent(llm_factory=llm_factory)
-
-    # Create a proper AgentInput object
-    agent_input = AgentInput(
-        content="Format invalid file response",
-        metadata={
-            "intent": IntentType.FILE_PROCESSING.value,
-            "validation_result": validation_result,
-            "file_name": file_name,
-            "response_type": "error",  # Specify the type of response we want
-            "error_type": "file_validation_error"  # Provide more context for the formatter
-        }
+    reason = str(validation_result.get("reason") or "").strip() or "This does not look like a receipt, invoice, or expense ledger."
+    response = "\n".join(
+        [
+            "Document not processed",
+            "status: rejected",
+            f"file: {file_name}",
+            f"reason: {reason}",
+            "",
+            "Send: receipt, invoice, bill, PDF, or handwritten expense ledger.",
+        ]
     )
-
-    try:
-        # Generate response with the formatter agent
-        result = await agent.process(agent_input)
-
-        # Only proceed if we got some response content
-        if result and hasattr(result, "content") and result.content:
-            # Validate the response quality using LLM-based validation
-            validation_context = {
-                "validation_result": validation_result,
-                "error_reason": validation_result.get("reason", "Unknown error"),
-                "file_name": file_name
-            }
-
-            validation_result = await llm_factory.validate_response(
-                response_content=result.content,
-                response_type="error",
-                context=validation_context
-            )
-
-            # Check if the response is valid based on validation results
-            if validation_result.get("is_valid", False) and validation_result.get("confidence", 0) >= 0.6:
-                logger.info(f"Error response validation successful: {validation_result.get('confidence')}")
-                return {
-                    "content": result.content,
-                    "confidence": result.confidence
-                }
-            else:
-                # Log why validation failed
-                issues = validation_result.get("issues", [])
-                logger.warning(f"Error response validation failed: {', '.join(issues)}")
-        else:
-            logger.warning("ResponseFormatterAgent returned no content for error response")
-
-        # Fallback response if formatter failed or validation failed
-        reason = validation_result.get("reason", "Unknown error")
-        response = FILE_PROCESSING_FALLBACKS["invalid_file"]
-
-        return {
-            "content": response,
-            "confidence": 0.6
-        }
-
-    except Exception as e:
-        logger.exception(f"Error formatting invalid file response: {str(e)}")
-        return {
-            "content": FILE_PROCESSING_FALLBACKS["invalid_file"],
-            "metadata": {"intent": IntentType.FILE_PROCESSING.value, "success": False},
-            "confidence": 0.5
-        }
+    return {
+        "content": compact_whatsapp_message(response, max_chars=700),
+        "metadata": {
+            "intent": IntentType.FILE_PROCESSING.value,
+            "success": False,
+            "validation_result": validation_result,
+        },
+        "confidence": 0.8,
+    }
 
 
 async def format_unsupported_format_response(

@@ -81,6 +81,11 @@ def off_topic_response() -> str:
 
 
 def media_processing_ack(media_count: int) -> str:
+    if media_count == 1:
+        return (
+            "Received a file. I am processing it now and will send a final status for this file. "
+            "If you forwarded multiple images, WhatsApp may deliver them one at a time."
+        )
     noun = "file" if media_count == 1 else "files"
     pronoun = "it" if media_count == 1 else "them"
     return f"Received {media_count} {noun}. I am processing {pronoun} now and will send a short summary when done."

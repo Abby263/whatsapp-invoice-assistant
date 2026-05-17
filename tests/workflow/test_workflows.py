@@ -27,6 +27,7 @@ from langchain_app.invoice_query_workflow import (
 from langchain_app.invoice_creator_workflow import process_invoice_creation, extract_invoice_entities
 from langchain_app.file_processing_workflow import (
     _has_storable_extraction_data,
+    _should_try_best_effort_extraction,
     detect_file_type,
     process_file_message,
     validate_file,
@@ -425,3 +426,48 @@ def test_storable_extraction_detection():
         "items": [],
         "error": "Could not extract data",
     })
+
+
+def test_best_effort_extraction_only_runs_for_uncertain_visual_documents():
+    assert _should_try_best_effort_extraction(
+        FileType.IMAGE.value,
+        {"confidence": 0.52, "reason": "Text is unclear but may be a handwritten ledger"},
+    )
+    assert not _should_try_best_effort_extraction(
+        FileType.IMAGE.value,
+        {"confidence": 0.96, "reason": "Random image with no financial information"},
+    )
+    assert not _should_try_best_effort_extraction(
+        FileType.CSV.value,
+        {"confidence": 0.2, "reason": "unclear"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_financial_supported_image_is_rejected_without_extraction(tmp_path, monkeypatch):
+    image_path = tmp_path / "random.jpg"
+    image_path.write_bytes(b"not-a-real-image-but-extension-is-enough")
+
+    async def fake_validate_file(*args, **kwargs):
+        return {
+            "is_valid": True,
+            "is_invoice": False,
+            "confidence": 0.96,
+            "reason": "Random image with no financial transaction information",
+        }
+
+    async def fail_process_invoice_file(*args, **kwargs):
+        raise AssertionError("high-confidence non-financial images should not be extracted")
+
+    monkeypatch.setattr("langchain_app.file_processing_workflow.validate_file", fake_validate_file)
+    monkeypatch.setattr("langchain_app.file_processing_workflow.process_invoice_file", fail_process_invoice_file)
+
+    result = await process_file_message(
+        str(image_path),
+        "image/jpeg",
+        "random.jpg",
+        None,
+    )
+
+    assert "Document not processed" in result["content"]
+    assert "status: rejected" in result["content"]

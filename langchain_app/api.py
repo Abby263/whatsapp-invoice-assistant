@@ -25,6 +25,7 @@ from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
 from services.conversation_policy import compact_whatsapp_message, media_processing_ack
 from services.twilio_messaging import send_processing_ack, send_whatsapp_message
+from schemas.llm_outputs import is_ledger_document
 from utils.phone_numbers import normalize_whatsapp_number
 
 logger = logging.getLogger(__name__)
@@ -323,6 +324,8 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                                 "message": f"I skipped duplicate attachment {index + 1}; it matched another file in this message.",
                                 "metadata": {
                                     "media_index": index,
+                                    "file_name": file_name,
+                                    "content_type": effective_content_type,
                                     "duplicate": True,
                                     "duplicate_scope": "message_batch",
                                     "checksum_sha256": checksum,
@@ -364,6 +367,8 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                         )
                         result.setdefault("metadata", {})
                         result["metadata"]["media_index"] = index
+                        result["metadata"]["file_name"] = file_name
+                        result["metadata"]["content_type"] = effective_content_type
                         results.append(result)
 
                 combined_result = _combine_media_results(results)
@@ -475,47 +480,42 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not results:
         return {"status": "error", "message": STORAGE_FALLBACKS["download_failure"]}
 
-    successes = [result for result in results if result.get("status") != "error"]
-    errors = [result for result in results if result.get("status") == "error"]
+    successes = [result for result in results if _media_result_state(result) not in {"failed", "rejected"}]
+    errors = [result for result in results if _media_result_state(result) in {"failed", "rejected"}]
     duplicates = [
-        result for result in successes
-        if result.get("metadata", {}).get("duplicate")
+        result for result in results
+        if _media_result_state(result) == "duplicate"
     ]
     stored = [
-        result for result in successes
-        if result.get("metadata", {}).get("stored_in_database")
+        result for result in results
+        if _media_result_state(result) == "saved"
     ]
 
     if len(results) == 1:
         return results[0]
 
-    summary_parts = [
-        f"Processed {len(results)} attachments.",
-        f"{len(stored)} saved",
-        f"{len(duplicates)} duplicate{'s' if len(duplicates) != 1 else ''} skipped",
-        f"{len(errors)} failed",
+    lines = [
+        "Batch processing result",
+        "scope: this WhatsApp webhook only",
+        f"attachments.received: {len(results)}",
+        f"attachments.saved: {len(stored)}",
+        f"attachments.duplicates: {len(duplicates)}",
+        f"attachments.failed: {len(errors)}",
+        "",
+        "files:",
     ]
-    detail_lines = []
-    for result in results:
-        metadata = result.get("metadata", {})
-        index = metadata.get("media_index")
-        label = f"Attachment {index + 1}" if isinstance(index, int) else "Attachment"
-        if metadata.get("duplicate"):
-            state = "duplicate"
-        elif result.get("status") == "error":
-            state = "failed"
-        elif metadata.get("stored_in_database"):
-            state = "saved"
-        else:
-            state = "processed"
-        if state == "failed":
-            detail_lines.append(f"{label}: failed")
-        else:
-            detail_lines.append(f"{label}: {state}")
+    for result in results[:8]:
+        lines.append(_media_result_summary_line(result))
+    if len(results) > 8:
+        lines.append(f"... {len(results) - 8} more attachments processed")
+    lines.extend([
+        "",
+        "If you forwarded more images and WhatsApp split them, more file-status messages may arrive separately.",
+    ])
 
     return {
         "status": "success" if successes else "error",
-        "message": " ".join(summary_parts) + "\n" + "\n".join(detail_lines[:8]),
+        "message": "\n".join(lines),
         "metadata": {
             "intent": IntentType.FILE_PROCESSING.value,
             "media_count": len(results),
@@ -525,6 +525,62 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "results": results,
         },
     }
+
+
+def _media_result_state(result: Dict[str, Any]) -> str:
+    metadata = result.get("metadata", {}) if isinstance(result.get("metadata"), dict) else {}
+    if metadata.get("duplicate"):
+        return "duplicate"
+    if metadata.get("success") is False:
+        return "rejected"
+    if result.get("status") == "error":
+        return "failed"
+    if metadata.get("stored_in_database"):
+        return "saved"
+    return "processed"
+
+
+def _media_result_summary_line(result: Dict[str, Any]) -> str:
+    metadata = result.get("metadata", {}) if isinstance(result.get("metadata"), dict) else {}
+    index = metadata.get("media_index")
+    attachment_number = index + 1 if isinstance(index, int) else "?"
+    file_name = metadata.get("file_name") or "unknown"
+    state = _media_result_state(result)
+    invoice_data = metadata.get("invoice_data") if isinstance(metadata.get("invoice_data"), dict) else {}
+
+    document_type = "unknown"
+    transaction_date = "Not visible"
+    total = "Not visible"
+    item_count = 0
+    if invoice_data:
+        additional_info = invoice_data.get("additional_info", {}) if isinstance(invoice_data.get("additional_info"), dict) else {}
+        transaction = invoice_data.get("transaction", {}) if isinstance(invoice_data.get("transaction"), dict) else {}
+        financial = invoice_data.get("financial", {}) if isinstance(invoice_data.get("financial"), dict) else {}
+        document_type = additional_info.get("document_type") or ("handwritten_ledger" if is_ledger_document(invoice_data) else "financial_document")
+        transaction_date = transaction.get("date") or invoice_data.get("date") or invoice_data.get("invoice_date") or "Not visible"
+        currency = financial.get("currency") or invoice_data.get("currency") or ("INR" if is_ledger_document(invoice_data) else "USD")
+        amount = (
+            financial.get("total")
+            or financial.get("total_amount")
+            or invoice_data.get("total_amount")
+            or invoice_data.get("total")
+        )
+        total = f"{amount} {currency}" if amount not in (None, "") else "Not visible"
+        items = invoice_data.get("items") if isinstance(invoice_data.get("items"), list) else []
+        item_count = len(items)
+
+    if state in {"failed", "rejected"}:
+        reason = (
+            metadata.get("validation_result", {}).get("reason")
+            if isinstance(metadata.get("validation_result"), dict)
+            else None
+        ) or result.get("message") or "Could not process this attachment"
+        return f"{attachment_number}. status: {state} | file: {file_name} | reason: {str(reason)[:120]}"
+    return (
+        f"{attachment_number}. status: {state} | file: {file_name} | "
+        f"document_type: {document_type} | transaction.date: {transaction_date} | "
+        f"financial.total: {total} | items.count: {item_count}"
+    )
 
 
 def _send_media_final_reply(
