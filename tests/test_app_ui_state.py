@@ -63,3 +63,32 @@ def test_demo_link_whatsapp_normalizes_number(monkeypatch):
     assert response.status_code == 200
     data = response.get_json()
     assert data["user"]["whatsapp_number"] == "+15551234567"
+
+
+def test_twilio_webhook_can_suppress_twiml_after_outbound_reply(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(hosted_app, "_twilio_request_is_valid", lambda: True)
+    monkeypatch.setattr(
+        hosted_app.live_backend,
+        "process_twilio_webhook",
+        lambda form: {
+            "status": "success",
+            "message": "Already sent out of band.",
+            "suppress_twiml_response": True,
+            "metadata": {"twilio_final_reply_sent": True},
+        },
+    )
+
+    client = hosted_app.app.test_client()
+    response = client.post(
+        "/webhook",
+        data={
+            "From": "whatsapp:+15551234567",
+            "To": "whatsapp:+16473628073",
+            "NumMedia": "1",
+        },
+    )
+
+    assert response.status_code == 200
+    assert b"<Response></Response>" in response.data
+    assert b"<Message>" not in response.data

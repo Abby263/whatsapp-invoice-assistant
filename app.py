@@ -230,6 +230,14 @@ def _twilio_message_response(message: str, status_code: int = 200):
     return Response(body, status=status_code, mimetype="application/xml")
 
 
+def _twilio_empty_response(status_code: int = 200):
+    return Response(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        status=status_code,
+        mimetype="application/xml",
+    )
+
+
 def _mask_number(value: str | None) -> str:
     value = value or ""
     if len(value) <= 6:
@@ -304,6 +312,11 @@ def whatsapp_webhook():
 
     try:
         result = live_backend.process_twilio_webhook(form_data)
+        metadata = result.get("metadata", {}) if isinstance(result.get("metadata"), dict) else {}
+        if result.get("suppress_twiml_response") or metadata.get("twilio_final_reply_sent"):
+            logger.info("Twilio webhook processed with outbound final reply")
+            return _twilio_empty_response()
+
         message = (
             result.get("message")
             or result.get("content")
