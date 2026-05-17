@@ -9,7 +9,12 @@ from services import hitl_service
 
 
 @pytest.mark.asyncio
-async def test_delete_request_requires_whatsapp_confirmation():
+async def test_delete_request_requires_whatsapp_confirmation(monkeypatch):
+    async def fake_classify_hitl_intent(*args, **kwargs):
+        return {"action": "request_delete", "target_scope": "all", "target_id": None}
+
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fake_classify_hitl_intent)
+
     result = await hitl_service.handle_human_confirmation_message(
         "delete all my receipt history",
         "1",
@@ -22,8 +27,47 @@ async def test_delete_request_requires_whatsapp_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_delete_all_records_requires_exact_whatsapp_confirmation(monkeypatch):
+    async def fake_classify_hitl_intent(*args, **kwargs):
+        return {"action": "request_delete", "target_scope": "all", "target_id": None}
+
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fake_classify_hitl_intent)
+
+    result = await hitl_service.handle_human_confirmation_message(
+        "delete all my records",
+        "1",
+    )
+
+    assert result is not None
+    assert "Deletion needs WhatsApp confirmation" in result["content"]
+    assert "CONFIRM DELETE ALL" in result["content"]
+    assert result["metadata"]["confirmation_command"] == "CONFIRM DELETE ALL"
+
+
+@pytest.mark.asyncio
+async def test_all_reply_reminds_exact_delete_confirmation_command(monkeypatch):
+    async def fake_classify_hitl_intent(*args, **kwargs):
+        return {"action": "select_delete_scope", "target_scope": "all", "target_id": None}
+
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fake_classify_hitl_intent)
+
+    result = await hitl_service.handle_human_confirmation_message(
+        "All",
+        "1",
+    )
+
+    assert result is not None
+    assert "CONFIRM DELETE ALL" in result["content"]
+    assert result["metadata"]["confirmation_required"] is True
+    assert result["metadata"]["confirmation_command"] == "CONFIRM DELETE ALL"
+
+
+@pytest.mark.asyncio
 async def test_confirm_delete_executes_with_confirmation(monkeypatch):
     captured = {}
+
+    async def fake_classify_hitl_intent(*args, **kwargs):
+        return {"action": "confirm_delete", "target_scope": "receipt", "target_id": 12}
 
     def fake_delete_user_history(user_id, payload):
         captured["user_id"] = user_id
@@ -38,6 +82,7 @@ async def test_confirm_delete_executes_with_confirmation(monkeypatch):
             },
         }
 
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fake_classify_hitl_intent)
     monkeypatch.setattr(hitl_service, "delete_user_history", fake_delete_user_history)
 
     result = await hitl_service.handle_human_confirmation_message(
@@ -50,7 +95,7 @@ async def test_confirm_delete_executes_with_confirmation(monkeypatch):
         "payload": {
             "scope": "document",
             "kind": "invoice",
-            "id": "12",
+            "id": 12,
             "confirmed": True,
         },
     }
@@ -90,6 +135,10 @@ async def test_approve_pending_extraction_downloads_and_reprocesses(monkeypatch)
             "confidence": 0.85,
         }
 
+    async def fake_classify_hitl_intent(*args, **kwargs):
+        return {"action": "approve_upload", "target_scope": "upload", "target_id": 77}
+
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fake_classify_hitl_intent)
     monkeypatch.setattr(hitl_service, "SupabaseStorageHandler", FakeStorage)
     monkeypatch.setattr(
         hitl_service,

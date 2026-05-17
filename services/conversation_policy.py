@@ -52,38 +52,6 @@ OFF_TOPIC_TERMS = {
 }
 
 
-def is_history_deletion_request(text: str) -> bool:
-    """Detect requests that try to delete saved user data."""
-
-    normalized = " ".join((text or "").strip().lower().split())
-    if not normalized:
-        return False
-    delete_terms = {"delete", "remove", "clear", "erase", "wipe"}
-    history_terms = {
-        "history",
-        "data",
-        "receipt",
-        "receipts",
-        "invoice",
-        "invoices",
-        "uploads",
-        "documents",
-        "messages",
-    }
-    words = set(re.findall(r"[a-z]+", normalized))
-    return bool(words & delete_terms) and (
-        bool(words & history_terms) or "all saved" in normalized
-    )
-
-
-def history_deletion_response() -> str:
-    return (
-        "For safety, delete saved records from the signed-in web app.\n\n"
-        "Open Receipts > Saved history to delete one upload, one generated invoice, "
-        "or all stored history for your linked WhatsApp number."
-    )
-
-
 def is_off_topic_message(text: str) -> bool:
     """Conservatively detect messages outside the assistant scope."""
 
