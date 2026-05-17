@@ -25,6 +25,7 @@ from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
 from services.conversation_policy import media_processing_ack
 from services.twilio_messaging import send_processing_ack
+from utils.phone_numbers import normalize_whatsapp_number
 
 logger = logging.getLogger(__name__)
 
@@ -528,7 +529,7 @@ def extract_user_id_from_sender(sender: str) -> Optional[str]:
     Returns:
         User ID if found, None otherwise
     """
-    whatsapp_number = (sender or "").replace("whatsapp:", "").strip()
+    whatsapp_number = normalize_whatsapp_number(sender)
     if not whatsapp_number:
         return None
 

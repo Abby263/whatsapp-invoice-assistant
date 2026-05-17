@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Define the base model class
 Base = declarative_base()
+_APPLICATION_SCHEMA_READY = False
 
 
 def _project_id_from_supabase_url() -> Optional[str]:
@@ -266,16 +267,87 @@ async def create_postgres_tables():
     """
     Create application tables from the SQLAlchemy schema.
     """
+    ensure_application_schema(auto_create=True, force=True)
+
+
+def _schema_bootstrap_enabled() -> bool:
+    return os.environ.get("AUTO_CREATE_DATABASE_SCHEMA", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _schema_bootstrap_engine():
+    """Return an engine suitable for DDL plus whether the caller owns it."""
+
+    migration_url = get_migration_database_url()
+    if migration_url == SQLALCHEMY_DATABASE_URL:
+        return engine, False
+
+    return (
+        create_engine(
+            migration_url,
+            pool_pre_ping=True,
+            poolclass=NullPool,
+        ),
+        True,
+    )
+
+
+def ensure_application_schema(
+    auto_create: Optional[bool] = None,
+    force: bool = False,
+) -> None:
+    """Ensure the runtime database has the application tables.
+
+    Vercel deployments do not run Alembic automatically. For an empty Supabase
+    database, this creates the current SQLAlchemy schema on first backend use.
+    It is intentionally non-destructive and does not alter existing tables.
+    """
+
+    global _APPLICATION_SCHEMA_READY
+
+    if _APPLICATION_SCHEMA_READY and not force:
+        return
+
+    should_create = _schema_bootstrap_enabled() if auto_create is None else auto_create
+    bootstrap_engine, should_dispose = _schema_bootstrap_engine()
     try:
+        with bootstrap_engine.connect() as conn:
+            users_exists = conn.execute(
+                text("SELECT to_regclass('public.users') IS NOT NULL")
+            ).scalar()
+
+        if users_exists and not should_create and not force:
+            _APPLICATION_SCHEMA_READY = True
+            return
+
+        if not users_exists and not should_create:
+            raise RuntimeError(
+                "Database schema is missing. Run `PYTHONPATH=. poetry run alembic upgrade head` "
+                "or enable AUTO_CREATE_DATABASE_SCHEMA."
+            )
+
         from database.schemas import Base as SchemaBase
 
-        with engine.begin() as conn:
+        with bootstrap_engine.begin() as conn:
             conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        SchemaBase.metadata.create_all(bind=engine)
-        logger.info("Application tables created successfully")
+
+        SchemaBase.metadata.create_all(bind=bootstrap_engine)
+        _APPLICATION_SCHEMA_READY = True
+        if users_exists:
+            logger.info("Application database schema verified")
+        else:
+            logger.warning("Application database schema was missing and has been created")
     except Exception as e:
-        logger.error(f"Error creating application tables: {str(e)}")
+        _APPLICATION_SCHEMA_READY = False
+        logger.error(f"Error ensuring application schema: {str(e)}")
         raise
+    finally:
+        if should_dispose:
+            bootstrap_engine.dispose()
 
 async def ensure_test_user_exists(db: Optional[Session] = None) -> Dict[str, Any]:
     """
