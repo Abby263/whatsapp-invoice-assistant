@@ -24,6 +24,7 @@ class Models:
     GPT_4O = "gpt-4o"
     GPT_4O_MINI = GPT4O_MINI
     GPT35_TURBO = "gpt-3.5-turbo"
+    GPT_5_4_MINI = "gpt-5.4-mini"
 
     # Anthropic models
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
@@ -35,7 +36,7 @@ class Models:
     COHERE_COMMAND_LIGHT = "command-light"
 
     # Default model
-    DEFAULT = GPT4O_MINI
+    DEFAULT = GPT_5_4_MINI
 
 # Temperature Settings
 class TemperatureSettings:
@@ -69,6 +70,7 @@ class ModelName(str, Enum):
     GPT4 = "gpt-4"
     GPT4_TURBO = "gpt-4-turbo-preview"
     GPT4O_MINI = "gpt-4o-mini"
+    GPT_5_4_MINI = "gpt-5.4-mini"
     GPT35_TURBO = "gpt-3.5-turbo"
     CLAUDE_3_OPUS = "claude-3-opus-20240229"
     CLAUDE_3_SONNET = "claude-3-sonnet-20240229"
@@ -79,7 +81,7 @@ class ModelName(str, Enum):
 # Default LLM configuration
 DEFAULT_LLM_CONFIG = {
     "provider": ModelProvider.OPENAI,
-    "model": Models.GPT4O_MINI,
+    "model": Models.DEFAULT,
     "temperature": TemperatureSettings.DEFAULT,
     "max_output_tokens": TokenLimits.DEFAULT_MAX_OUTPUT_TOKENS
 }

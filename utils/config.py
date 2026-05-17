@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
     # OpenAI settings
     OPENAI_API_KEY: str
-    OPENAI_API_MODEL: str = "gpt-4o-mini"
+    OPENAI_API_MODEL: str = "gpt-5.4-mini"
 
     # Twilio settings
     TWILIO_ACCOUNT_SID: str

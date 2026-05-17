@@ -10,7 +10,7 @@ The public Vercel URL is:
 https://whatsapp-invoice-assistant.vercel.app
 ```
 
-That deployment currently serves the hosted UI through `app.py`. It is useful for UI review and demo-mode flows, but it is not a full production backend by itself. Real receipt upload, extraction, Supabase persistence, embeddings, Clerk user scoping, WhatsApp webhook processing, and generated invoice persistence need the real service configuration described below.
+That deployment serves the hosted UI through `app.py`. When production environment variables are present, the same Vercel app also exposes the live backend paths, including `/webhook`, `/api/message`, `/api/upload`, generated invoice APIs, Clerk WhatsApp linking, Supabase Storage, and Supabase Postgres persistence. If the database variables are absent, it intentionally falls back to demo mode.
 
 Before real-time testing, verify which mode you are in:
 
@@ -20,7 +20,13 @@ curl https://whatsapp-invoice-assistant.vercel.app/api/generated-invoices
 npx vercel env ls
 ```
 
-If `/health` returns `{"runtime":"vercel-ui-demo","status":"ok"}` and `npx vercel env ls` shows no variables, the deployment is still demo-only.
+If `/health` returns `runtime=vercel-production` and `backend_enabled=true`, Twilio can target this URL:
+
+```text
+https://whatsapp-invoice-assistant.vercel.app/webhook
+```
+
+If `/health` returns `runtime=vercel-ui-demo`, the deployment is still demo-only.
 
 ## Real-Time Testing Readiness
 
@@ -28,20 +34,21 @@ You are ready to test real data only after all of these are true:
 
 | Area | Required before real-time testing |
 | --- | --- |
-| Supabase Postgres | `DATABASE_URL` or `SUPABASE_DATABASE_URL` points to the target Supabase database, or `SUPABASE_DB_PASSWORD` is set with the Supabase URL/project ref. |
-| Migrations | `PYTHONPATH=. poetry run alembic upgrade head` has completed successfully. |
+| Supabase Postgres | `DATABASE_URL` points to the Supabase transaction/session pooler for Vercel runtime. |
+| Migrations | `DIRECT_URL` points to the Supabase direct/session URL and `PYTHONPATH=. poetry run alembic upgrade head` has completed successfully. |
 | pgvector | `create extension if not exists vector;` has run in Supabase SQL editor. |
 | Supabase Storage | Private `receipts` bucket exists and `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` can write to it. |
 | OpenAI | `OPENAI_API_KEY` is set and the account has access/billing for chat and embeddings. |
 | Clerk | Publishable/secret keys are set, `CLERK_REQUIRE_AUTH=true`, and authorized parties include the live URL. |
 | WhatsApp/Twilio | Twilio inbound webhook points to a publicly reachable `/webhook` endpoint. |
-| Real backend | The Flask UI from `ui/app.py` or the FastAPI backend from `api/main.py` is deployed with the production env vars. |
+| Real backend | `/health` on the Vercel app reports `runtime=vercel-production` and `/webhook` returns TwiML on POST. |
 
 Testing scope by deployment:
 
 | Target | What you can test |
 | --- | --- |
-| Current Vercel `app.py` deployment | UI, theme, navigation, demo chat, demo generated invoices. Data is in memory and not durable. |
+| Current Vercel `app.py` deployment with env vars | UI, Clerk auth, WhatsApp webhook, receipt upload, extraction, Supabase persistence, generated invoices, and dashboard APIs. |
+| Current Vercel `app.py` deployment without DB env vars | UI, theme, navigation, demo chat, demo generated invoices. Data is in memory and not durable. |
 | Local `ui/app.py` with `.env` | Receipt upload, extraction, Supabase storage, generated invoices, dashboard analytics, Clerk link flow if configured. |
 | FastAPI `api/main.py` with public HTTPS URL | Twilio WhatsApp webhook, text messages, media downloads, file processing workflow. |
 | Full production | Website + WhatsApp using the same Supabase database and the same `users.id` mapping. |
@@ -97,16 +104,16 @@ In Supabase:
 3. Copy a Postgres connection string.
 4. Use either direct connection or pooler connection.
 
-Direct connection format:
+Runtime pooler format for Vercel/serverless:
 
 ```env
-DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
 ```
 
-Pooler format:
+Migration/direct-session format:
 
 ```env
-SUPABASE_DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
 ```
 
 The app resolves database configuration in this order:
@@ -116,7 +123,9 @@ The app resolves database configuration in this order:
 3. `SUPABASE_PROJECT_ID` plus `SUPABASE_DB_PASSWORD`
 4. `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` plus `SUPABASE_DB_PASSWORD`
 
-The Supabase project URL and publishable key are API settings, not database credentials. For real testing you still need one database credential path above.
+Alembic migrations prefer `DIRECT_URL` and fall back to `DATABASE_URL`. Supabase snippets sometimes include `?pgbouncer=true`; the Python runtime strips that flag before connecting because psycopg/libpq does not accept it as a connection option.
+
+The Supabase project URL and publishable key are API settings, not database credentials. For real testing you still need `DATABASE_URL` and `DIRECT_URL`.
 
 ### 3.3 Enable pgvector
 
@@ -232,13 +241,13 @@ https://<your-ngrok-domain>/webhook
 
 Use `POST` as the method.
 
-For production, the webhook URL should point to the real backend host, not the current Vercel demo UI:
+For this Vercel deployment, set Twilio's `When a message comes in` webhook to:
 
 ```text
-https://<your-backend-domain>/webhook
+https://whatsapp-invoice-assistant.vercel.app/webhook
 ```
 
-The current `https://whatsapp-invoice-assistant.vercel.app` deployment is a hosted UI demo unless you deploy the FastAPI backend/runtime behind it.
+Use `POST` as the method. The endpoint returns TwiML so Twilio can send the chatbot response back into WhatsApp.
 
 ## 6. Clerk Authentication Setup
 
@@ -339,7 +348,8 @@ REDIS_URL=redis://localhost:6379/0
 ## 10. Complete `.env` Example
 
 ```env
-DATABASE_URL=postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
+DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
@@ -375,7 +385,8 @@ For real-time testing, these variables are mandatory in whichever runtime hosts 
 
 | Variable | Required for | Notes |
 | --- | --- | --- |
-| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Database | Use the Supabase Postgres direct or pooler connection string. Required unless `SUPABASE_DB_PASSWORD` is provided with a Supabase URL/project ref. |
+| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Runtime database | Use the Supabase pooler connection string for Vercel/serverless runtime. Required unless `SUPABASE_DB_PASSWORD` is provided with a Supabase URL/project ref. |
+| `DIRECT_URL` or `SUPABASE_DIRECT_URL` | Migrations | Use a direct or session-pooler connection string for Alembic migrations. |
 | `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Storage | Supabase project URL, for example `https://<project-ref>.supabase.co`. |
 | `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Storage and private server access | Server-side only. Required for private bucket uploads and signed URLs. |
 | `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase API access | Accepted as a fallback, but not recommended for private server storage operations. |
@@ -424,6 +435,7 @@ If your Vercel project currently has only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_P
 # Database, choose one:
 DATABASE_URL=<supabase-postgres-url>
 SUPABASE_DATABASE_URL=<supabase-pooler-url>
+DIRECT_URL=<supabase-direct-or-session-url>
 # or
 SUPABASE_DB_PASSWORD=<supabase-database-password>
 

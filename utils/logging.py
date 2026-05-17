@@ -39,6 +39,10 @@ def get_logs_directory() -> Path:
         Path to the logs directory
     """
     # Get the project root directory (parent of utils)
+    if os.environ.get("VERCEL") == "1":
+        logs_dir = Path("/tmp") / "whatsapp-invoice-assistant-logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir
     project_dir = Path(__file__).parent.parent
     logs_dir = project_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)

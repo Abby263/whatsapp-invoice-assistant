@@ -8,10 +8,11 @@ import logging
 import asyncpg
 from contextlib import contextmanager
 from typing import Iterator, Optional, Dict, Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import NullPool
 from config.env import get_env_variable
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,10 @@ Base = declarative_base()
 
 
 def _project_id_from_supabase_url() -> Optional[str]:
-    supabase_url = get_env_variable("SUPABASE_URL", None)
+    try:
+        supabase_url = get_env_variable("SUPABASE_URL")
+    except ValueError:
+        supabase_url = None
     if not supabase_url:
         return None
     hostname = urlparse(supabase_url).hostname or ""
@@ -30,26 +34,89 @@ def _project_id_from_supabase_url() -> Optional[str]:
     return None
 
 
+def _sanitize_database_url(value: Optional[str]) -> Optional[str]:
+    """Normalize deployment DB URLs before handing them to database drivers."""
+
+    if not value:
+        return None
+
+    database_url = value.strip().strip("'").strip('"')
+    if not database_url:
+        return None
+    if "[YOUR-PASSWORD]" in database_url or "<YOUR-PASSWORD>" in database_url:
+        raise ValueError("Database URL still contains the [YOUR-PASSWORD] placeholder")
+    if database_url.startswith("postgres://"):
+        database_url = "postgresql://" + database_url[len("postgres://"):]
+
+    parsed = urlparse(database_url)
+    if parsed.query:
+        supported_query_params = []
+        for key, param_value in parse_qsl(parsed.query, keep_blank_values=True):
+            # Supabase dashboard snippets for JS/Prisma sometimes include
+            # pgbouncer=true. psycopg2/libpq do not accept that option.
+            if key.lower() in {"pgbouncer", "connection_limit"}:
+                continue
+            supported_query_params.append((key, param_value))
+        database_url = urlunparse(parsed._replace(query=urlencode(supported_query_params)))
+
+    return database_url
+
+
+def _configured_database_url(*names: str) -> Optional[str]:
+    for name in names:
+        try:
+            value = get_env_variable(name)
+        except ValueError:
+            value = None
+        sanitized = _sanitize_database_url(value)
+        if sanitized:
+            return sanitized
+    return None
+
+
+def _optional_env(name: str) -> Optional[str]:
+    try:
+        return get_env_variable(name)
+    except ValueError:
+        return None
+
+
+def _uses_serverless_pooler(database_url: str) -> bool:
+    parsed = urlparse(database_url)
+    host = parsed.hostname or ""
+    return (
+        os.environ.get("VERCEL") == "1"
+        or host.endswith(".pooler.supabase.com")
+        or parsed.port == 6543
+    )
+
+
 # Create engine and session factory
 # Check for Supabase DATABASE_URL
-SQLALCHEMY_DATABASE_URL = get_env_variable("DATABASE_URL", None)
+SQLALCHEMY_DATABASE_URL = _configured_database_url("DATABASE_URL")
 
 # Fallback to SUPABASE_DATABASE_URL if exists
 if not SQLALCHEMY_DATABASE_URL:
-    SQLALCHEMY_DATABASE_URL = get_env_variable("SUPABASE_DATABASE_URL", None)
+    SQLALCHEMY_DATABASE_URL = _configured_database_url("SUPABASE_DATABASE_URL")
 
 if not SQLALCHEMY_DATABASE_URL:
     # Try to build URL from Supabase specific components
-    supabase_project_id = get_env_variable("SUPABASE_PROJECT_ID", None) or _project_id_from_supabase_url()
-    supabase_password = get_env_variable("SUPABASE_DB_PASSWORD", None)
+    supabase_project_id = _optional_env("SUPABASE_PROJECT_ID") or _project_id_from_supabase_url()
+    supabase_password = _optional_env("SUPABASE_DB_PASSWORD")
 
     if supabase_project_id and supabase_password:
         # Direct connection format for Supabase
-        SQLALCHEMY_DATABASE_URL = f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
+        SQLALCHEMY_DATABASE_URL = _sanitize_database_url(
+            f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
+        )
         logger.info("Using Supabase direct connection format")
     else:
         # No Supabase connection details found
-        error_msg = "No Supabase connection details found. Please set DATABASE_URL, SUPABASE_DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL."
+        error_msg = (
+            "No Supabase connection details found. Please set DATABASE_URL, "
+            "SUPABASE_DATABASE_URL, or SUPABASE_DB_PASSWORD with "
+            "SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL."
+        )
         logger.error(error_msg)
         raise ValueError(error_msg)
 
@@ -61,13 +128,25 @@ if "@" in SQLALCHEMY_DATABASE_URL:
 else:
     logger.info("Using database URL: %s", SQLALCHEMY_DATABASE_URL)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+_engine_options: Dict[str, Any] = {"pool_pre_ping": True}
+if _uses_serverless_pooler(SQLALCHEMY_DATABASE_URL):
+    _engine_options["poolclass"] = NullPool
+else:
+    _engine_options["pool_recycle"] = 300
+
+engine = create_engine(SQLALCHEMY_DATABASE_URL, **_engine_options)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_database_url() -> str:
     """Return the configured SQLAlchemy database URL."""
     return SQLALCHEMY_DATABASE_URL
+
+
+def get_migration_database_url() -> str:
+    """Return the URL Alembic should use for schema migrations."""
+
+    return _configured_database_url("DIRECT_URL", "SUPABASE_DIRECT_URL") or get_database_url()
 
 def get_db() -> Iterator[Session]:
     """
@@ -119,25 +198,31 @@ async def get_connection_string():
     Only Supabase connections are supported.
     """
     # First check for complete DATABASE_URL
-    database_url = get_env_variable("DATABASE_URL", None)
+    database_url = _configured_database_url("DATABASE_URL")
     if database_url:
         return database_url
 
     # Next check for Supabase specific URL
-    supabase_db_url = get_env_variable("SUPABASE_DATABASE_URL", None)
+    supabase_db_url = _configured_database_url("SUPABASE_DATABASE_URL")
     if supabase_db_url:
         return supabase_db_url
 
     # Check for Supabase components
-    supabase_project_id = get_env_variable("SUPABASE_PROJECT_ID", None) or _project_id_from_supabase_url()
-    supabase_password = get_env_variable("SUPABASE_DB_PASSWORD", None)
+    supabase_project_id = _optional_env("SUPABASE_PROJECT_ID") or _project_id_from_supabase_url()
+    supabase_password = _optional_env("SUPABASE_DB_PASSWORD")
 
     if supabase_project_id and supabase_password:
         # Direct connection format for Supabase
-        return f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
+        return _sanitize_database_url(
+            f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
+        )
 
     # No valid connection configuration found
-    error_msg = "No Supabase connection details found. Please set DATABASE_URL, SUPABASE_DATABASE_URL, or SUPABASE_DB_PASSWORD with SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL."
+    error_msg = (
+        "No Supabase connection details found. Please set DATABASE_URL, "
+        "SUPABASE_DATABASE_URL, or SUPABASE_DB_PASSWORD with "
+        "SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL."
+    )
     logger.error(error_msg)
     raise ValueError(error_msg)
 

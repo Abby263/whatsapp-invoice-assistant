@@ -2,13 +2,13 @@
 
 Production-oriented AI workspace for capturing receipts from WhatsApp, extracting invoice data, storing original receipt files, generating outgoing invoices, generating vector embeddings, and answering finance questions in natural language.
 
-The application combines a WhatsApp webhook API, Clerk web authentication, LangGraph agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for local testing and workflow inspection.
+The application combines a WhatsApp webhook API, Clerk web authentication, LangGraph-style agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for testing and workflow inspection.
 
 ## Live UI
 
 [Open the hosted UI on Vercel](https://whatsapp-invoice-assistant.vercel.app)
 
-The Vercel deployment runs the operator UI in demo mode so reviewers can inspect the product surface without private infrastructure. Full receipt extraction, WhatsApp webhook processing, Supabase persistence, and OpenAI embeddings require the production environment variables documented in [SETUP.md](SETUP.md).
+The Vercel deployment runs the operator UI and, when production environment variables are present, the live backend endpoints. Twilio should use [https://whatsapp-invoice-assistant.vercel.app/webhook](https://whatsapp-invoice-assistant.vercel.app/webhook) as the incoming WhatsApp webhook URL. If database variables are absent, the same app falls back to demo mode for reviewers.
 
 ## UI Demo
 
@@ -61,8 +61,8 @@ flowchart LR
     W --> UMAP
     O["Operator / developer"] --> UI["Flask test UI :5001"]
 
-    T --> API["FastAPI application"]
-    UI --> UIF["Flask UI routes"]
+    T --> API["Vercel Flask webhook /webhook"]
+    UI --> UIF["Vercel Flask UI + API routes"]
     UIF --> LAPI["LangChain app API"]
     API --> LAPI
     UMAP --> LAPI
@@ -100,7 +100,8 @@ flowchart LR
 
 | Component | Purpose |
 | --- | --- |
-| FastAPI (`api/main.py`) | Production API surface and WhatsApp webhook endpoint. |
+| Vercel Flask entrypoint (`app.py`) | Hosted UI, Clerk-authenticated API routes, Twilio `/webhook`, and live Supabase-backed processing when env vars are configured. |
+| FastAPI (`api/main.py`) | Local or alternate production API surface for WhatsApp webhook deployments. |
 | Flask UI (`ui/app.py`) | Local operator UI for receipt upload, chat simulation, and workflow inspection. |
 | Clerk (`utils/clerk_auth.py`) | Browser sign-in, session JWT verification, and account-to-WhatsApp linking. |
 | LangGraph workflow (`langchain_app/`) | Routes text and files through specialized agent nodes. |
@@ -233,7 +234,8 @@ The most important variables are:
 
 | Variable | Description |
 | --- | --- |
-| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Supabase Postgres connection string. |
+| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Supabase runtime Postgres connection string. Use the pooler URL for Vercel/serverless. |
+| `DIRECT_URL` or `SUPABASE_DIRECT_URL` | Supabase direct/session URL used by Alembic migrations. |
 | `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL. |
 | `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
 | `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase key; accepted as a fallback, but not enough for private storage in most production setups. |

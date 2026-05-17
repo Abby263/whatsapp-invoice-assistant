@@ -11,17 +11,32 @@ from pathlib import Path
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent.parent
 TEMPLATE_DIR = BASE_DIR / "template"
-OUTPUT_DIR = BASE_DIR / "data" / "generated_invoices"
+DEFAULT_OUTPUT_DIR = (
+    "/tmp/generated_invoices"
+    if os.environ.get("VERCEL") == "1"
+    else str(BASE_DIR / "data" / "generated_invoices")
+)
+OUTPUT_DIR = Path(os.environ.get("GENERATED_INVOICE_OUTPUT_DIR", DEFAULT_OUTPUT_DIR))
 
 # Default templates
-DEFAULT_TEMPLATE = "InvoiceAssistantTemplate.xlsx"
+DEFAULT_TEMPLATE = "InvoiceDocument.docx"
 
 # Template types with relevant keywords and required fields
 TEMPLATE_TYPES = {
     "default": {
         "name": "Modern Invoice Template",
-        "file": "InvoiceAssistantTemplate.xlsx",
-        "keywords": ["professional", "default", "service", "goods", "invoice", "hours", "products", "general", "standard"],
+        "file": "InvoiceDocument.docx",
+        "keywords": [
+            "professional",
+            "default",
+            "service",
+            "goods",
+            "invoice",
+            "hours",
+            "products",
+            "general",
+            "standard",
+        ],
         "required_fields": [
             "company_name",
             "invoice_number",

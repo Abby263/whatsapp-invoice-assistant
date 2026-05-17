@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response as FastAPIResponse
 from dotenv import load_dotenv
 
 # Add project root to path for imports
@@ -73,13 +73,31 @@ async def webhook(request: Request):
     try:
         response = await process_whatsapp_message(data_dict)
         logger.info(f"Processed webhook with response: {response}")
-        return JSONResponse(content=response)
+        return _twilio_message_response(
+            response.get("message")
+            or response.get("content")
+            or "I received your message, but could not produce a response."
+        )
     except Exception as e:
         logger.exception(f"Error processing webhook: {e}")
-        return JSONResponse(
+        return _twilio_message_response(
+            f"Sorry, I could not process that message right now: {str(e)}",
             status_code=500,
-            content={"status": "error", "message": str(e)}
         )
+
+
+def _twilio_message_response(message: str, status_code: int = 200) -> FastAPIResponse:
+    try:
+        from twilio.twiml.messaging_response import MessagingResponse
+
+        twiml = MessagingResponse()
+        twiml.message(message)
+        body = str(twiml)
+    except Exception:
+        from xml.sax.saxutils import escape
+
+        body = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>{escape(message)}</Message></Response>"
+    return FastAPIResponse(content=body, status_code=status_code, media_type="application/xml")
 
 # Test endpoint for text messages
 @app.post("/message")
