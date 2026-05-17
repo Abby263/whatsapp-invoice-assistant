@@ -16,6 +16,7 @@ import tempfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
 
@@ -47,6 +48,9 @@ def backend_configuration_status() -> Dict[str, Any]:
         return {"enabled": False, "reason": "Missing DATABASE_URL or Supabase DB password"}
     if database_url and _has_placeholder(database_url):
         return {"enabled": False, "reason": "DATABASE_URL contains a placeholder password"}
+    database_url_error = _database_url_error(database_url)
+    if database_url_error and not has_component_db:
+        return {"enabled": False, "reason": database_url_error}
     if os.getenv("SUPABASE_DB_PASSWORD") and _has_placeholder(os.getenv("SUPABASE_DB_PASSWORD", "")):
         return {"enabled": False, "reason": "SUPABASE_DB_PASSWORD contains a placeholder"}
 
@@ -57,6 +61,8 @@ def backend_configuration_status() -> Dict[str, Any]:
         missing_optional.append("NEXT_PUBLIC_SUPABASE_URL")
     if not (os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")):
         missing_optional.append("SUPABASE_SECRET_KEY")
+    if database_url_error and has_component_db:
+        missing_optional.append(f"DATABASE_URL ignored: {database_url_error}")
 
     return {
         "enabled": True,
@@ -625,3 +631,15 @@ def _has_placeholder(value: str) -> bool:
         or "your-" in lowered
         or "placeholder" in lowered
     )
+
+
+def _database_url_error(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    parsed = urlparse(value.strip().strip("'").strip('"'))
+    if parsed.netloc.count("@") > 1:
+        return (
+            "DATABASE_URL contains an unescaped '@' in the password. "
+            "URL-encode the password or set SUPABASE_DB_PASSWORD instead."
+        )
+    return None

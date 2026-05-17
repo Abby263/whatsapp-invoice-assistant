@@ -8,7 +8,7 @@ import logging
 import asyncpg
 from contextlib import contextmanager
 from typing import Iterator, Optional, Dict, Any
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -49,6 +49,11 @@ def _sanitize_database_url(value: Optional[str]) -> Optional[str]:
         database_url = "postgresql://" + database_url[len("postgres://"):]
 
     parsed = urlparse(database_url)
+    if parsed.netloc.count("@") > 1:
+        raise ValueError(
+            "Database URL contains an unescaped '@' in the credentials. "
+            "URL-encode the password or set SUPABASE_DB_PASSWORD instead."
+        )
     if parsed.query:
         supported_query_params = []
         for key, param_value in parse_qsl(parsed.query, keep_blank_values=True):
@@ -68,7 +73,11 @@ def _configured_database_url(*names: str) -> Optional[str]:
             value = get_env_variable(name)
         except ValueError:
             value = None
-        sanitized = _sanitize_database_url(value)
+        try:
+            sanitized = _sanitize_database_url(value)
+        except ValueError as exc:
+            logger.warning("Ignoring invalid %s: %s", name, exc)
+            continue
         if sanitized:
             return sanitized
     return None
@@ -105,9 +114,10 @@ if not SQLALCHEMY_DATABASE_URL:
     supabase_password = _optional_env("SUPABASE_DB_PASSWORD")
 
     if supabase_project_id and supabase_password:
+        encoded_password = quote(supabase_password, safe="")
         # Direct connection format for Supabase
         SQLALCHEMY_DATABASE_URL = _sanitize_database_url(
-            f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
+            f"postgresql://postgres:{encoded_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
         )
         logger.info("Using Supabase direct connection format")
     else:
@@ -212,9 +222,10 @@ async def get_connection_string():
     supabase_password = _optional_env("SUPABASE_DB_PASSWORD")
 
     if supabase_project_id and supabase_password:
+        encoded_password = quote(supabase_password, safe="")
         # Direct connection format for Supabase
         return _sanitize_database_url(
-            f"postgresql://postgres:{supabase_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
+            f"postgresql://postgres:{encoded_password}@db.{supabase_project_id}.supabase.co:5432/postgres"
         )
 
     # No valid connection configuration found
