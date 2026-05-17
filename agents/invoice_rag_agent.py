@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from constants.vector_search_configs import VECTOR_SIMILARITY_THRESHOLD
 
-from database.connection import get_db, db_session, SessionLocal
 from services.llm_factory import LLMFactory
 from utils.vector_utils import get_embedding_generator
 
@@ -132,6 +131,8 @@ class InvoiceRAGAgent:
             # Track if we created a new session or using an existing one
             should_close_session = False
             if db_session is None:
+                from database.connection import SessionLocal
+
                 db_session = SessionLocal()
                 should_close_session = True
                 logger.debug("Created new database session for vector search")
@@ -308,15 +309,15 @@ class InvoiceRAGAgent:
         
         # Sort by similarity score
         combined.sort(key=lambda x: x.get('similarity_score', float('inf')))
-        
+
         # Log the combined results for workflow steps
         if combined:
             invoice_ids = set(item.get('invoice_id') for item in combined if item.get('invoice_id'))
             vendors = set(item.get('vendor') for item in combined if item.get('vendor'))
-            
+
             logger.info(f"[WORKFLOW STEP] Combined results: {len(combined)} unique items across {len(invoice_ids)} invoices")
             logger.info(f"[WORKFLOW STEP] Vendors in combined results: {', '.join(vendors) if vendors else 'None'}")
-            
+
             # Log top 2 results
             if len(combined) > 0:
                 logger.info("[WORKFLOW STEP] Top combined results:")
@@ -327,5 +328,5 @@ class InvoiceRAGAgent:
                     logger.info(f"[WORKFLOW STEP] - Result {i+1}: {description} from {vendor} (similarity: {similarity})")
         else:
             logger.info("[WORKFLOW STEP] Combined results: No results found")
-        
-        return combined 
+
+        return combined

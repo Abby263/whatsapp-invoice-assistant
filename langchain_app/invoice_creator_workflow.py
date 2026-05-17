@@ -23,7 +23,6 @@ from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
 from langchain_app.state import IntentType
 from constants.fallback_messages import CREATION_FALLBACKS
-from services.user_data_service import enrich_invoice_data
 from services.invoice_template_service import generate_invoice, check_missing_fields, TEMPLATE_TYPES
 
 logger = logging.getLogger(__name__)
@@ -564,6 +563,8 @@ def generate_invoice_pdf(invoice_data: Dict[str, Any], user_id: Optional[str] = 
 
         # Try to enhance the invoice with user profile data
         try:
+            from services.user_data_service import enrich_invoice_data
+
             logger.info(f"Enriching invoice data for user {user_id}")
             processed_data = enrich_invoice_data(processed_data, user_id)
 

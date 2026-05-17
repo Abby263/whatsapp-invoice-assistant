@@ -8,12 +8,11 @@ in the database using appropriate schema mapping and data validation.
 import logging
 import json
 from typing import Dict, Any, Optional, Union
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
-from database.connection import SessionLocal
 from database import schemas
 from utils.vector_utils import get_embedding_generator
 
@@ -170,6 +169,8 @@ class DatabaseStorageAgent(BaseAgent):
             Dict containing storage operation results or error information
         """
         # Get database session
+        from database.connection import SessionLocal
+
         db = SessionLocal()
 
         try:
@@ -191,47 +192,15 @@ class DatabaseStorageAgent(BaseAgent):
 
             user_id_value = self._coerce_user_id(user_id)
 
-            # Extract vendor information
-            vendor_data = invoice_data.get("vendor", {})
-            vendor_name = vendor_data.get("name", "Unknown") if isinstance(vendor_data, dict) else vendor_data
-
-            # Extract transaction information
-            transaction_data = invoice_data.get("transaction", {})
-            if isinstance(transaction_data, dict):
-                invoice_number = transaction_data.get("invoice_number")
-
-                # Parse dates
-                invoice_date_str = transaction_data.get("date")
-
-                # Convert date strings to datetime objects if present
-                invoice_date = None
-                if invoice_date_str:
-                    try:
-                        invoice_date = datetime.strptime(invoice_date_str, "%Y-%m-%d")
-                    except ValueError:
-                        logger.warning(f"Could not parse invoice date: {invoice_date_str}")
-            else:
-                invoice_number = None
-                invoice_date = None
-
-            # Extract financial information
-            financial_data = invoice_data.get("financial", {})
-            if isinstance(financial_data, dict):
-                total_amount = financial_data.get("total", 0)
-                currency = financial_data.get("currency", "INR")
-
-            else:
-                total_amount = invoice_data.get("total_amount", 0)
-                currency = invoice_data.get("currency", "INR")
-
-            # Extract notes
-            additional_info = invoice_data.get("additional_info", {})
-            notes = additional_info.get("notes", "") if isinstance(additional_info, dict) else ""
+            vendor_name = self._extract_vendor_name(invoice_data)
+            invoice_number, invoice_date = self._extract_transaction_fields(invoice_data)
+            total_amount, currency, tax_amount = self._extract_financial_fields(invoice_data)
+            notes = self._extract_notes(invoice_data, extraction_result)
 
             file_storage = self._get_file_storage(extraction_result)
             file_url = file_storage.get("url") if file_storage else None
             file_content_type = file_storage.get("content_type") if file_storage else None
-            tax_amount = self._extract_tax_amount(financial_data)
+            raw_data = self._build_raw_data(invoice_data, extraction_result)
 
             # Create an invoice record directly using SQLAlchemy model
             invoice = schemas.Invoice(
@@ -239,12 +208,12 @@ class DatabaseStorageAgent(BaseAgent):
                 invoice_number=invoice_number,
                 invoice_date=invoice_date,
                 vendor=vendor_name,
-                total_amount=float(total_amount),
+                total_amount=self._to_float(total_amount, 0.0),
                 tax_amount=tax_amount,
                 currency=currency,
                 file_url=file_url,
                 file_content_type=file_content_type,
-                raw_data=invoice_data,
+                raw_data=raw_data,
                 notes=notes,
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
@@ -267,7 +236,11 @@ class DatabaseStorageAgent(BaseAgent):
 
             if items and isinstance(items, list):
                 # Pre-generate embeddings for all item descriptions in batch for efficiency
-                item_descriptions = [item.get("description", "Item") for item in items if isinstance(item, dict)]
+                item_descriptions = [
+                    item.get("description") or item.get("name") or "Item"
+                    for item in items
+                    if isinstance(item, dict)
+                ]
                 logger.info(f"Generating embeddings for {len(item_descriptions)} items")
 
                 batch_embeddings = None
@@ -286,10 +259,23 @@ class DatabaseStorageAgent(BaseAgent):
                         continue
 
                     logger.info(f"Processing item {i+1}: {item}")
-                    description = item.get("description", "Item")
-                    quantity = item.get("quantity", 1)
-                    unit_price = item.get("unit_price", 0)
-                    total_price = item.get("total_price", 0)
+                    description = item.get("description") or item.get("name") or "Item"
+                    quantity = self._to_float(item.get("quantity"), 1.0)
+                    unit_price = self._first_float(
+                        item.get("unit_price"),
+                        item.get("price"),
+                    )
+                    total_price = self._first_float(
+                        item.get("total_price"),
+                        item.get("amount"),
+                        item.get("total"),
+                    )
+                    if total_price is None and unit_price is not None:
+                        total_price = unit_price * quantity
+                    if unit_price is None and total_price is not None and quantity:
+                        unit_price = total_price / quantity
+                    unit_price = unit_price if unit_price is not None else 0.0
+                    total_price = total_price if total_price is not None else 0.0
                     item_category = item.get("item_category")  # Get item_category
                     item_code = item.get("item_code")  # Get item_code
 
@@ -309,9 +295,9 @@ class DatabaseStorageAgent(BaseAgent):
                         item_record = schemas.Item(
                             invoice_id=invoice.id,
                             description=description,
-                            quantity=float(quantity),
-                            unit_price=float(unit_price),
-                            total_price=float(total_price),
+                            quantity=quantity,
+                            unit_price=unit_price,
+                            total_price=total_price,
                             item_category=item_category,  # Set item_category
                             item_code=item_code,  # Set item_code
                             description_embedding=embedding,  # Set the embedding
@@ -388,7 +374,7 @@ class DatabaseStorageAgent(BaseAgent):
                 "invoice_embedding_id": str(invoice_embedding_id) if invoice_embedding_id else None,
                 "invoice_number": invoice_number,
                 "vendor": vendor_name,
-                "total_amount": float(total_amount) if total_amount else 0
+                "total_amount": self._to_float(total_amount, 0.0)
             }
 
         except Exception as e:
@@ -419,6 +405,84 @@ class DatabaseStorageAgent(BaseAgent):
         storage = metadata.get("file_storage") or metadata.get("s3_storage")
         return storage if isinstance(storage, dict) else None
 
+    def _extract_vendor_name(self, invoice_data: Dict[str, Any]) -> str:
+        vendor_data = invoice_data.get("vendor", {})
+        if isinstance(vendor_data, dict):
+            vendor_name = (
+                vendor_data.get("name")
+                or vendor_data.get("vendor_name")
+                or vendor_data.get("company")
+            )
+        else:
+            vendor_name = vendor_data
+        vendor_text = str(vendor_name or "").strip()
+        return vendor_text or "Unknown Vendor"
+
+    def _extract_transaction_fields(self, invoice_data: Dict[str, Any]) -> tuple[Optional[str], Optional[datetime]]:
+        transaction_data = invoice_data.get("transaction", {})
+        transaction = transaction_data if isinstance(transaction_data, dict) else {}
+        invoice_number = (
+            transaction.get("invoice_number")
+            or transaction.get("receipt_no")
+            or transaction.get("receipt_number")
+            or invoice_data.get("invoice_number")
+            or invoice_data.get("receipt_no")
+            or invoice_data.get("receipt_number")
+        )
+        invoice_date = self._parse_date(
+            transaction.get("date")
+            or transaction.get("invoice_date")
+            or invoice_data.get("invoice_date")
+            or invoice_data.get("date")
+        )
+        return invoice_number, invoice_date
+
+    def _extract_financial_fields(self, invoice_data: Dict[str, Any]) -> tuple[float, str, Optional[float]]:
+        financial_data = invoice_data.get("financial", {})
+        financial = financial_data if isinstance(financial_data, dict) else {}
+        additional_info = invoice_data.get("additional_info", {})
+        additional = additional_info if isinstance(additional_info, dict) else {}
+
+        total_amount = self._first_float(
+            financial.get("total"),
+            financial.get("total_amount"),
+            invoice_data.get("total_amount"),
+            invoice_data.get("total"),
+            financial.get("subtotal"),
+        )
+        currency = (
+            financial.get("currency")
+            or invoice_data.get("currency")
+            or additional.get("currency")
+            or "INR"
+        )
+        return total_amount if total_amount is not None else 0.0, str(currency or "INR")[:3], self._extract_tax_amount(financial)
+
+    def _extract_notes(self, invoice_data: Dict[str, Any], extraction_result: Dict[str, Any]) -> str:
+        additional_info = invoice_data.get("additional_info", {})
+        notes = additional_info.get("notes", "") if isinstance(additional_info, dict) else ""
+        metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result, dict) else {}
+        if isinstance(metadata, dict) and metadata.get("extraction_error"):
+            error_note = f"Extraction warning: {metadata['extraction_error']}"
+            notes = f"{notes}\n{error_note}".strip() if notes else error_note
+        return notes
+
+    def _build_raw_data(self, invoice_data: Dict[str, Any], extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+        raw_data = self._json_safe(invoice_data)
+        metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result, dict) else {}
+        if isinstance(raw_data, dict) and isinstance(metadata, dict):
+            raw_data["_extraction"] = self._json_safe(
+                {
+                    "file_type": extraction_result.get("file_type"),
+                    "file_path": extraction_result.get("file_path"),
+                    "status": metadata.get("extraction_status"),
+                    "confidence": metadata.get("extraction_confidence"),
+                    "error": metadata.get("extraction_error"),
+                    "raw_result": metadata.get("raw_extraction_result"),
+                }
+            )
+        return raw_data if isinstance(raw_data, dict) else {"value": raw_data}
+
     def _extract_tax_amount(self, financial_data: Any) -> Optional[float]:
         if not isinstance(financial_data, dict):
             return None
@@ -426,25 +490,22 @@ class DatabaseStorageAgent(BaseAgent):
         if isinstance(tax_data, dict):
             for key in ("amount", "total", "tax_amount"):
                 if tax_data.get(key) is not None:
-                    return float(tax_data[key])
+                    return self._to_float(tax_data[key])
         if financial_data.get("tax_amount") is not None:
-            return float(financial_data["tax_amount"])
+            return self._to_float(financial_data["tax_amount"])
+        if financial_data.get("tax") is not None:
+            return self._to_float(financial_data["tax"])
         return None
 
     def _build_invoice_embedding_text(self, invoice_data: Dict[str, Any]) -> str:
-        vendor = invoice_data.get("vendor", {})
-        vendor_name = vendor.get("name") if isinstance(vendor, dict) else vendor
-        transaction = invoice_data.get("transaction", {})
-        invoice_number = (
-            transaction.get("invoice_number") if isinstance(transaction, dict) else None
-        )
-        financial = invoice_data.get("financial", {})
-        total = financial.get("total") if isinstance(financial, dict) else None
+        vendor_name = self._extract_vendor_name(invoice_data)
+        invoice_number, _ = self._extract_transaction_fields(invoice_data)
+        total, _, _ = self._extract_financial_fields(invoice_data)
         items = invoice_data.get("items") or []
         item_text = "; ".join(
-            item.get("description", "")
+            item.get("description") or item.get("name") or ""
             for item in items
-            if isinstance(item, dict) and item.get("description")
+            if isinstance(item, dict) and (item.get("description") or item.get("name"))
         )
         return " | ".join(
             str(part)
@@ -465,3 +526,42 @@ class DatabaseStorageAgent(BaseAgent):
         if "text" in value:
             return "text"
         return "other"
+
+    def _first_float(self, *values: Any) -> Optional[float]:
+        for value in values:
+            if value in (None, ""):
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _to_float(self, value: Any, default: Optional[float] = None) -> Optional[float]:
+        parsed = self._first_float(value)
+        return parsed if parsed is not None else default
+
+    def _parse_date(self, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, date):
+            return datetime.combine(value, datetime.min.time())
+        if not value:
+            return None
+        text = str(value).strip()
+        for parser in (
+            lambda candidate: datetime.fromisoformat(candidate.replace("Z", "+00:00")),
+            lambda candidate: datetime.strptime(candidate, "%Y-%m-%d"),
+            lambda candidate: datetime.strptime(candidate, "%d-%m-%Y"),
+            lambda candidate: datetime.strptime(candidate, "%m/%d/%Y"),
+            lambda candidate: datetime.strptime(candidate, "%d/%m/%Y"),
+        ):
+            try:
+                return parser(text)
+            except ValueError:
+                continue
+        logger.warning("Could not parse invoice date: %s", value)
+        return None
+
+    def _json_safe(self, value: Any) -> Any:
+        return json.loads(json.dumps(value, default=str))

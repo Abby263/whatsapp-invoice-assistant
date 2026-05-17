@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
 from database.schemas import User, Invoice, Item
-from database.connection import get_db_session
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +59,8 @@ def get_user_data(user_id: int, db_session=None) -> Dict[str, Any]:
     try:
         # Use provided session or create a new one
         if db_session is None:
+            from database.connection import get_db_session
+
             db_session = get_db_session()
 
         # Get user info

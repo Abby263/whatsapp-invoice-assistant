@@ -28,6 +28,7 @@ invoices:
 - currency (TEXT): The currency code (USD, EUR, etc.)
 - file_url (TEXT): URL to the stored invoice file
 - file_content_type (TEXT): MIME type of the file
+- raw_data (JSON): Full extracted receipt/invoice JSON, including extraction metadata for partial or handwritten uploads
 - notes (TEXT): Additional notes about the invoice
 - created_at (TIMESTAMP): When the invoice was created
 - updated_at (TIMESTAMP): When the invoice was last updated
@@ -83,9 +84,9 @@ IMPORTANT SECURITY REQUIREMENTS:
 # Simplified database schema that includes only table names and column names
 DB_SCHEMA_SIMPLE = """
 users(id, whatsapp_number, name, email, is_active, created_at)
-invoices(id, user_id, invoice_number, invoice_date, vendor, total_amount, tax_amount, currency, file_url, file_content_type, notes, created_at, updated_at)
+invoices(id, user_id, invoice_number, invoice_date, vendor, total_amount, tax_amount, currency, file_url, file_content_type, raw_data, notes, created_at, updated_at)
 items(id, invoice_id, description, quantity, unit_price, total_price, item_category, item_code, description_embedding, created_at, updated_at)
 conversations(id, user_id, created_at, is_active)
 messages(id, user_id, conversation_id, content, role, created_at)
 media(id, user_id, invoice_id, filename, file_path, mime_type, file_size, created_at)
-""" 
+"""
