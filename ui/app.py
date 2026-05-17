@@ -1776,6 +1776,57 @@ def generated_invoice_analytics():
             'message': f"Error loading generated invoice analytics: {str(e)}"
         }), 500
 
+
+@app.route('/api/history', methods=['GET', 'DELETE'])
+def history_api():
+    """List or delete saved receipt, generated-invoice, and chat history."""
+    try:
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
+        if request.method == 'GET':
+            user_id = linked_user.id if linked_user else request.args.get('user_id', USER_ID)
+            if not user_id:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'User ID is required'
+                }), 400
+
+            from services.history_service import list_user_history
+
+            limit = request.args.get('limit', 50)
+            return jsonify(list_user_history(int(user_id), int(limit)))
+
+        payload = request.get_json(silent=True) or {}
+        user_id = linked_user.id if linked_user else payload.get('user_id', USER_ID)
+        if not user_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'User ID is required'
+            }), 400
+
+        from services.history_service import delete_user_history
+
+        result = delete_user_history(int(user_id), payload)
+        status_code = 200
+        if result.get('status') == 'not_found':
+            status_code = 404
+        elif result.get('status') == 'error':
+            status_code = 409
+        return jsonify(result), status_code
+    except ValueError as exc:
+        return jsonify({
+            'status': 'error',
+            'message': str(exc)
+        }), 400
+    except Exception as e:
+        logger.exception(f"Error handling history request: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f"Error handling history request: {str(e)}"
+        }), 500
+
 @app.route('/api/embeddings/update', methods=['POST'])
 def update_embeddings():
     """

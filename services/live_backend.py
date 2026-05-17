@@ -480,6 +480,25 @@ def generated_analytics(auth_context: Any, query: Optional[Dict[str, Any]] = Non
     }
 
 
+def list_history(auth_context: Any, query: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    from services.history_service import list_user_history
+
+    user, needs_link = resolve_request_user(auth_context, query or {})
+    if needs_link:
+        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+    limit = (query or {}).get("limit") or 50
+    return list_user_history(int(user["id"]), int(limit))
+
+
+def delete_history(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    from services.history_service import delete_user_history
+
+    user, needs_link = resolve_request_user(auth_context, payload)
+    if needs_link:
+        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+    return delete_user_history(int(user["id"]), payload)
+
+
 def database_status(auth_context: Any = None) -> Dict[str, Any]:
     from sqlalchemy import func, text
 

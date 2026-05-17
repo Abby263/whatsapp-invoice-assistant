@@ -34,6 +34,8 @@ If production environment variables are missing, the hosted app falls back to de
 - Generates OpenAI embeddings and stores them in pgvector columns for semantic search.
 - Answers user-scoped finance questions from extracted data.
 - Generates outgoing invoices from WhatsApp or the website using saved seller/client defaults.
+- Shows parsing quality signals, row counts, and review warnings for handwritten or low-confidence uploads.
+- Lets signed-in users delete one saved upload, one generated invoice, or all historical data from the web app.
 - Shows receipt, invoice, workflow, storage, database, and vector status in the UI.
 
 Example WhatsApp prompts:
@@ -75,6 +77,7 @@ flowchart TB
         SQL["User-scoped Text-to-SQL"]
         RAG["Vector search"]
         GENERATOR["Invoice generation"]
+        HIST["History deletion"]
         FORMATTER["Compact WhatsApp formatter"]
     end
 
@@ -118,6 +121,10 @@ flowchart TB
     GENERATOR --> DB
     GENERATOR --> STORAGE
 
+    API -->|"delete history"| HIST
+    HIST --> DB
+    HIST --> STORAGE
+
     ROUTER -->|"greeting or help"| CHAT
     CHAT --> FORMATTER
     SQL --> FORMATTER
@@ -136,8 +143,10 @@ Every uploaded file follows the same contract before it reaches analytics:
 3. The validator rejects unsupported, duplicate, blank, or non-financial images before expense storage.
 4. Valid files are uploaded to Supabase Storage under a user-scoped path and registered in `media`.
 5. The extractor returns the canonical schema from [schemas/llm_outputs/document_extraction.py](schemas/llm_outputs/document_extraction.py).
-6. Normalized invoice rows, item rows, embeddings, and processing metadata are written with the same `user_id`.
-7. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
+6. The normalizer fixes row-level ledger dates, computes ledger totals from extracted rows, and records `extraction_quality` warnings when review is needed.
+7. Normalized invoice rows, item rows, embeddings, and processing metadata are written with the same `user_id`.
+8. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
+9. Deleting history from the signed-in web app removes database rows and stored Supabase objects for that linked user.
 
 ## Runtime Components
 
@@ -154,6 +163,7 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [storage/supabase_storage_handler.py](storage/supabase_storage_handler.py) | Private Supabase Storage uploads and signed URL generation. |
 | [storage/user_uploads.py](storage/user_uploads.py) | User-scoped upload paths, media registry writes, and duplicate lookup metadata. |
 | [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
+| [services/history_service.py](services/history_service.py) | User-scoped listing and deletion of receipt history, generated invoices, messages, usage rows, and stored files. |
 | [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
 | [memory/](memory) | In-memory conversation state with optional MongoDB persistence when explicitly enabled. |
 

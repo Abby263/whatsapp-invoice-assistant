@@ -12,7 +12,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, BinaryIO, Dict, Optional, Union
+from typing import Any, BinaryIO, Dict, List, Optional, Union
 from urllib.parse import quote
 from uuid import UUID
 
@@ -204,21 +204,45 @@ class SupabaseStorageHandler:
 
     def delete_file(self, file_key: str) -> bool:
         """Delete a file from Supabase Storage."""
+        result = self.delete_files([file_key])
+        return bool(result.get("deleted")) and not result.get("failed")
+
+    def delete_files(self, file_keys: List[str]) -> Dict[str, Any]:
+        """Delete one or more files from Supabase Storage using the Storage API."""
+        unique_keys = []
+        seen = set()
+        for key in file_keys:
+            value = str(key or "").strip().lstrip("/")
+            if not value or value.startswith(("http://", "https://")) or value in seen:
+                continue
+            seen.add(value)
+            unique_keys.append(value)
+
+        if not unique_keys:
+            return {"deleted": [], "failed": []}
+
         url = f"{self.supabase_url}/storage/v1/object/{quote(self.bucket_name, safe='')}"
         headers = self._headers(content_type="application/json")
+        deleted: List[str] = []
+        failed: List[str] = []
 
         with httpx.Client(timeout=self.timeout) as client:
-            response = client.delete(url, json={"prefixes": [file_key]}, headers=headers)
+            for index in range(0, len(unique_keys), 1000):
+                batch = unique_keys[index:index + 1000]
+                response = client.delete(url, json={"prefixes": batch}, headers=headers)
 
-        if response.status_code >= 400:
-            logger.error(
-                "Supabase Storage delete failed for %s: %s %s",
-                file_key,
-                response.status_code,
-                response.text,
-            )
-            return False
-        return True
+                if response.status_code >= 400:
+                    logger.error(
+                        "Supabase Storage delete failed for %s objects: %s %s",
+                        len(batch),
+                        response.status_code,
+                        response.text,
+                    )
+                    failed.extend(batch)
+                else:
+                    deleted.extend(batch)
+
+        return {"deleted": deleted, "failed": failed}
 
     def generate_user_path(self, user_id: Union[str, UUID, int], file_type: str) -> str:
         """Return the user-scoped object path prefix."""

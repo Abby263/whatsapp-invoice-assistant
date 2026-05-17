@@ -197,6 +197,8 @@ class DataExtractorAgent(BaseAgent):
                 "extraction_status": status,
                 "extraction_confidence": confidence,
             }
+            if isinstance(normalized_data, dict) and isinstance(normalized_data.get("extraction_quality"), dict):
+                metadata["extraction_quality"] = normalized_data["extraction_quality"]
             if error:
                 metadata["extraction_error"] = error
 

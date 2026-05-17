@@ -81,7 +81,10 @@ Your task is to carefully analyze the document and extract all relevant invoice/
 - For handwritten ledgers/account pages, treat every visible dated row with an amount as a separate item. If no single vendor exists, set vendor.name to "Handwritten ledger".
 - For handwritten ledger rows, use quantity 1 and set unit_price equal to total_price unless a quantity is explicitly shown.
 - For ledger rows with dates like DD.MM.YY or D.M.YY, infer the century/year from the page heading or surrounding entries when possible.
+- For ledger rows with dates like DD.MM.YY or D.M.YY, use the written month from that row. Example: 15.5.26 means 2026-05-15, not the printed diary month.
 - Preserve mixed Hindi/English ledger text in item descriptions; do not translate names unless the meaning is obvious.
+- Treat the upload as one file only. Never combine totals or rows from other pages or previous messages.
+- Fill extraction_quality.visible_financial_rows, extraction_quality.extracted_financial_rows, extraction_quality.needs_review, and extraction_quality.warnings.
 
 # EXAMPLES
 

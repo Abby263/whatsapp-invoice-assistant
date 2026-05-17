@@ -38,6 +38,10 @@ const generatedInvoiceList = document.getElementById('generatedInvoiceList');
 const generatedInvoiceEmpty = document.getElementById('generatedInvoiceEmpty');
 const refreshGeneratedInvoicesBtn = document.getElementById('refreshGeneratedInvoicesBtn');
 const generateInvoiceBtn = document.getElementById('generateInvoiceBtn');
+const historyList = document.getElementById('historyList');
+const historyEmpty = document.getElementById('historyEmpty');
+const refreshHistoryBtn = document.getElementById('refreshHistoryBtn');
+const deleteAllHistoryBtn = document.getElementById('deleteAllHistoryBtn');
 const storageProvider = document.getElementById('storageProvider');
 const themeToggleBtn = document.getElementById('themeToggleBtn');
 const themeToggleIcon = document.getElementById('themeToggleIcon');
@@ -532,6 +536,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         initializeApp();
         updateDatabaseCounts();
         loadGeneratedInvoices();
+        loadHistory();
         loadUsers();
     } else {
         addSystemMessage('Sign in to connect your WhatsApp receipts with this workspace.');
@@ -564,6 +569,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (generateInvoiceBtn) {
         generateInvoiceBtn.addEventListener('click', showGeneratedInvoiceModal);
+    }
+
+    if (refreshHistoryBtn) {
+        refreshHistoryBtn.addEventListener('click', loadHistory);
+    }
+
+    if (deleteAllHistoryBtn) {
+        deleteAllHistoryBtn.addEventListener('click', deleteAllHistory);
     }
 
     // Initialize memory configuration
@@ -834,6 +847,7 @@ function initializeForUser(whatsappNumber) {
                 // Update database counts for this user
                 updateDatabaseCounts();
                 loadGeneratedInvoices();
+                loadHistory();
             } else {
                 addSystemMessage(`Error initializing for user: ${data.message}`);
             }
@@ -970,6 +984,7 @@ function processMessage(message) {
 
             // Update database counts
             updateDatabaseCounts();
+            loadHistory();
             if (data.generated_invoice || data.metadata?.generated_invoice) {
                 loadGeneratedInvoices();
             }
@@ -1058,6 +1073,7 @@ function uploadFile() {
 
             // Update database counts
             updateDatabaseCounts();
+            loadHistory();
 
             // Update user information display if provided
             if (data.user_id) {
@@ -1838,6 +1854,137 @@ function loadGeneratedInvoices() {
         })
         .catch(error => {
             console.error('Error loading generated invoices:', error);
+        });
+}
+
+function loadHistory() {
+    if (!historyList) {
+        return;
+    }
+    if (authState.required && !whatsappNumber) {
+        renderHistory([]);
+        return;
+    }
+
+    fetch(`/api/history?user_id=${encodeURIComponent(userId || '0')}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status !== 'success') {
+                console.warn('History unavailable:', data.message);
+                renderHistory([]);
+                return;
+            }
+            const documents = data.documents || [];
+            const generated = (data.generated_invoices || []).map(invoice => ({
+                ...invoice,
+                kind: 'generated_invoice'
+            }));
+            renderHistory([...documents, ...generated]);
+        })
+        .catch(error => {
+            console.error('Error loading history:', error);
+            renderHistory([]);
+        });
+}
+
+function renderHistory(records) {
+    if (!historyList) {
+        return;
+    }
+
+    historyList.innerHTML = '';
+    if (!records.length) {
+        if (historyEmpty) {
+            historyList.appendChild(historyEmpty);
+            historyEmpty.style.display = 'grid';
+        }
+        return;
+    }
+
+    records.forEach(record => {
+        const row = document.createElement('article');
+        row.className = 'history-row';
+        const isGenerated = record.kind === 'generated_invoice';
+        const title = isGenerated
+            ? (record.invoice_number || `Generated invoice #${record.id}`)
+            : (record.title || record.filename || `Receipt #${record.id}`);
+        const subtitle = isGenerated
+            ? (record.client_name || record.client_company || 'Generated invoice')
+            : [
+                record.filename,
+                record.status,
+                record.item_count != null ? `${record.item_count} items` : null
+            ].filter(Boolean).join(' · ');
+        const amount = record.total_amount != null
+            ? formatGeneratedCurrency(record.total_amount, record.currency || 'USD')
+            : 'No total';
+        const created = record.created_at ? new Date(record.created_at).toLocaleDateString() : 'Recent';
+
+        row.innerHTML = `
+            <div class="history-main">
+                <strong>${escapeHtml(title)}</strong>
+                <span>${escapeHtml(subtitle || record.kind || 'Saved record')}</span>
+            </div>
+            <div class="history-meta">
+                <strong>${escapeHtml(amount)}</strong>
+                <span>${escapeHtml(created)}</span>
+            </div>
+            <div class="history-actions">
+                <button type="button" class="icon-btn danger" title="Delete" aria-label="Delete saved history">
+                    <i class="fas fa-trash-can"></i>
+                </button>
+            </div>
+        `;
+        row.querySelector('button').addEventListener('click', () => deleteHistoryRecord(record));
+        historyList.appendChild(row);
+    });
+}
+
+function deleteHistoryRecord(record) {
+    const label = record.kind === 'generated_invoice'
+        ? (record.invoice_number || `generated invoice #${record.id}`)
+        : (record.title || record.filename || `record #${record.id}`);
+    if (!confirm(`Delete ${label}? This removes the database record and stored files for this user.`)) {
+        return;
+    }
+
+    const payload = record.kind === 'generated_invoice'
+        ? {scope: 'generated_invoice', id: record.id, user_id: userId}
+        : {scope: 'document', kind: record.kind, id: record.id, user_id: userId};
+
+    deleteHistory(payload, `Deleted ${label}.`);
+}
+
+function deleteAllHistory() {
+    if (!confirm('Delete all saved receipt history, generated invoices, conversation history, and stored files for this linked user?')) {
+        return;
+    }
+    deleteHistory({scope: 'all', user_id: userId}, 'Deleted all saved history for this user.');
+}
+
+function deleteHistory(payload, successMessage) {
+    showLoading('Deleting history...');
+    fetch('/api/history', {
+        method: 'DELETE',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    })
+        .then(response => response.json().then(data => ({ok: response.ok, data})))
+        .then(({ok, data}) => {
+            if (!ok || data.status !== 'success') {
+                throw new Error(data.message || 'History deletion failed');
+            }
+            addSystemMessage(successMessage);
+            loadHistory();
+            loadGeneratedInvoices();
+            updateDatabaseCounts();
+        })
+        .catch(error => {
+            console.error('Error deleting history:', error);
+            addSystemMessage(`Could not delete history: ${escapeHtml(error.message)}`);
+        })
+        .finally(() => {
+            hideLoading();
         });
 }
 

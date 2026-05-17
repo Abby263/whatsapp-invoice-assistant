@@ -15,7 +15,12 @@ from langchain_app.state import IntentType, UserInput
 from langchain_app.general_response_workflow import process_general_response, process_greeting
 from langchain_app.invoice_query_workflow import process_invoice_query
 from langchain_app.invoice_creator_workflow import process_invoice_creation
-from services.conversation_policy import is_off_topic_message, off_topic_response
+from services.conversation_policy import (
+    history_deletion_response,
+    is_history_deletion_request,
+    is_off_topic_message,
+    off_topic_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +48,17 @@ async def process_text_message(
     history_for_processing = conversation_history or []
 
     logger.info(f"Conversation history length: {len(history_for_processing)}")
+
+    if is_history_deletion_request(text_content):
+        logger.info("History deletion request routed to signed-in web flow")
+        return {
+            "content": history_deletion_response(),
+            "confidence": 0.95,
+            "metadata": {
+                "intent": IntentType.GENERAL.value,
+                "scope": "history_deletion",
+            },
+        }
 
     if is_off_topic_message(text_content):
         logger.info("Message classified as out of assistant scope before LLM routing")

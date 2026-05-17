@@ -435,6 +435,33 @@
                     <section class="card">
                         <div class="card-head">
                             <div>
+                                <h3>Saved history</h3>
+                                <p>Review and delete receipt uploads, extracted records, and generated invoices for the linked user.</p>
+                            </div>
+                            <div class="card-head-actions">
+                                <button type="button" class="btn btn-secondary" id="refreshHistoryBtn">
+                                    <i class="fas fa-rotate"></i>
+                                    <span>Refresh</span>
+                                </button>
+                                <button type="button" class="btn btn-danger" id="deleteAllHistoryBtn">
+                                    <i class="fas fa-trash-can"></i>
+                                    <span>Delete history</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="history-list" id="historyList">
+                                <div class="empty-state" id="historyEmpty">
+                                    <i class="fas fa-box-archive"></i>
+                                    <p>No saved receipt history for this user yet.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="card">
+                        <div class="card-head">
+                            <div>
                                 <h3>Generated invoices</h3>
                                 <p>Outgoing invoices created from WhatsApp or the website are saved under the active user and available here.</p>
                             </div>

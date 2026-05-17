@@ -773,6 +773,58 @@ def generated_invoice_analytics():
     )
 
 
+@app.get("/api/history")
+def history_list():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.list_history(auth_context, request.args.to_dict())
+            return jsonify(result), 403 if result.get("needs_link") else 200
+        except Exception as exc:
+            return _live_error(exc)
+    return jsonify(
+        {
+            "status": "success",
+            "documents": [],
+            "generated_invoices": [],
+            "counts": {"documents": 0, "generated_invoices": 0},
+            "degraded": True,
+        }
+    )
+
+
+@app.delete("/api/history")
+def history_delete():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    payload = request.get_json(silent=True) or {}
+    if _live_backend_enabled():
+        try:
+            result = live_backend.delete_history(auth_context, payload)
+            if result.get("needs_link"):
+                return jsonify(result), 403
+            if result.get("status") == "not_found":
+                return jsonify(result), 404
+            if result.get("status") == "error":
+                return jsonify(result), 409
+            return jsonify(result)
+        except ValueError as exc:
+            return _live_error(exc, 400)
+        except Exception as exc:
+            return _live_error(exc)
+    return jsonify(
+        {
+            "status": "success",
+            "message": "Demo history cleared for this UI session.",
+            "deleted": {"documents": 0, "generated_invoices": 0, "storage_files": 0},
+            "degraded": True,
+        }
+    )
+
+
 @app.get("/api/generated-invoices/demo-invoice.txt")
 def generated_invoice_demo_download():
     return Response(

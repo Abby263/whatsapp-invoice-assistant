@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from copy import deepcopy
+from datetime import date
 from typing import Any, Dict
 
 
@@ -57,6 +58,12 @@ DOCUMENT_EXTRACTION_JSON_SCHEMA: Dict[str, Any] = {
         "source_language": "string|null",
         "extraction_notes": "string|null",
     },
+    "extraction_quality": {
+        "visible_financial_rows": "number|null",
+        "extracted_financial_rows": "number|null",
+        "needs_review": "boolean",
+        "warnings": ["string"],
+    },
     "confidence_score": "number between 0 and 1",
     "error": "string|null",
 }
@@ -77,9 +84,11 @@ Rules:
 - For handwritten ledgers, set additional_info.document_type to "handwritten_ledger".
 - For handwritten ledger rows, extract every visible financial row as an item.
 - For ledger rows, store the row date in transaction_date when normalized and raw_date when only the written form is visible.
+- For row dates like 15.5.26, normalize as 2026-05-15. Do not infer every row's date from the printed diary page heading.
 - For ledger rows, set item_code to transaction_date when available so SQL can query row-level dates.
 - Use quantity 1 and unit_price = total_price unless a quantity/unit is clearly written.
 - Use entry_type "expense", "income", "transfer", or "unknown".
+- Fill extraction_quality. If some visible rows are too unclear to extract, set needs_review true and explain the issue in warnings.
 """.strip()
 
 
@@ -91,6 +100,7 @@ def normalize_document_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
     transaction = _ensure_dict_section(normalized, "transaction")
     additional_info = _ensure_dict_section(normalized, "additional_info")
     financial = _ensure_dict_section(normalized, "financial")
+    extraction_quality = _ensure_dict_section(normalized, "extraction_quality")
 
     items = normalized.get("items", [])
     if items is None:
@@ -132,13 +142,23 @@ def normalize_document_extraction(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if is_ledger_document(normalized):
         financial.setdefault("currency", "INR")
-        if financial.get("total") is None:
-            financial["total"] = sum(
-                coerce_number(item.get("total_price"), 0.0)
-                for item in items
-                if isinstance(item, dict)
-                and str(item.get("entry_type", "")).lower() != "income"
-            )
+        computed_total = sum(
+            coerce_number(item.get("total_price"), 0.0)
+            for item in items
+            if isinstance(item, dict)
+            and str(item.get("entry_type", "")).lower() != "income"
+        )
+        previous_total = financial.get("total")
+        if previous_total is not None:
+            previous_total = coerce_number(previous_total, 0.0)
+            if abs(previous_total - computed_total) > 0.01:
+                _append_quality_warning(
+                    extraction_quality,
+                    f"Ledger total adjusted from {previous_total:g} to item-row sum {computed_total:g}.",
+                )
+        financial["total"] = computed_total
+
+    _normalize_extraction_quality(normalized)
 
     return normalized
 
@@ -217,6 +237,20 @@ def _normalize_item(item: Dict[str, Any], ledger: bool) -> None:
         item["unit_price"] = item["total_price"] / item["quantity"]
 
     if ledger:
+        raw_date = str(item.get("raw_date") or "").strip()
+        if not raw_date:
+            raw_date = _extract_raw_date_from_text(str(item.get("description") or ""))
+            if raw_date:
+                item["raw_date"] = raw_date
+
+        normalized_row_date = (
+            _parse_compact_date(raw_date)
+            or _parse_compact_date(str(item.get("item_code") or ""))
+            or _parse_compact_date(str(item.get("transaction_date") or ""))
+        )
+        if normalized_row_date:
+            item["transaction_date"] = normalized_row_date
+
         item.setdefault("entry_type", "unknown")
         item["entry_type"] = str(item["entry_type"]).lower()
         item.setdefault("unit", "entry")
@@ -238,3 +272,76 @@ def _normalize_item(item: Dict[str, Any], ledger: bool) -> None:
         for prefix in reversed([value for value in prefixes if value]):
             if prefix not in item["description"]:
                 item["description"] = f"{prefix} - {item['description']}"
+
+
+def _extract_raw_date_from_text(value: str) -> str:
+    match = re.search(r"\b([0-3]?\d[./-][01]?\d[./-]\d{2,4})\b", value or "")
+    return match.group(1) if match else ""
+
+
+def _parse_compact_date(value: str) -> str | None:
+    text = (value or "").strip()
+    match = re.fullmatch(r"([0-3]?\d)[./-]([01]?\d)[./-](\d{2,4})", text)
+    if not match:
+        return None
+
+    day = int(match.group(1))
+    month = int(match.group(2))
+    year = int(match.group(3))
+    if year < 100:
+        year += 2000 if year < 70 else 1900
+    if not (1 <= day <= 31 and 1 <= month <= 12):
+        return None
+    try:
+        parsed = date(year, month, day)
+    except ValueError:
+        return None
+    return parsed.isoformat()
+
+
+def _normalize_extraction_quality(data: Dict[str, Any]) -> None:
+    quality = _ensure_dict_section(data, "extraction_quality")
+    items = data.get("items") if isinstance(data.get("items"), list) else []
+    extracted_count = len(items)
+
+    visible_rows = quality.get("visible_financial_rows")
+    if visible_rows is not None:
+        quality["visible_financial_rows"] = coerce_number(visible_rows, 0.0)
+    else:
+        quality["visible_financial_rows"] = extracted_count
+
+    quality["extracted_financial_rows"] = coerce_number(
+        quality.get("extracted_financial_rows"),
+        float(extracted_count),
+    )
+
+    warnings = quality.get("warnings")
+    if warnings is None:
+        warnings = []
+    elif not isinstance(warnings, list):
+        warnings = [str(warnings)]
+    quality["warnings"] = [str(warning) for warning in warnings if str(warning).strip()]
+
+    if quality["visible_financial_rows"] > quality["extracted_financial_rows"]:
+        _append_quality_warning(
+            quality,
+            "Some visible financial rows may not have been extracted.",
+        )
+
+    confidence = coerce_number(data.get("confidence_score"), 1.0)
+    needs_review = bool(quality.get("needs_review"))
+    quality["needs_review"] = (
+        needs_review
+        or bool(quality["warnings"])
+        or confidence < 0.65
+        or bool(data.get("error"))
+    )
+
+
+def _append_quality_warning(quality: Dict[str, Any], warning: str) -> None:
+    warnings = quality.get("warnings")
+    if not isinstance(warnings, list):
+        warnings = []
+    if warning not in warnings:
+        warnings.append(warning)
+    quality["warnings"] = warnings
