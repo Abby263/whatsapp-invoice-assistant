@@ -38,9 +38,10 @@ def backend_configuration_status() -> Dict[str, Any]:
         return {"enabled": False, "reason": "APP_MODE forces demo mode"}
 
     database_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DATABASE_URL")
+    supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
     has_component_db = bool(
         os.getenv("SUPABASE_DB_PASSWORD")
-        and (os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL"))
+        and supabase_url
     )
     if not database_url and not has_component_db:
         return {"enabled": False, "reason": "Missing DATABASE_URL or Supabase DB password"}
@@ -52,6 +53,8 @@ def backend_configuration_status() -> Dict[str, Any]:
     missing_optional = []
     if not os.getenv("OPENAI_API_KEY"):
         missing_optional.append("OPENAI_API_KEY")
+    if not supabase_url:
+        missing_optional.append("NEXT_PUBLIC_SUPABASE_URL")
     if not (os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")):
         missing_optional.append("SUPABASE_SECRET_KEY")
 

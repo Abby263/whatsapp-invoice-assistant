@@ -11,10 +11,7 @@ parent_dir = str(Path(__file__).parent.parent)
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-# Import utilities and agents
 from utils.logging import get_logs_directory
-from agents.invoice_rag_agent import InvoiceRAGAgent
-from utils.vector_utils import get_embedding_generator
 
 # Configure logging
 logs_dir = get_logs_directory()
@@ -33,6 +30,8 @@ logger = logging.getLogger("test_rag_agent")
 
 async def test_rag_agent_async():
     """Test the InvoiceRAGAgent with a sample query."""
+    from agents.invoice_rag_agent import InvoiceRAGAgent
+
     logger.info("=== TESTING RAG AGENT ===")
 
     # Start timer

@@ -14,8 +14,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
 
-# Mock the database module before importing the actual modules
-sys.modules['services.database'] = MagicMock()
+# Mock database modules before importing workflow modules
 sys.modules['database.connection'] = MagicMock()
 sys.modules['database.schemas'] = MagicMock()
 sys.modules['database.crud'] = MagicMock()
@@ -150,4 +149,4 @@ if __name__ == "__main__":
     asyncio.run(test_invoice_query_workflow())
     asyncio.run(test_invoice_creation_workflow())
     asyncio.run(test_file_processing_workflow())
-    logger.info("All end-to-end tests completed successfully!") 
+    logger.info("All end-to-end tests completed successfully!")
