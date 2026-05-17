@@ -68,6 +68,7 @@ media:
 - file_path (TEXT): Path to the file
 - mime_type (TEXT): MIME type of the file
 - file_size (INTEGER): Size of the file in bytes
+- content_hash (TEXT): SHA-256 hash used to detect duplicate uploads for the same user
 - created_at (TIMESTAMP): When the file was uploaded
 
 IMPORTANT SECURITY REQUIREMENTS:
@@ -88,5 +89,5 @@ invoices(id, user_id, invoice_number, invoice_date, vendor, total_amount, tax_am
 items(id, invoice_id, description, quantity, unit_price, total_price, item_category, item_code, description_embedding, created_at, updated_at)
 conversations(id, user_id, created_at, is_active)
 messages(id, user_id, conversation_id, content, role, created_at)
-media(id, user_id, invoice_id, filename, file_path, mime_type, file_size, created_at)
+media(id, user_id, invoice_id, filename, file_path, mime_type, file_size, content_hash, created_at)
 """
