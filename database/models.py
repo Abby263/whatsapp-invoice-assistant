@@ -172,6 +172,7 @@ class MediaBase(BaseModel):
     file_path: str
     mime_type: Optional[str] = None
     file_size: Optional[int] = None
+    content_hash: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -189,6 +190,7 @@ class MediaUpdate(BaseModel):
     file_path: Optional[str] = None
     mime_type: Optional[str] = None
     file_size: Optional[int] = None
+    content_hash: Optional[str] = None
     invoice_id: Optional[int] = None
 
 

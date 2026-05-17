@@ -98,7 +98,14 @@ class SupabaseStorageHandler:
         if not file_bytes:
             raise ValueError("Cannot upload empty file content")
 
-        object_path = self._generate_unique_file_key(file_name, user_id, file_type)
+        checksum = hashlib.sha256(file_bytes).hexdigest()
+        metadata = metadata or {}
+        object_path = self._generate_file_key(
+            file_name=file_name,
+            user_id=user_id,
+            file_type=file_type,
+            checksum=metadata.get("checksum_sha256") or checksum,
+        )
         resolved_content_type = (
             content_type
             or mimetypes.guess_type(file_name)[0]
@@ -120,12 +127,37 @@ class SupabaseStorageHandler:
             response = client.post(url, content=file_bytes, headers=headers)
 
         if response.status_code >= 400:
+            response_text = response.text or ""
+            if (
+                checksum
+                and response.status_code in {400, 409}
+                and "exist" in response_text.lower()
+            ):
+                logger.info(
+                    "Supabase Storage object already exists for checksum=%s path=%s",
+                    checksum,
+                    object_path,
+                )
+                signed_url = self.generate_url(object_path)
+                return {
+                    "provider": "supabase",
+                    "bucket": self.bucket_name,
+                    "file_key": object_path,
+                    "path": object_path,
+                    "url": signed_url,
+                    "content_type": resolved_content_type,
+                    "file_size": len(file_bytes),
+                    "checksum_sha256": checksum,
+                    "user_id": str(user_id),
+                    "original_filename": file_name,
+                    "metadata": metadata,
+                    "existing_object": True,
+                }
             raise RuntimeError(
-                f"Supabase Storage upload failed ({response.status_code}): {response.text}"
+                f"Supabase Storage upload failed ({response.status_code}): {response_text}"
             )
 
         signed_url = self.generate_url(object_path)
-        checksum = hashlib.sha256(file_bytes).hexdigest()
 
         return {
             "provider": "supabase",
@@ -138,7 +170,7 @@ class SupabaseStorageHandler:
             "checksum_sha256": checksum,
             "user_id": str(user_id),
             "original_filename": file_name,
-            "metadata": metadata or {},
+            "metadata": metadata,
         }
 
     def generate_url(self, file_key: str, expiration: int = 3600) -> str:
@@ -219,3 +251,15 @@ class SupabaseStorageHandler:
             for ch in Path(file_name).stem
         ).strip("_") or "receipt"
         return f"{self.generate_user_path(user_id, file_type)}/{safe_stem}_{digest}{ext}"
+
+    def _generate_file_key(
+        self,
+        file_name: str,
+        user_id: Union[str, UUID, int],
+        file_type: str,
+        checksum: Optional[str] = None,
+    ) -> str:
+        if not checksum:
+            return self._generate_unique_file_key(file_name, user_id, file_type)
+
+        return f"{self.generate_user_path(user_id, file_type)}/{checksum[:2]}/{checksum}"

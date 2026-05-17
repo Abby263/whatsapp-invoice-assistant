@@ -7,6 +7,7 @@ validating invoice files, extracting data, and formatting responses.
 
 import logging
 import os
+import hashlib
 from typing import Dict, Any, Optional, List, Union, BinaryIO
 from uuid import UUID
 from pathlib import Path
@@ -36,7 +37,8 @@ async def process_file_message(
     file_type: str,
     file_name: Optional[str] = None,
     user_id: Optional[Union[str, UUID]] = None,
-    conversation_history: Optional[List[Dict[str, Any]]] = None
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
+    file_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Process a file message by validating and extracting data.
@@ -55,6 +57,21 @@ async def process_file_message(
 
     # Detect normalized file type from MIME type or extension
     normalized_file_type = detect_file_type(file_path, file_type)
+    prepared_file_metadata = _prepare_file_metadata(file_path, file_metadata)
+
+    duplicate_media = _find_existing_media_by_checksum(user_id, prepared_file_metadata)
+    if duplicate_media:
+        logger.info(
+            "Duplicate upload detected for user=%s checksum=%s",
+            user_id,
+            prepared_file_metadata.get("checksum_sha256"),
+        )
+        return await format_duplicate_file_response(
+            duplicate_media,
+            file_name or file_path,
+            normalized_file_type,
+            prepared_file_metadata,
+        )
 
     # Validate the file
     validation_result = await validate_file(file_path, normalized_file_type)
@@ -72,6 +89,7 @@ async def process_file_message(
             user_id,
             conversation_history,
             validation_result=validation_result,
+            file_metadata=prepared_file_metadata,
         )
 
     # Handwritten or low-quality receipts are sometimes rejected by validation
@@ -87,6 +105,7 @@ async def process_file_message(
             conversation_history,
             validation_result=validation_result,
             best_effort=True,
+            file_metadata=prepared_file_metadata,
         )
         extraction_data = (
             best_effort_result.get("metadata", {})
@@ -235,6 +254,7 @@ async def process_invoice_file(
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     validation_result: Optional[Dict[str, Any]] = None,
     best_effort: bool = False,
+    file_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Process a valid invoice file by extracting data.
@@ -250,7 +270,13 @@ async def process_invoice_file(
         Dict containing extracted data and response
     """
     # Extract data from invoice
-    extraction_result = await extract_invoice_data(file_path, file_type, user_id, conversation_history)
+    extraction_result = await extract_invoice_data(
+        file_path,
+        file_type,
+        user_id,
+        conversation_history,
+        file_metadata=file_metadata,
+    )
 
     # If extraction failed
     if "error" in extraction_result:
@@ -304,6 +330,8 @@ async def process_invoice_file(
                     extraction_result["metadata"] = {}
                 extraction_result["metadata"]["invoice_id"] = invoice_id
                 extraction_result["metadata"]["item_ids"] = item_ids
+                if storage_result.content.get("duplicate"):
+                    extraction_result["metadata"]["duplicate"] = True
             else:
                 error_message = storage_result.error if storage_result else "No result returned from storage agent"
                 storage_error = error_message
@@ -335,6 +363,11 @@ async def process_invoice_file(
             "success" if invoice_id else "error" if user_id is not None else "not_attempted"
         ),
         "best_effort_extraction": best_effort,
+        "duplicate": bool(
+            extraction_result.get("metadata", {}).get("duplicate")
+            if isinstance(extraction_result.get("metadata"), dict)
+            else False
+        ),
     }
     if validation_result:
         response_metadata["validation_result"] = validation_result
@@ -362,7 +395,8 @@ async def extract_invoice_data(
     file_path: str,
     file_type: str,
     user_id: Optional[Union[str, UUID]] = None,
-    conversation_history: Optional[List[Dict[str, Any]]] = None
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
+    file_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Extract data from an invoice file.
@@ -384,6 +418,7 @@ async def extract_invoice_data(
         with open(file_path, 'rb') as f:
             file_content = f.read()
 
+        prepared_file_metadata = _prepare_file_metadata(file_path, file_metadata, file_content)
         file_storage = None
         storage_error = None
         if user_id:
@@ -405,7 +440,8 @@ async def extract_invoice_data(
                 upload_metadata = {
                     "user_id": str(user_id),
                     "file_type": file_type,
-                    "original_filename": os.path.basename(file_path)
+                    "original_filename": os.path.basename(file_path),
+                    **prepared_file_metadata,
                 }
 
                 storage_handler = SupabaseStorageHandler()
@@ -446,6 +482,7 @@ async def extract_invoice_data(
                 "file_type": file_type,
                 "input_type": file_type,
                 "file_storage": file_storage,
+                "file_metadata": prepared_file_metadata,
             }
         )
 
@@ -457,6 +494,9 @@ async def extract_invoice_data(
 
         extracted_data = result.content if isinstance(result.content, dict) else {}
         metadata = result.metadata or {}
+        metadata["file_metadata"] = prepared_file_metadata
+        if prepared_file_metadata.get("checksum_sha256"):
+            metadata["checksum_sha256"] = prepared_file_metadata["checksum_sha256"]
         metadata["extraction_status"] = result.status
         metadata["extraction_confidence"] = result.confidence
         if result.error:
@@ -489,6 +529,147 @@ async def extract_invoice_data(
 
 def _supports_best_effort_extraction(file_type: str) -> bool:
     return file_type in {FileType.IMAGE.value, FileType.PDF.value}
+
+
+def _prepare_file_metadata(
+    file_path: str,
+    file_metadata: Optional[Dict[str, Any]] = None,
+    file_content: Optional[bytes] = None,
+) -> Dict[str, Any]:
+    metadata = dict(file_metadata or {})
+    if not metadata.get("checksum_sha256") and os.path.exists(file_path):
+        metadata["checksum_sha256"] = _calculate_file_checksum(file_path, file_content)
+    if not metadata.get("original_filename"):
+        metadata["original_filename"] = os.path.basename(file_path)
+    return metadata
+
+
+def _calculate_file_checksum(file_path: str, file_content: Optional[bytes] = None) -> str:
+    digest = hashlib.sha256()
+    if file_content is not None:
+        digest.update(file_content)
+    else:
+        with open(file_path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _find_existing_media_by_checksum(
+    user_id: Optional[Union[str, UUID]],
+    file_metadata: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    checksum = file_metadata.get("checksum_sha256")
+    if not user_id or not checksum:
+        return None
+    try:
+        user_id_value = int(str(user_id))
+    except (TypeError, ValueError):
+        return None
+
+    try:
+        from database.connection import get_db_session
+        from database.schemas import Invoice, Media
+
+        session = get_db_session()
+        try:
+            candidates = (
+                session.query(Media)
+                .filter(Media.user_id == user_id_value)
+                .order_by(Media.created_at.desc())
+                .limit(500)
+                .all()
+            )
+            for media in candidates:
+                metadata = media.processing_metadata or {}
+                if not isinstance(metadata, dict):
+                    continue
+                stored_checksum = (
+                    getattr(media, "content_hash", None)
+                    or metadata.get("checksum_sha256")
+                    or metadata.get("metadata", {}).get("checksum_sha256")
+                )
+                if stored_checksum == checksum:
+                    return {
+                        "id": media.id,
+                        "invoice_id": media.invoice_id,
+                        "filename": media.filename,
+                        "file_path": media.file_path,
+                        "file_url": media.file_url,
+                        "content_type": media.content_type,
+                        "file_size": media.file_size,
+                        "content_hash": stored_checksum,
+                        "processing_metadata": metadata,
+                        "created_at": media.created_at.isoformat() if media.created_at else None,
+                    }
+
+            invoice_candidates = (
+                session.query(Invoice)
+                .filter(Invoice.user_id == user_id_value)
+                .order_by(Invoice.created_at.desc())
+                .limit(500)
+                .all()
+            )
+            for invoice in invoice_candidates:
+                raw_data = invoice.raw_data or {}
+                if not isinstance(raw_data, dict):
+                    continue
+                extraction = raw_data.get("_extraction") or {}
+                if not isinstance(extraction, dict):
+                    continue
+                file_metadata_value = extraction.get("file_metadata") or {}
+                if not isinstance(file_metadata_value, dict):
+                    file_metadata_value = {}
+                stored_checksum = (
+                    extraction.get("checksum_sha256")
+                    or file_metadata_value.get("checksum_sha256")
+                )
+                if stored_checksum == checksum:
+                    return {
+                        "id": None,
+                        "invoice_id": invoice.id,
+                        "filename": file_metadata.get("original_filename"),
+                        "file_path": "",
+                        "file_url": invoice.file_url,
+                        "content_type": invoice.file_content_type,
+                        "file_size": None,
+                        "content_hash": stored_checksum,
+                        "processing_metadata": extraction,
+                        "created_at": invoice.created_at.isoformat() if invoice.created_at else None,
+                    }
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning("Could not check duplicate media by checksum: %s", exc)
+    return None
+
+
+async def format_duplicate_file_response(
+    media: Dict[str, Any],
+    file_name: str,
+    file_type: str,
+    file_metadata: Dict[str, Any],
+) -> Dict[str, Any]:
+    invoice_id = media.get("invoice_id")
+    content = (
+        f"I already processed {file_name} earlier."
+        + (f" It is linked to invoice #{invoice_id}." if invoice_id else "")
+    )
+    return {
+        "content": content,
+        "metadata": {
+            "intent": IntentType.FILE_PROCESSING.value,
+            "file_type": file_type,
+            "duplicate": True,
+            "stored_in_database": True,
+            "storage_status": "duplicate",
+            "invoice_id": str(invoice_id) if invoice_id else None,
+            "media_id": str(media.get("id")) if media.get("id") else None,
+            "file_metadata": file_metadata,
+            "file_storage": media.get("processing_metadata") or {},
+        },
+        "confidence": 1.0,
+    }
 
 
 def _has_storable_extraction_data(data: Any) -> bool:

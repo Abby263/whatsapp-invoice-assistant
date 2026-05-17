@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional, Union
 from datetime import date, datetime
 from uuid import UUID
 
+from sqlalchemy.exc import IntegrityError
+
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
 from database import schemas
@@ -133,7 +135,7 @@ class DatabaseStorageAgent(BaseAgent):
                 logger.info("Adding missing 'status' field with default value 'success'")
                 store_result["status"] = "success"
 
-            if "status" in store_result and store_result["status"] == "success":
+            if "status" in store_result and store_result["status"] in {"success", "duplicate"}:
                 logger.info(f"Storage successful: {store_result}")
                 return AgentOutput(
                     content=store_result,
@@ -200,6 +202,7 @@ class DatabaseStorageAgent(BaseAgent):
             file_storage = self._get_file_storage(extraction_result)
             file_url = file_storage.get("url") if file_storage else None
             file_content_type = file_storage.get("content_type") if file_storage else None
+            content_hash = self._extract_content_hash(extraction_result, file_storage)
             raw_data = self._build_raw_data(invoice_data, extraction_result)
 
             # Create an invoice record directly using SQLAlchemy model
@@ -346,6 +349,7 @@ class DatabaseStorageAgent(BaseAgent):
                     original_filename=file_storage.get("original_filename", "invoice"),
                     file_path=file_storage.get("file_key", ""),
                     file_url=file_storage.get("url", ""),
+                    content_hash=content_hash,
                     content_type=file_storage.get("content_type", "application/octet-stream"),
                     file_size=file_storage.get("file_size") or extraction_result.get("file_size", 0),
                     file_type=self._media_file_type(file_storage.get("content_type")),
@@ -380,6 +384,10 @@ class DatabaseStorageAgent(BaseAgent):
         except Exception as e:
             # Roll back on error
             db.rollback()
+            if isinstance(e, IntegrityError):
+                duplicate_result = self._duplicate_result_from_hash(db, user_id, extraction_result)
+                if duplicate_result:
+                    return duplicate_result
             logger.exception(f"Error storing invoice: {str(e)}")
             return {
                 "status": "error",
@@ -404,6 +412,55 @@ class DatabaseStorageAgent(BaseAgent):
             return None
         storage = metadata.get("file_storage") or metadata.get("s3_storage")
         return storage if isinstance(storage, dict) else None
+
+    def _extract_content_hash(
+        self,
+        extraction_result: Dict[str, Any],
+        file_storage: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        metadata = extraction_result.get("metadata") if isinstance(extraction_result, dict) else {}
+        file_metadata = metadata.get("file_metadata") if isinstance(metadata, dict) else {}
+        for source in (file_storage, metadata, file_metadata):
+            if isinstance(source, dict) and source.get("checksum_sha256"):
+                return source["checksum_sha256"]
+        return None
+
+    def _duplicate_result_from_hash(
+        self,
+        db,
+        user_id: Union[str, UUID, int],
+        extraction_result: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        checksum = self._extract_content_hash(extraction_result)
+        if not checksum:
+            return None
+        try:
+            user_id_value = self._coerce_user_id(user_id)
+            duplicate_media = (
+                db.query(schemas.Media)
+                .filter(
+                    schemas.Media.user_id == user_id_value,
+                    schemas.Media.content_hash == checksum,
+                )
+                .order_by(schemas.Media.created_at.desc())
+                .first()
+            )
+        except Exception:
+            return None
+        if not duplicate_media:
+            return None
+        return {
+            "status": "duplicate",
+            "duplicate": True,
+            "invoice_id": str(duplicate_media.invoice_id) if duplicate_media.invoice_id else None,
+            "item_ids": [],
+            "media_id": str(duplicate_media.id),
+            "invoice_embedding_id": None,
+            "invoice_number": None,
+            "vendor": None,
+            "total_amount": 0,
+            "content_hash": checksum,
+        }
 
     def _extract_vendor_name(self, invoice_data: Dict[str, Any]) -> str:
         vendor_data = invoice_data.get("vendor", {})
@@ -471,10 +528,13 @@ class DatabaseStorageAgent(BaseAgent):
         raw_data = self._json_safe(invoice_data)
         metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result, dict) else {}
         if isinstance(raw_data, dict) and isinstance(metadata, dict):
+            file_metadata = metadata.get("file_metadata")
             raw_data["_extraction"] = self._json_safe(
                 {
                     "file_type": extraction_result.get("file_type"),
                     "file_path": extraction_result.get("file_path"),
+                    "checksum_sha256": metadata.get("checksum_sha256"),
+                    "file_metadata": file_metadata if isinstance(file_metadata, dict) else None,
                     "status": metadata.get("extraction_status"),
                     "confidence": metadata.get("extraction_confidence"),
                     "error": metadata.get("extraction_error"),

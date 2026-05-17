@@ -283,6 +283,7 @@ class Media(Base):
     file_path = Column(String(512), nullable=False)
     file_url = Column(Text, nullable=False, default="")
     file_size = Column(Integer, nullable=True)
+    content_hash = Column(String(64), nullable=True, index=True)
     content_type = Column(String(50), nullable=False, default="application/octet-stream")
     file_type = Column(Enum('image', 'pdf', 'excel', 'word', 'text', 'other', name='filetype'), nullable=True)
     status = Column(Enum('uploaded', 'processed', 'error', name='filestatus'), nullable=True)

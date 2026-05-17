@@ -7,6 +7,7 @@ and the LangGraph workflow, handling request parsing and response formatting.
 
 import logging
 import os
+import hashlib
 import tempfile
 import shutil
 from typing import Dict, Any, List, Optional, Union
@@ -14,10 +15,12 @@ from pathlib import Path
 from uuid import UUID
 import mimetypes
 
+import httpx
 from sqlalchemy.orm import Session
 
 from langchain_app.text_processing_workflow import process_text_message as process_text
 from langchain_app.file_processing_workflow import process_file_message as process_file
+from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
 
 logger = logging.getLogger(__name__)
@@ -29,7 +32,7 @@ async def process_text_message(
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     user_id: Optional[Union[str, UUID]] = None,
     conversation_id: Optional[str] = None,
-    db_session: Optional[Session] = None
+    db_session: Optional[Session] = None,
 ) -> Dict[str, Any]:
     """
     Process a text message through the text processing workflow.
@@ -116,7 +119,8 @@ async def process_file_message(
     conversation_history: Optional[List[Dict[str, Any]]] = None,
     user_id: Optional[Union[str, UUID]] = None,
     conversation_id: Optional[str] = None,
-    db_session: Optional[Session] = None
+    db_session: Optional[Session] = None,
+    file_metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Process a file message through the file processing workflow.
@@ -145,7 +149,8 @@ async def process_file_message(
             file_type=mime_type,
             file_name=file_name,
             user_id=user_id,
-            conversation_history=conversation_history or []
+            conversation_history=conversation_history or [],
+            file_metadata=file_metadata,
         )
         
         # Log the result
@@ -222,61 +227,90 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             )
             
         elif message_data.get("NumMedia", "0") != "0":
-            # This is a media message
-            media_url = message_data.get("MediaUrl0", "")
-            media_content_type = message_data.get("MediaContentType0", "")
-            
-            if media_url is None:
-                logger.error("Media URL not found in message")
-                return {
-                    "status": "error",
-                    "message": STORAGE_FALLBACKS["download_failure"]
-                }
-            
-            # Download the media file to a temporary location
-            import httpx
-            
+            # This is a media message. Twilio indexes media fields as
+            # MediaUrl0, MediaContentType0, MediaUrl1, ... up to NumMedia.
             temp_dir = Path(tempfile.mkdtemp())
-            file_name = os.path.basename(media_url.split("?", 1)[0]) or "receipt"
-            if "." not in file_name:
-                guessed_ext = mimetypes.guess_extension(media_content_type.split(";", 1)[0])
-                if guessed_ext:
-                    file_name = f"{file_name}{guessed_ext}"
-            file_path = temp_dir / file_name
-            
-            async with httpx.AsyncClient() as client:
-                auth = _twilio_media_auth(media_url)
-                response = await client.get(media_url, auth=auth, follow_redirects=True)
-                if response.status_code != 200:
-                    logger.error(f"Failed to download media: {response.status_code}")
-                    return {
-                        "status": "error",
-                        "message": STORAGE_FALLBACKS["download_failure"]
-                    }
-                
-                with open(file_path, "wb") as f:
-                    f.write(response.content)
-            
-            # Get conversation history if available
-            conversation_history = await load_conversation_history(user_id)
-            
-            # Process the file message
-            result = await process_file_message(
-                str(file_path),
-                file_name,
-                media_content_type,
-                sender,
-                conversation_history,
-                user_id
-            )
-            
-            # Clean up the temporary file
             try:
-                shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception as e:
-                logger.warning(f"Failed to clean up temporary file: {str(e)}")
-            
-            return result
+                conversation_history = await load_conversation_history(user_id)
+                results = []
+                seen_checksums: set[str] = set()
+                media_count = _parse_num_media(message_data.get("NumMedia"))
+
+                async with httpx.AsyncClient() as client:
+                    for index in range(media_count):
+                        media_url = message_data.get(f"MediaUrl{index}", "")
+                        media_content_type = message_data.get(f"MediaContentType{index}", "")
+                        if not media_url:
+                            logger.error("Media URL not found for index %s", index)
+                            results.append({
+                                "status": "error",
+                                "message": STORAGE_FALLBACKS["download_failure"],
+                                "metadata": {"media_index": index},
+                            })
+                            continue
+
+                        file_name = _twilio_media_filename(media_url, media_content_type, index)
+                        file_path = temp_dir / f"{index}_{file_name}"
+                        auth = _twilio_media_auth(media_url)
+                        response = await client.get(media_url, auth=auth, follow_redirects=True)
+                        if response.status_code != 200:
+                            logger.error("Failed to download media %s: %s", index, response.status_code)
+                            results.append({
+                                "status": "error",
+                                "message": STORAGE_FALLBACKS["download_failure"],
+                                "metadata": {"media_index": index, "media_url": media_url},
+                            })
+                            continue
+
+                        file_bytes = response.content
+                        checksum = hashlib.sha256(file_bytes).hexdigest()
+                        if checksum in seen_checksums:
+                            logger.info("Skipping duplicate media in same WhatsApp message: index=%s", index)
+                            results.append({
+                                "status": "success",
+                                "message": f"I skipped duplicate attachment {index + 1}; it matched another file in this message.",
+                                "metadata": {
+                                    "media_index": index,
+                                    "duplicate": True,
+                                    "duplicate_scope": "message_batch",
+                                    "checksum_sha256": checksum,
+                                },
+                            })
+                            continue
+                        seen_checksums.add(checksum)
+
+                        with open(file_path, "wb") as f:
+                            f.write(file_bytes)
+
+                        result = await process_file_message(
+                            str(file_path),
+                            file_name,
+                            media_content_type,
+                            sender,
+                            conversation_history,
+                            user_id,
+                            file_metadata={
+                                "source": "twilio_whatsapp",
+                                "twilio_message_sid": (
+                                    message_data.get("MessageSid")
+                                    or message_data.get("SmsMessageSid")
+                                ),
+                                "twilio_media_sid": message_data.get(f"MediaSid{index}"),
+                                "twilio_media_index": index,
+                                "twilio_media_url": media_url,
+                                "checksum_sha256": checksum,
+                            },
+                        )
+                        result.setdefault("metadata", {})
+                        result["metadata"]["media_index"] = index
+                        results.append(result)
+
+                return _combine_media_results(results)
+            finally:
+                try:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temporary file: {str(e)}")
         
         else:
             logger.error("Unknown message type")
@@ -303,6 +337,76 @@ def _twilio_media_auth(media_url: str):
     if not account_sid or not auth_token:
         return None
     return (account_sid, auth_token)
+
+
+def _parse_num_media(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _twilio_media_filename(media_url: str, media_content_type: str, index: int) -> str:
+    file_name = os.path.basename((media_url or "").split("?", 1)[0]) or f"receipt_{index + 1}"
+    if "." not in file_name:
+        guessed_ext = mimetypes.guess_extension((media_content_type or "").split(";", 1)[0])
+        if guessed_ext:
+            file_name = f"{file_name}{guessed_ext}"
+    return file_name
+
+
+def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not results:
+        return {"status": "error", "message": STORAGE_FALLBACKS["download_failure"]}
+
+    successes = [result for result in results if result.get("status") != "error"]
+    errors = [result for result in results if result.get("status") == "error"]
+    duplicates = [
+        result for result in successes
+        if result.get("metadata", {}).get("duplicate")
+    ]
+    stored = [
+        result for result in successes
+        if result.get("metadata", {}).get("stored_in_database")
+    ]
+
+    if len(results) == 1:
+        return results[0]
+
+    summary_parts = [
+        f"Processed {len(results)} attachments.",
+        f"{len(stored)} saved",
+        f"{len(duplicates)} duplicate{'s' if len(duplicates) != 1 else ''} skipped",
+        f"{len(errors)} failed",
+    ]
+    detail_lines = []
+    for result in results:
+        metadata = result.get("metadata", {})
+        index = metadata.get("media_index")
+        label = f"Attachment {index + 1}" if isinstance(index, int) else "Attachment"
+        message = result.get("message") or result.get("content") or ""
+        if metadata.get("duplicate"):
+            state = "duplicate"
+        elif result.get("status") == "error":
+            state = "failed"
+        elif metadata.get("stored_in_database"):
+            state = "saved"
+        else:
+            state = "processed"
+        detail_lines.append(f"{label}: {state}. {message}".strip())
+
+    return {
+        "status": "success" if successes else "error",
+        "message": " ".join(summary_parts) + "\n" + "\n".join(detail_lines),
+        "metadata": {
+            "intent": IntentType.FILE_PROCESSING.value,
+            "media_count": len(results),
+            "saved_count": len(stored),
+            "duplicate_count": len(duplicates),
+            "failed_count": len(errors),
+            "results": results,
+        },
+    }
 
 
 def extract_user_id_from_sender(sender: str) -> Optional[str]:
