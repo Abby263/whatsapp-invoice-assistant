@@ -125,6 +125,12 @@ async def test_format_invoice_creation_response(response_formatter_agent):
 @pytest.mark.asyncio
 async def test_format_with_conversation_context(response_formatter_agent):
     """Test formatting a response with conversation context."""
+    async def fake_format_response(content, format_type="default"):
+        assert format_type == "general"
+        assert "invoice information" in str(content)
+        return "Here is the invoice information from your current conversation."
+
+    response_formatter_agent.llm_factory.format_response = fake_format_response
     
     # Create input with context
     agent_input = AgentInput(

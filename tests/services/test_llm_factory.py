@@ -125,6 +125,47 @@ def test_generate_completion_openai(llm_factory):
             max_tokens=2000
         )
 
+
+def test_openai_chat_params_use_max_completion_tokens_for_gpt5(llm_factory):
+    """GPT-5 chat models require max_completion_tokens instead of max_tokens."""
+
+    params = llm_factory._build_openai_chat_params(
+        model_name=Models.GPT_5_4_MINI,
+        messages=[{"role": "user", "content": "Test prompt"}],
+        temperature=TemperatureSettings.DEFAULT,
+        max_tokens=500,
+    )
+
+    assert params["max_completion_tokens"] == 500
+    assert "max_tokens" not in params
+
+
+def test_openai_chat_completion_retries_with_max_completion_tokens(llm_factory):
+    """Retry with max_completion_tokens when OpenAI rejects max_tokens."""
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_client.chat.completions.create.side_effect = [
+        Exception("Unsupported parameter: 'max_tokens'. Use 'max_completion_tokens' instead."),
+        mock_response,
+    ]
+
+    result = llm_factory._create_openai_chat_completion(
+        mock_client,
+        model_name="custom-chat-model",
+        messages=[{"role": "user", "content": "Test prompt"}],
+        temperature=TemperatureSettings.DEFAULT,
+        max_tokens=500,
+    )
+
+    assert result == mock_response
+    first_call = mock_client.chat.completions.create.call_args_list[0].kwargs
+    second_call = mock_client.chat.completions.create.call_args_list[1].kwargs
+    assert first_call["max_tokens"] == 500
+    assert "max_completion_tokens" not in first_call
+    assert second_call["max_completion_tokens"] == 500
+    assert "max_tokens" not in second_call
+
 def test_get_completion_with_template(llm_factory):
     """Test getting a completion with a template."""
     # Mock load_prompt_template and generate_completion
@@ -157,4 +198,4 @@ def test_track_usage(llm_factory):
     assert usage_info["prompt_tokens"] > 0
     assert usage_info["completion_tokens"] > 0
     assert usage_info["total_tokens"] == usage_info["prompt_tokens"] + usage_info["completion_tokens"]
-    assert usage_info["estimated_cost_usd"] >= 0 
+    assert usage_info["estimated_cost_usd"] >= 0
