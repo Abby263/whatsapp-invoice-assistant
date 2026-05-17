@@ -165,6 +165,39 @@ function setActiveWhatsappUser(user) {
     }
 }
 
+function preserveActiveWhatsappSelection(reason = '') {
+    if (!whatsappNumber) {
+        return false;
+    }
+
+    authState.needsLink = false;
+    setWhatsappLinkState('linked');
+    setElementText(userIdDisplay, userId || '0');
+    setElementText(userWhatsappDisplay, whatsappNumber);
+
+    if (whatsappNumberSelect) {
+        whatsappNumberSelect.disabled = false;
+        const existingOption = Array.from(whatsappNumberSelect.options).find(
+            option => option.value === whatsappNumber
+        );
+        if (!existingOption) {
+            const option = document.createElement('option');
+            option.value = whatsappNumber;
+            option.textContent = `Linked user (${whatsappNumber})`;
+            option.dataset.userId = userId || '0';
+            whatsappNumberSelect.innerHTML = '';
+            whatsappNumberSelect.appendChild(option);
+        }
+        whatsappNumberSelect.value = whatsappNumber;
+    }
+
+    updateWorkspaceAuthAvailability();
+    if (reason) {
+        console.warn(`Preserved linked WhatsApp selection after stale response: ${reason}`);
+    }
+    return true;
+}
+
 function setDashboardStatus(element, value, active = true) {
     if (!element) {
         return;
@@ -685,6 +718,9 @@ function loadUsers() {
                 const users = data.users.filter(user => normalizeUiWhatsappNumber(user.whatsapp_number));
 
                 if (data.needs_link || users.length === 0) {
+                    if (preserveActiveWhatsappSelection('users response had no linked users')) {
+                        return;
+                    }
                     setWhatsappUnlinked(data.needs_link ? 'Link WhatsApp' : 'No user selected');
                     updateWorkspaceAuthAvailability();
                     return;
@@ -764,6 +800,10 @@ function initializeForUser(whatsappNumber) {
         .then(data => {
             if (data.status === 'success') {
                 if (data.needs_link) {
+                    if (preserveActiveWhatsappSelection('initialize-for-user response required linking')) {
+                        hideLoading();
+                        return;
+                    }
                     setWhatsappUnlinked('Link WhatsApp');
                     addSystemMessage('Link your WhatsApp number before loading receipts.');
                     hideLoading();
@@ -836,6 +876,9 @@ function initializeApp() {
                 console.log('Test environment initialized');
 
                 if (data.needs_link) {
+                    if (preserveActiveWhatsappSelection('init response required linking')) {
+                        return;
+                    }
                     authState.needsLink = true;
                     setWhatsappUnlinked('Link WhatsApp');
                     updateWorkspaceAuthAvailability();

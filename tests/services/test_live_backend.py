@@ -27,3 +27,8 @@ def test_backend_configuration_accepts_runtime_database_url(monkeypatch):
 
     assert status["enabled"] is True
     assert status["reason"] == "configured"
+
+
+def test_normalize_whatsapp_number_can_require_explicit_value():
+    assert live_backend.normalize_whatsapp_number(None, default="") == ""
+    assert live_backend.normalize_whatsapp_number("whatsapp:+15551234567", default="") == "+15551234567"

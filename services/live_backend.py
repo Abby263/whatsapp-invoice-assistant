@@ -137,7 +137,7 @@ def link_clerk_to_whatsapp(auth_context: Any, payload: Dict[str, Any]) -> Dict[s
     from database.connection import get_db_session
     from database.user_utils import link_clerk_user_to_whatsapp
 
-    whatsapp_number = normalize_whatsapp_number(payload.get("whatsapp_number"))
+    whatsapp_number = normalize_whatsapp_number(payload.get("whatsapp_number"), default="")
     if not whatsapp_number:
         raise ValueError("WhatsApp number is required")
 
@@ -605,8 +605,8 @@ def latest_file_storage(auth_context: Any = None) -> Dict[str, Any]:
     return {"status": "success", "file_storage": storage_info, "s3_storage": storage_info}
 
 
-def normalize_whatsapp_number(value: Optional[str]) -> str:
-    value = (value or DEFAULT_WHATSAPP_NUMBER).strip()
+def normalize_whatsapp_number(value: Optional[str], default: Optional[str] = DEFAULT_WHATSAPP_NUMBER) -> str:
+    value = (value or default or "").strip()
     if value.startswith("whatsapp:"):
         value = value.replace("whatsapp:", "", 1)
     return value
