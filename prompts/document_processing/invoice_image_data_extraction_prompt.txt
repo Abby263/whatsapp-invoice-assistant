@@ -7,8 +7,10 @@ IMPORTANT GUIDELINES:
 4. Use null for missing fields, not empty strings or placeholder text.
 5. Ensure all numerical values are properly formatted (numbers, not strings).
 6. Return ONLY the JSON data with no explanation or analysis.
-7. For handwritten ledger/account pages, extract each visible row as an item. Preserve mixed Hindi/English text in descriptions.
+7. For handwritten ledger/account pages, extract each visible row with a readable amount as an item. Preserve mixed Hindi/English text in descriptions.
 8. If no single vendor exists on a ledger page, set vendor.name to "Handwritten ledger".
+9. Treat the upload as one file only. Never mix totals or rows from other pages or previous messages.
+10. Do not copy the printed diary page date/month onto every ledger row. Use each handwritten row date when visible.
 
 {{DOCUMENT_EXTRACTION_SCHEMA}}
 
@@ -20,10 +22,13 @@ Analyze the image carefully and extract all visible information. Pay special att
 - Invoice numbers and reference numbers
 - Payment instructions and terms
 - For handwritten ledger/account pages, row dates are often in DD.MM.YY or D.M.YY format. Infer the year from the page heading when possible.
+- If a handwritten row date is written as DD.MM.YY, normalize it as YYYY-MM-DD using the written month. Example: 15.5.26 means 2026-05-15, not the printed month on the page.
 - For handwritten ledger/account pages, use quantity 1 and set unit_price equal to total_price unless a quantity is explicitly written.
 - For ledger rows, keep the original row text in description and store the row date in transaction_date/item_code when visible.
+- Fill extraction_quality.visible_financial_rows with your best count of visible financial rows and extraction_quality.extracted_financial_rows with the number of item rows returned.
+- Set extraction_quality.needs_review true when handwriting, crop, blur, or amount ambiguity may make the extraction incomplete.
 
-If the image quality is poor or text is unclear, make your best estimate but adjust the confidence_score accordingly.
+If the image quality is poor or text is unclear, extract only rows you can read, lower confidence_score, and add a concise extraction_quality warning.
 
 If specific sections are completely missing (e.g., no line items visible), use null for that entire section rather than empty objects/arrays.
 

@@ -882,7 +882,11 @@ class LLMFactory:
                             "content": [
                                 {
                                     "type": "text",
-                                    "text": "Extract all invoice information from this image."
+                                    "text": (
+                                        "Extract this single uploaded financial document using the required JSON "
+                                        "schema. For handwritten ledger rows, use each written row date and fill "
+                                        "extraction_quality so incomplete parsing is visible."
+                                    )
                                 },
                                 {
                                     "type": "image_url",

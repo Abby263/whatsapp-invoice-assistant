@@ -2,6 +2,8 @@
 
 from services.conversation_policy import (
     compact_whatsapp_message,
+    history_deletion_response,
+    is_history_deletion_request,
     is_off_topic_message,
     media_processing_ack,
     off_topic_response,
@@ -30,3 +32,9 @@ def test_compact_whatsapp_message_truncates_readably():
 def test_media_processing_ack_mentions_attachment_count():
     assert "WhatsApp may deliver them one at a time" in media_processing_ack(1)
     assert media_processing_ack(2) == "Received 2 files. I am processing them now and will send a short summary when done."
+
+
+def test_history_deletion_request_routes_to_web_app():
+    assert is_history_deletion_request("Delete all my receipts") is True
+    assert is_history_deletion_request("What did I spend on receipts?") is False
+    assert "signed-in web app" in history_deletion_response()

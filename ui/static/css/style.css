@@ -626,7 +626,8 @@ input, select, textarea {
     gap: 10px;
 }
 
-.generated-invoice-row {
+.generated-invoice-row,
+.history-row {
     display: grid;
     grid-template-columns: minmax(160px, 1fr) minmax(130px, 0.7fr) minmax(110px, auto);
     gap: 14px;
@@ -637,25 +638,35 @@ input, select, textarea {
     background: var(--surface-muted);
 }
 
-.generated-invoice-main {
+.history-list {
+    display: grid;
+    gap: 10px;
+}
+
+.generated-invoice-main,
+.history-main {
     min-width: 0;
 }
 
-.generated-invoice-main strong {
+.generated-invoice-main strong,
+.history-main strong {
     display: block;
     color: var(--ink);
     font-size: 14px;
 }
 
 .generated-invoice-main span,
-.generated-invoice-meta span {
+.generated-invoice-meta span,
+.history-main span,
+.history-meta span {
     display: block;
     margin-top: 3px;
     color: var(--muted);
     font-size: 12.5px;
 }
 
-.generated-invoice-actions {
+.generated-invoice-actions,
+.history-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -726,9 +737,31 @@ input, select, textarea {
     border-color: var(--line);
 }
 
+.btn-secondary {
+    background: var(--surface);
+    color: var(--ink);
+    border-color: var(--line);
+}
+
 .btn-ghost:hover {
     border-color: var(--brand);
     color: var(--brand);
+}
+
+.btn-secondary:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+}
+
+.btn-danger {
+    background: rgba(220, 38, 38, 0.12);
+    color: #dc2626;
+    border-color: rgba(220, 38, 38, 0.24);
+}
+
+.btn-danger:hover {
+    background: rgba(220, 38, 38, 0.18);
+    border-color: rgba(220, 38, 38, 0.36);
 }
 
 .btn-small {
@@ -751,6 +784,15 @@ input, select, textarea {
 .icon-btn:hover {
     border-color: var(--brand);
     color: var(--brand);
+}
+
+.icon-btn.danger {
+    color: #dc2626;
+}
+
+.icon-btn.danger:hover {
+    border-color: rgba(220, 38, 38, 0.42);
+    background: rgba(220, 38, 38, 0.1);
 }
 
 /* ===================== Hero card (overview) ===================== */
@@ -1987,12 +2029,14 @@ input, select, textarea {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .generated-invoice-row {
+    .generated-invoice-row,
+    .history-row {
         grid-template-columns: 1fr;
         align-items: stretch;
     }
 
-    .generated-invoice-actions {
+    .generated-invoice-actions,
+    .history-actions {
         justify-content: flex-start;
     }
 

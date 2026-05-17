@@ -908,6 +908,7 @@ def _document_response_fields(data: Dict[str, Any]) -> Dict[str, Any]:
     transaction = data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
     financial = data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
     additional_info = data.get("additional_info", {}) if isinstance(data.get("additional_info"), dict) else {}
+    extraction_quality = data.get("extraction_quality", {}) if isinstance(data.get("extraction_quality"), dict) else {}
 
     document_type = str(additional_info.get("document_type") or "").strip()
     if not document_type:
@@ -951,6 +952,7 @@ def _document_response_fields(data: Dict[str, Any]) -> Dict[str, Any]:
         "currency": str(currency or "").upper() or "USD",
         "items": items,
         "is_ledger": is_ledger_document(data),
+        "extraction_quality": extraction_quality,
     }
 
 
@@ -1001,10 +1003,12 @@ async def format_extraction_response(
     status = "saved" if metadata.get("invoice_id") or file_storage else "processed"
     items = [item for item in fields["items"] if isinstance(item, dict)]
     item_label = "entries" if fields["is_ledger"] else "items"
+    extraction_quality = fields.get("extraction_quality") or {}
+    needs_review = bool(extraction_quality.get("needs_review"))
 
     lines = [
         "Document extraction result",
-        f"status: {status}",
+        f"status: {status}{' - needs review' if needs_review else ''}",
         "scope: this file only",
         f"file: {file_name}",
         f"document_type: {fields['document_type']}",
@@ -1013,6 +1017,16 @@ async def format_extraction_response(
         f"financial.total: {_format_money(fields['total_amount'], fields['currency'])}",
         f"items.count: {len(items)}",
     ]
+    if extraction_quality:
+        visible_rows = extraction_quality.get("visible_financial_rows")
+        extracted_rows = extraction_quality.get("extracted_financial_rows")
+        visible_count = _first_number(visible_rows)
+        extracted_count = _first_number(extracted_rows)
+        if visible_count is not None and extracted_count is not None:
+            lines.append(f"quality.rows: {extracted_count:g}/{visible_count:g} extracted")
+        warnings = extraction_quality.get("warnings")
+        if isinstance(warnings, list) and warnings:
+            lines.append(f"quality.warning: {str(warnings[0])[:140]}")
     if fields["invoice_number"]:
         lines.append(f"transaction.invoice_number: {fields['invoice_number']}")
     if fields["receipt_no"]:

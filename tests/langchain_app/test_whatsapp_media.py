@@ -365,3 +365,49 @@ def test_supabase_user_path_sanitizes_segments():
     )
 
     assert handler.generate_user_path("../user/1", "invoice files") == "users/user-1/invoice-files"
+
+
+def test_supabase_delete_files_batches_and_deduplicates(monkeypatch):
+    class _FakeSyncResponse:
+        status_code = 200
+        text = ""
+
+    class _FakeSyncClient:
+        requests = []
+
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def delete(self, url, **kwargs):
+            self.__class__.requests.append((url, kwargs))
+            return _FakeSyncResponse()
+
+    monkeypatch.setattr("storage.supabase_storage_handler.httpx.Client", _FakeSyncClient)
+
+    handler = SupabaseStorageHandler(
+        supabase_url="https://example.supabase.co",
+        api_key="service-role-key",
+        bucket_name="receipts",
+    )
+
+    result = handler.delete_files([
+        "/users/1/invoices/a",
+        "users/1/invoices/a",
+        "https://example.com/signed",
+        "users/1/invoices/b",
+    ])
+
+    assert result == {
+        "deleted": ["users/1/invoices/a", "users/1/invoices/b"],
+        "failed": [],
+    }
+    assert _FakeSyncClient.requests[0][0] == "https://example.supabase.co/storage/v1/object/receipts"
+    assert _FakeSyncClient.requests[0][1]["json"] == {
+        "prefixes": ["users/1/invoices/a", "users/1/invoices/b"],
+    }
