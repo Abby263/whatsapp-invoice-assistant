@@ -3,34 +3,21 @@
 from __future__ import annotations
 
 import logging
+import json
 import mimetypes
 import os
-import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
 from langchain_app.state import IntentType
-from services.conversation_policy import compact_whatsapp_message, is_history_deletion_request
+from services.conversation_policy import compact_whatsapp_message
 from services.history_service import delete_user_history
+from services.llm_factory import LLMFactory
 from storage import StorageConfigurationError, SupabaseStorageHandler
 
 logger = logging.getLogger(__name__)
-
-APPROVAL_RE = re.compile(
-    r"^\s*(?:approve|save|confirm)\s+(?:upload\s+|receipt\s+|media\s+|file\s+)?(?P<id>\d+)\s*$",
-    re.IGNORECASE,
-)
-REJECTION_RE = re.compile(
-    r"^\s*(?:reject|discard|ignore)\s+(?:upload\s+|receipt\s+|media\s+|file\s+)?(?P<id>\d+)\s*$",
-    re.IGNORECASE,
-)
-CONFIRM_DELETE_RE = re.compile(
-    r"^\s*confirm\s+delete\s+(?P<target>all|receipt|invoice|document|upload|file|media|generated(?:\s+invoice)?)"
-    r"(?:\s+#?(?P<id>\d+))?\s*$",
-    re.IGNORECASE,
-)
 
 
 async def handle_human_confirmation_message(
@@ -46,24 +33,57 @@ async def handle_human_confirmation_message(
     if user_id is None:
         return None
 
-    approved_media_id = _extract_id(APPROVAL_RE, text)
-    if approved_media_id is not None:
-        return await approve_pending_extraction(user_id, approved_media_id, conversation_history)
+    hitl_intent = await classify_hitl_intent(text, conversation_history or [])
+    action = hitl_intent.get("action")
+    target_id = _coerce_optional_int(hitl_intent.get("target_id"))
 
-    rejected_media_id = _extract_id(REJECTION_RE, text)
-    if rejected_media_id is not None:
-        return reject_pending_upload(user_id, rejected_media_id)
+    if action == "approve_upload" and target_id is not None:
+        return await approve_pending_extraction(user_id, target_id, conversation_history)
 
-    confirmed_delete_payload = _parse_confirm_delete_command(text)
-    if confirmed_delete_payload is not None:
-        if confirmed_delete_payload.get("scope") == "invalid_confirmation":
-            return build_delete_confirmation_prompt(text)
-        return execute_confirmed_delete(user_id, confirmed_delete_payload)
+    if action == "reject_upload" and target_id is not None:
+        return reject_pending_upload(user_id, target_id)
 
-    if is_history_deletion_request(text):
-        return build_delete_confirmation_prompt(text)
+    if action == "confirm_delete":
+        delete_payload = _delete_payload_from_intent(hitl_intent)
+        if delete_payload:
+            return execute_confirmed_delete(user_id, delete_payload)
+        return build_delete_confirmation_prompt(hitl_intent)
+
+    if action in {"request_delete", "select_delete_scope"}:
+        return build_delete_confirmation_prompt(hitl_intent)
 
     return None
+
+
+async def classify_hitl_intent(
+    text_content: str,
+    conversation_history: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Use the LLM to classify HITL commands instead of local text rules."""
+
+    try:
+        llm_factory = LLMFactory()
+        prompt_template = llm_factory.load_prompt_template("hitl_intent")
+        prompt = (
+            prompt_template
+            .replace("{message}", json.dumps(text_content))
+            .replace("{conversation_history}", json.dumps(conversation_history[-8:]))
+        )
+        raw_response = await llm_factory.agenerate_completion(
+            prompt=prompt,
+            temperature=0,
+            max_tokens=300,
+        )
+        return _parse_hitl_intent_json(raw_response)
+    except Exception as exc:
+        logger.warning("Could not classify HITL intent with LLM: %s", exc)
+        return {
+            "action": "none",
+            "target_scope": "unknown",
+            "target_id": None,
+            "confidence": 0.0,
+            "reason": str(exc),
+        }
 
 
 async def approve_pending_extraction(
@@ -235,10 +255,10 @@ def execute_confirmed_delete(user_id: Union[str, UUID, int], payload: Dict[str, 
     )
 
 
-def build_delete_confirmation_prompt(text_content: str) -> Dict[str, Any]:
+def build_delete_confirmation_prompt(hitl_intent: Dict[str, Any]) -> Dict[str, Any]:
     """Ask the user for an exact WhatsApp confirmation before deleting data."""
 
-    payload, command, label = _parse_delete_request(text_content)
+    payload, command, label = _confirmation_details_from_intent(hitl_intent)
     if payload is None:
         return _response(
             "\n".join(
@@ -343,63 +363,64 @@ def _load_user_media(user_id: Union[str, UUID, int], media_id: int) -> Dict[str,
         }
 
 
-def _parse_confirm_delete_command(text: str) -> Optional[Dict[str, Any]]:
-    match = CONFIRM_DELETE_RE.match(text or "")
-    if not match:
-        return None
-    target = " ".join(match.group("target").lower().split())
-    record_id = match.group("id")
-    if target == "all":
-        return {"scope": "all"}
-    if target in {"receipt", "invoice", "document"} and record_id:
-        return {"scope": "document", "kind": "invoice", "id": record_id}
-    if target in {"upload", "file", "media"} and record_id:
-        return {"scope": "document", "kind": "media", "id": record_id}
-    if target in {"generated", "generated invoice"} and record_id:
-        return {"scope": "generated_invoice", "id": record_id}
-    return {"scope": "invalid_confirmation"}
+def _delete_payload_from_intent(hitl_intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    payload, _, _ = _confirmation_details_from_intent(hitl_intent)
+    return payload
 
 
-def _parse_delete_request(text: str) -> tuple[Optional[Dict[str, Any]], Optional[str], str]:
-    normalized = " ".join((text or "").lower().split())
-    record_id = _first_int(normalized)
+def _confirmation_details_from_intent(
+    hitl_intent: Dict[str, Any],
+) -> tuple[Optional[Dict[str, Any]], Optional[str], str]:
+    scope = hitl_intent.get("target_scope")
+    target_id = _coerce_optional_int(hitl_intent.get("target_id"))
 
-    if "generated" in normalized and record_id:
+    if scope == "all":
+        return {"scope": "all"}, "CONFIRM DELETE ALL", "all saved records for this linked WhatsApp user"
+    if scope == "receipt" and target_id is not None:
         return (
-            {"scope": "generated_invoice", "id": record_id},
-            f"CONFIRM DELETE GENERATED {record_id}",
-            f"generated invoice #{record_id}",
+            {"scope": "document", "kind": "invoice", "id": target_id},
+            f"CONFIRM DELETE RECEIPT {target_id}",
+            f"receipt #{target_id}",
         )
-    if any(term in normalized for term in ("upload", "file", "media")) and record_id:
+    if scope == "upload" and target_id is not None:
         return (
-            {"scope": "document", "kind": "media", "id": record_id},
-            f"CONFIRM DELETE UPLOAD {record_id}",
-            f"upload #{record_id}",
+            {"scope": "document", "kind": "media", "id": target_id},
+            f"CONFIRM DELETE UPLOAD {target_id}",
+            f"upload #{target_id}",
         )
-    if any(term in normalized for term in ("receipt", "invoice", "document")) and record_id:
+    if scope == "generated_invoice" and target_id is not None:
         return (
-            {"scope": "document", "kind": "invoice", "id": record_id},
-            f"CONFIRM DELETE RECEIPT {record_id}",
-            f"receipt #{record_id}",
+            {"scope": "generated_invoice", "id": target_id},
+            f"CONFIRM DELETE GENERATED {target_id}",
+            f"generated invoice #{target_id}",
         )
-    if any(term in normalized for term in ("all", "history", "everything", "data")):
-        return {"scope": "all"}, "CONFIRM DELETE ALL", "all saved data for this linked WhatsApp user"
     return None, None, ""
 
 
-def _extract_id(pattern: re.Pattern[str], text: str) -> Optional[int]:
-    match = pattern.match(text or "")
-    if not match:
+def _parse_hitl_intent_json(raw_response: str) -> Dict[str, Any]:
+    start = raw_response.find("{")
+    end = raw_response.rfind("}")
+    if start == -1 or end == -1 or end < start:
+        raise ValueError("HITL intent response did not contain a JSON object")
+    parsed = json.loads(raw_response[start:end + 1])
+    if not isinstance(parsed, dict):
+        raise ValueError("HITL intent response was not a JSON object")
+    return {
+        "action": parsed.get("action") or "none",
+        "target_scope": parsed.get("target_scope") or "unknown",
+        "target_id": parsed.get("target_id"),
+        "confidence": parsed.get("confidence", 0.0),
+        "reason": parsed.get("reason", ""),
+    }
+
+
+def _coerce_optional_int(value: Any) -> Optional[int]:
+    if value is None or value == "":
         return None
     try:
-        return int(match.group("id"))
+        return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def _first_int(text: str) -> Optional[str]:
-    match = re.search(r"\b(\d+)\b", text or "")
-    return match.group(1) if match else None
 
 
 def _response(
