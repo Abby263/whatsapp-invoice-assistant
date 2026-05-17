@@ -16,6 +16,7 @@ from decimal import Decimal
 import time
 import re
 import os
+import tempfile
 from pathlib import Path
 
 from agents.text_to_sql_conversion_agent import TextToSQLConversionAgent
@@ -335,12 +336,12 @@ async def convert_to_sql(
 
         logger.info(f"Generated SQL query: {content}")
 
-        # Log the full query to help with debugging
-        with open("last_sql_query.log", "w") as f:
-            f.write(f"Query: {text_content}\n")
-            f.write(f"Use semantic search: {use_semantic_search}\n")
-            f.write(f"Generated SQL:\n{content}\n")
-            f.write(f"Confidence: {result.confidence}\n")
+        _write_last_sql_query_log(
+            query=text_content,
+            use_semantic_search=use_semantic_search,
+            sql_query=content,
+            confidence=result.confidence,
+        )
 
         # Check if SQL query is empty
         if not content or content.strip() == "":
@@ -379,6 +380,42 @@ async def convert_to_sql(
     except Exception as e:
         logger.exception(f"Error during SQL conversion: {str(e)}")
         return {"error": f"Error during query conversion: {str(e)}"}
+
+
+def _last_sql_query_log_path() -> Path:
+    """Return a writable path for optional SQL debug logs."""
+
+    configured_path = os.environ.get("LAST_SQL_QUERY_LOG_PATH")
+    if configured_path:
+        return Path(configured_path)
+
+    if os.environ.get("VERCEL") == "1":
+        return Path(tempfile.gettempdir()) / "whatsapp-invoice-assistant" / "last_sql_query.log"
+
+    return Path("last_sql_query.log")
+
+
+def _write_last_sql_query_log(
+    query: str,
+    use_semantic_search: bool,
+    sql_query: str,
+    confidence: float,
+) -> None:
+    """Write SQL debug details without affecting user-facing query execution."""
+
+    if os.environ.get("LAST_SQL_QUERY_LOG_ENABLED", "true").lower() in {"0", "false", "no"}:
+        return
+
+    try:
+        log_path = _last_sql_query_log_path()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("w", encoding="utf-8") as handle:
+            handle.write(f"Query: {query}\n")
+            handle.write(f"Use semantic search: {use_semantic_search}\n")
+            handle.write(f"Generated SQL:\n{sql_query}\n")
+            handle.write(f"Confidence: {confidence}\n")
+    except OSError as exc:
+        logger.warning("Could not write SQL debug log; continuing query execution: %s", exc)
 
 
 def post_process_sql_for_vector(sql: str) -> str:

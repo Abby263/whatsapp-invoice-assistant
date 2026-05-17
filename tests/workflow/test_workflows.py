@@ -10,7 +10,7 @@ import os
 import asyncio
 import io
 from typing import Dict, Any, List, Optional
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import tempfile
 import logging
 from pathlib import Path
@@ -217,6 +217,28 @@ async def test_invoice_query_workflow():
         assert result_no_session["metadata"]["intent"] == IntentType.INVOICE_QUERY.value
         assert result_no_session["metadata"]["query"] == "SELECT * FROM invoices WHERE vendor = 'Amazon'"
         assert not result_no_session["metadata"]["success"]
+
+
+@pytest.mark.asyncio
+async def test_convert_to_sql_ignores_readonly_debug_log():
+    """Debug SQL logging must not break query conversion on Vercel."""
+
+    agent = MagicMock()
+    agent.process = AsyncMock(
+        return_value=MagicMock(
+            content="SELECT * FROM invoices WHERE user_id = :user_id",
+            confidence=0.9,
+            metadata={"explanation": "Expense summary query"},
+        )
+    )
+
+    with patch("langchain_app.invoice_query_workflow.TextToSQLConversionAgent", return_value=agent), \
+         patch("langchain_app.invoice_query_workflow._last_sql_query_log_path", return_value=Path("/readonly/last_sql_query.log")), \
+         patch.object(Path, "open", side_effect=OSError(30, "Read-only file system")):
+        result = await convert_to_sql("Show my expense summary", user_id=1)
+
+    assert "error" not in result
+    assert result["sql_query"] == "SELECT * FROM invoices WHERE user_id = :user_id"
 
 
 @pytest.mark.asyncio
