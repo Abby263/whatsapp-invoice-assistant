@@ -39,6 +39,17 @@ async def test_init_response_formatter(llm_factory):
 @pytest.mark.asyncio
 async def test_format_greeting_response(response_formatter_agent):
     """Test formatting a greeting response."""
+    generated_response = (
+        "Hi, I'm your WhatsApp Invoice Assistant. Send a receipt photo or PDF, "
+        "ask spending questions, or generate an invoice."
+    )
+
+    async def fake_format_response(content, format_type="default"):
+        assert format_type == "greeting"
+        assert "Hello" in str(content)
+        return generated_response
+
+    response_formatter_agent.llm_factory.format_response = fake_format_response
     
     # Create input with greeting content
     agent_input = AgentInput(
@@ -56,7 +67,7 @@ async def test_format_greeting_response(response_formatter_agent):
     assert isinstance(result.content, str)
     assert "WhatsApp Invoice Assistant" in result.content
     assert "receipt photo or PDF" in result.content
-    assert "Create an invoice" in result.content
+    assert "generate an invoice" in result.content
     assert result.status == "success"
     assert result.confidence >= 0.8
     

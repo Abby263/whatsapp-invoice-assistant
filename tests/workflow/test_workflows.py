@@ -25,11 +25,15 @@ from langchain_app.file_processing_workflow import (
     validate_file,
 )
 from langchain_app.state import IntentType, FileType
-from constants.fallback_messages import BOT_INTRO_RESPONSE
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+GENERATED_GREETING_RESPONSE = (
+    "Hi, I'm your WhatsApp Invoice Assistant. Send a receipt photo or PDF, "
+    "ask 'What did I spend on coffee?', or ask me to create an invoice."
+)
 
 
 @pytest.fixture
@@ -109,9 +113,15 @@ async def test_intent_classification(sample_text_input, sample_query_input,
 async def test_text_processing_workflow(sample_greeting_input):
     """Test the text processing workflow for greeting messages."""
     # Patch the dependent functions to avoid actual API calls, including the entire general_response_workflow module
-    with patch("langchain_app.text_processing_workflow.classify_intent") as mock_classify:
+    with patch("langchain_app.text_processing_workflow.classify_intent") as mock_classify, \
+         patch("agents.response_formatter.ResponseFormatterAgent.process") as mock_process:
         # Set up mock returns
         mock_classify.return_value = IntentType.GREETING.value
+        mock_process.return_value = {
+            "content": GENERATED_GREETING_RESPONSE,
+            "confidence": 0.8,
+            "metadata": {},
+        }
         
         # Call the function under test
         result = await process_text_message(sample_greeting_input)
@@ -133,7 +143,7 @@ async def test_general_response_workflow():
     # Patch the ResponseFormatterAgent to return a predetermined response
     with patch("agents.response_formatter.ResponseFormatterAgent.process") as mock_process:
         mock_process.return_value = {
-            "content": BOT_INTRO_RESPONSE,
+            "content": GENERATED_GREETING_RESPONSE,
             "confidence": 0.8
         }
         
@@ -148,7 +158,7 @@ async def test_general_response_workflow():
         # Also test greeting process
         result = await process_greeting("Hello")
         assert "I'm your WhatsApp Invoice Assistant" in result["content"]
-        assert "Create an invoice" in result["content"]
+        assert "create an invoice" in result["content"]
         assert result["metadata"]["intent"] == IntentType.GREETING.value
 
 
