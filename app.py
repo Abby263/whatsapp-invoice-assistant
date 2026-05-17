@@ -808,6 +808,8 @@ def history_delete():
                 return jsonify(result), 403
             if result.get("status") == "not_found":
                 return jsonify(result), 404
+            if result.get("status") == "needs_confirmation":
+                return jsonify(result), 428
             if result.get("status") == "error":
                 return jsonify(result), 409
             return jsonify(result)

@@ -74,6 +74,8 @@ flowchart TB
         ROUTER["Text and media router"]
         VALIDATOR["Document validator"]
         EXTRACTOR["Structured document extraction"]
+        HITL["WhatsApp HITL approval"]
+        STORE["Confirmed database storage"]
         SQL["User-scoped Text-to-SQL"]
         RAG["Vector search"]
         GENERATOR["Invoice generation"]
@@ -106,8 +108,11 @@ flowchart TB
     VALIDATOR --> EXTRACTOR
     EXTRACTOR --> CHAT
     EXTRACTOR --> STORAGE
-    EXTRACTOR --> DB
-    EXTRACTOR --> EMBED
+    EXTRACTOR --> HITL
+    HITL -->|"APPROVE upload_id"| STORE
+    HITL -->|"REJECT upload_id"| STORAGE
+    STORE --> DB
+    STORE --> EMBED
     EMBED --> VECTOR
 
     ROUTER -->|"spend question"| SQL
@@ -121,7 +126,8 @@ flowchart TB
     GENERATOR --> DB
     GENERATOR --> STORAGE
 
-    API -->|"delete history"| HIST
+    API -->|"confirmed delete"| HIST
+    HITL -->|"CONFIRM DELETE"| HIST
     HIST --> DB
     HIST --> STORAGE
 
@@ -129,6 +135,7 @@ flowchart TB
     CHAT --> FORMATTER
     SQL --> FORMATTER
     EXTRACTOR --> FORMATTER
+    HITL --> FORMATTER
     GENERATOR --> FORMATTER
     FORMATTER --> TW
     FORMATTER --> DASH
@@ -144,9 +151,10 @@ Every uploaded file follows the same contract before it reaches analytics:
 4. Valid files are uploaded to Supabase Storage under a user-scoped path and registered in `media`.
 5. The extractor returns the canonical schema from [schemas/llm_outputs/document_extraction.py](schemas/llm_outputs/document_extraction.py).
 6. The normalizer fixes row-level ledger dates, computes ledger totals from extracted rows, and records `extraction_quality` warnings when review is needed.
-7. Normalized invoice rows, item rows, embeddings, and processing metadata are written with the same `user_id`.
-8. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
-9. Deleting history from the signed-in web app removes database rows and stored Supabase objects for that linked user.
+7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands.
+8. Only after `APPROVE <upload_id>` does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
+9. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
+10. Deletes require human confirmation: browser deletes include a confirmation dialog, and WhatsApp deletes require exact `CONFIRM DELETE ...` commands before rows or files are removed.
 
 ## Runtime Components
 
@@ -181,6 +189,8 @@ The application stores user-scoped operational data in Supabase Postgres:
 
 Uploaded receipt files and generated invoice documents are stored in the private Supabase Storage bucket configured by `SUPABASE_STORAGE_BUCKET`, defaulting to `receipts`. The database stores metadata and storage paths; the app generates signed URLs when users need to view a file.
 
+Receipt extraction uses a WhatsApp human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web history view, but invoice rows, line items, embeddings, and analytics are created only after the same linked WhatsApp user replies `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
+
 ## Why Supabase Storage Instead Of S3
 
 The app already uses Supabase Postgres, pgvector, and server-side Supabase credentials. Keeping receipt files in Supabase Storage means private file storage, signed links, metadata, row ownership, and vector-backed analytics live in one platform. This repo no longer contains an active S3 storage path.
@@ -207,6 +217,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 SUPABASE_SECRET_KEY=sb_secret_...
 SUPABASE_STORAGE_BUCKET=receipts
+HITL_CONFIRMATION_REQUIRED=true
 
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...

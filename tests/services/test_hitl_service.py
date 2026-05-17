@@ -1,0 +1,121 @@
+"""Tests for WhatsApp human-in-the-loop approval commands."""
+
+from pathlib import Path
+
+import pytest
+
+from langchain_app import file_processing_workflow
+from services import hitl_service
+
+
+@pytest.mark.asyncio
+async def test_delete_request_requires_whatsapp_confirmation():
+    result = await hitl_service.handle_human_confirmation_message(
+        "delete all my receipt history",
+        "1",
+    )
+
+    assert result is not None
+    assert "Deletion needs WhatsApp confirmation" in result["content"]
+    assert "CONFIRM DELETE ALL" in result["content"]
+    assert result["metadata"]["confirmation_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_confirm_delete_executes_with_confirmation(monkeypatch):
+    captured = {}
+
+    def fake_delete_user_history(user_id, payload):
+        captured["user_id"] = user_id
+        captured["payload"] = payload
+        return {
+            "status": "success",
+            "deleted": {
+                "documents": 1,
+                "media": 1,
+                "generated_invoices": 0,
+                "storage_files": 1,
+            },
+        }
+
+    monkeypatch.setattr(hitl_service, "delete_user_history", fake_delete_user_history)
+
+    result = await hitl_service.handle_human_confirmation_message(
+        "CONFIRM DELETE RECEIPT 12",
+        "7",
+    )
+
+    assert captured == {
+        "user_id": 7,
+        "payload": {
+            "scope": "document",
+            "kind": "invoice",
+            "id": "12",
+            "confirmed": True,
+        },
+    }
+    assert "Deletion confirmed" in result["content"]
+
+
+@pytest.mark.asyncio
+async def test_approve_pending_extraction_downloads_and_reprocesses(monkeypatch):
+    class FakeStorage:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+        def download_file(self, file_key):
+            assert file_key == "users/1/invoices/aa/checksum"
+            return b"receipt-image"
+
+    async def fake_process_invoice_file(
+        file_path,
+        file_type,
+        file_name,
+        user_id,
+        conversation_history,
+        validation_result=None,
+        file_metadata=None,
+        hitl_confirmed=False,
+    ):
+        assert Path(file_path).exists()
+        assert file_type == "image"
+        assert file_name == "receipt.jpg"
+        assert user_id == "1"
+        assert hitl_confirmed is True
+        assert file_metadata["media_record"]["media_id"] == "77"
+        assert file_metadata["file_storage"]["file_key"] == "users/1/invoices/aa/checksum"
+        return {
+            "content": "Document extraction result\nstatus: saved",
+            "metadata": {"stored_in_database": True, "invoice_id": "101"},
+            "confidence": 0.85,
+        }
+
+    monkeypatch.setattr(hitl_service, "SupabaseStorageHandler", FakeStorage)
+    monkeypatch.setattr(
+        hitl_service,
+        "_load_user_media",
+        lambda user_id, media_id: {
+            "status": "success",
+            "media_id": media_id,
+            "invoice_id": None,
+            "filename": "receipt.jpg",
+            "original_filename": "receipt.jpg",
+            "file_path": "users/1/invoices/aa/checksum",
+            "content_type": "image/jpeg",
+            "content_hash": "checksum",
+            "file_storage": {
+                "bucket": "receipts",
+                "file_key": "users/1/invoices/aa/checksum",
+                "content_type": "image/jpeg",
+                "media_id": "77",
+            },
+        },
+    )
+    monkeypatch.setattr(file_processing_workflow, "detect_file_type", lambda *args: "image")
+    monkeypatch.setattr(file_processing_workflow, "process_invoice_file", fake_process_invoice_file)
+
+    result = await hitl_service.handle_human_confirmation_message("APPROVE 77", "1")
+
+    assert result["metadata"]["hitl_status"] == "confirmed"
+    assert result["metadata"]["approved_media_id"] == "77"
+    assert result["metadata"]["invoice_id"] == "101"
