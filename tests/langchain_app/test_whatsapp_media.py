@@ -178,6 +178,50 @@ async def test_process_file_message_short_circuits_previous_duplicate(tmp_path, 
     assert result["metadata"]["invoice_id"] == "7"
 
 
+@pytest.mark.asyncio
+async def test_process_file_message_stores_original_before_validation(tmp_path, monkeypatch):
+    file_path = tmp_path / "receipt.jpg"
+    file_path.write_bytes(b"receipt-bytes")
+    calls = {"uploads": 0, "media": 0}
+
+    def fake_store_user_upload(**kwargs):
+        calls["uploads"] += 1
+        return {
+            "provider": "supabase",
+            "file_key": "users/1/invoices/aa/checksum",
+            "path": "users/1/invoices/aa/checksum",
+            "url": "https://example.com/signed",
+            "content_type": "image/jpeg",
+            "file_size": 13,
+            "checksum_sha256": kwargs["metadata"]["checksum_sha256"],
+            "original_filename": kwargs["file_name"],
+            "user_scope_prefix": "users/1/invoices",
+            "access_scope": "user",
+        }
+
+    def fake_record_media_upload(**kwargs):
+        calls["media"] += 1
+        return {"media_id": "99", "status": kwargs["status"]}
+
+    async def fake_validate_file(*args, **kwargs):
+        return {"is_valid": False, "is_invoice": False, "reason": "not a financial document"}
+
+    monkeypatch.setattr(file_processing_workflow, "store_user_upload", fake_store_user_upload)
+    monkeypatch.setattr(file_processing_workflow, "record_media_upload", fake_record_media_upload)
+    monkeypatch.setattr(file_processing_workflow, "validate_file", fake_validate_file)
+    monkeypatch.setattr(file_processing_workflow, "_find_existing_media_by_checksum", lambda *args, **kwargs: None)
+
+    result = await file_processing_workflow.process_file_message(
+        str(file_path),
+        "image/jpeg",
+        "receipt.jpg",
+        "1",
+    )
+
+    assert calls == {"uploads": 1, "media": 2}
+    assert "valid invoice" in result["content"].lower()
+
+
 def test_supabase_upload_is_idempotent_for_existing_content_addressed_object(monkeypatch):
     class _FakeSyncResponse:
         def __init__(self, status_code=200, text="", payload=None):
@@ -223,4 +267,17 @@ def test_supabase_upload_is_idempotent_for_existing_content_addressed_object(mon
 
     assert result["existing_object"] is True
     assert result["checksum_sha256"] == checksum
+    assert result["file_key"].startswith("users/1/invoices/")
     assert checksum[:16] in result["file_key"]
+    assert result["access_scope"] == "user"
+    assert result["user_scope_prefix"] == "users/1/invoices"
+
+
+def test_supabase_user_path_sanitizes_segments():
+    handler = SupabaseStorageHandler(
+        supabase_url="https://example.supabase.co",
+        api_key="service-role-key",
+        bucket_name="receipts",
+    )
+
+    assert handler.generate_user_path("../user/1", "invoice files") == "users/user-1/invoice-files"

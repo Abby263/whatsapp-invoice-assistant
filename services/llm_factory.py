@@ -39,6 +39,7 @@ from constants.llm_configs import (
 from constants.prompt_mappings import AgentType, get_prompt_for_agent
 from constants.fallback_messages import GENERAL_FALLBACKS, QUERY_FALLBACKS
 from constants.invoice_processing_messages import get_invoice_processing_message
+from schemas.llm_outputs import DOCUMENT_EXTRACTION_PROMPT_CONTRACT
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,7 @@ class LLMFactory:
                 file_name = f"{file_name}.txt"
 
             file_paths.append(self.prompts_dir / file_name)
+            file_paths.extend(sorted(self.prompts_dir.glob(f"**/{file_name}")))
 
         # Try to load from any of the possible paths
         for file_path in file_paths:
@@ -132,6 +134,8 @@ class LLMFactory:
                 logger.debug(f"Attempting to load prompt from: {file_path}")
                 with open(file_path, "r") as f:
                     template = f.read()
+
+                template = self._inject_prompt_contracts(template)
 
                 # Cache the template
                 self.prompt_cache[prompt_name] = template
@@ -144,6 +148,12 @@ class LLMFactory:
         # If we get here, all paths failed
         logger.error(f"Prompt template file not found. Tried: {file_paths}")
         raise ValueError(f"Prompt template not found: {prompt_name}")
+
+    def _inject_prompt_contracts(self, template: str) -> str:
+        return template.replace(
+            "{{DOCUMENT_EXTRACTION_SCHEMA}}",
+            DOCUMENT_EXTRACTION_PROMPT_CONTRACT,
+        )
 
     def get_task_config(self, task_name: str) -> Dict[str, Any]:
         """
@@ -1303,12 +1313,18 @@ class LLMFactory:
             The loaded template or an empty string if not found
         """
         try:
-            template_path = Path(__file__).parent.parent / "prompts" / "sql_context_templates" / f"{template_name}.txt"
+            template_path = (
+                Path(__file__).parent.parent
+                / "prompts"
+                / "sql"
+                / "context"
+                / f"{template_name}.txt"
+            )
 
             if template_path.exists():
                 with open(template_path, "r") as f:
                     template = f.read()
-                logger.debug(f"Loaded {template_name} from prompts/sql_context_templates directory")
+                logger.debug(f"Loaded {template_name} from prompts/sql/context directory")
                 return template
             else:
                 logger.warning(f"{template_name}.txt not found, using empty context")

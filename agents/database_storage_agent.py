@@ -343,28 +343,14 @@ class DatabaseStorageAgent(BaseAgent):
 
             media_id = None
             if file_storage:
-                # Create a media record with the correct column names
-                media_record = schemas.Media(
+                media_id = self._upsert_media_record(
+                    db=db,
                     user_id=user_id_value,
                     invoice_id=invoice.id,
-                    filename=file_storage.get("original_filename", "invoice"),
-                    original_filename=file_storage.get("original_filename", "invoice"),
-                    file_path=file_storage.get("file_key", ""),
-                    file_url=file_storage.get("url", ""),
+                    file_storage=file_storage,
                     content_hash=content_hash,
-                    content_type=file_storage.get("content_type", "application/octet-stream"),
-                    file_size=file_storage.get("file_size") or extraction_result.get("file_size", 0),
-                    file_type=self._media_file_type(file_storage.get("content_type")),
-                    status="processed",
-                    processing_metadata=file_storage,
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
+                    extraction_result=extraction_result,
                 )
-
-                # Add the media record
-                db.add(media_record)
-                db.flush()  # Flush to get the media.id
-                media_id = media_record.id
 
             # Commit all changes
             db.commit()
@@ -463,6 +449,89 @@ class DatabaseStorageAgent(BaseAgent):
             "total_amount": 0,
             "content_hash": checksum,
         }
+
+    def _upsert_media_record(
+        self,
+        db,
+        user_id: int,
+        invoice_id: int,
+        file_storage: Dict[str, Any],
+        content_hash: Optional[str],
+        extraction_result: Dict[str, Any],
+    ) -> Optional[int]:
+        """Link an existing original upload row to the invoice, or create it."""
+
+        media_record = None
+        media_id = file_storage.get("media_id")
+        try:
+            if media_id is not None:
+                media_record = (
+                    db.query(schemas.Media)
+                    .filter(schemas.Media.id == int(media_id), schemas.Media.user_id == user_id)
+                    .first()
+                )
+        except (TypeError, ValueError):
+            media_record = None
+
+        if media_record is None and content_hash:
+            media_record = (
+                db.query(schemas.Media)
+                .filter(
+                    schemas.Media.user_id == user_id,
+                    schemas.Media.content_hash == content_hash,
+                )
+                .order_by(schemas.Media.created_at.desc())
+                .first()
+            )
+
+        file_path = file_storage.get("file_key") or file_storage.get("path") or ""
+        if media_record is None and file_path:
+            media_record = (
+                db.query(schemas.Media)
+                .filter(schemas.Media.user_id == user_id, schemas.Media.file_path == file_path)
+                .first()
+            )
+
+        if media_record is None:
+            media_record = schemas.Media(
+                user_id=user_id,
+                filename=file_storage.get("original_filename", "invoice"),
+                original_filename=file_storage.get("original_filename", "invoice"),
+                file_path=file_path,
+                file_url=file_storage.get("url", ""),
+                content_hash=content_hash,
+                content_type=file_storage.get("content_type", "application/octet-stream"),
+                file_size=file_storage.get("file_size") or extraction_result.get("file_size", 0),
+                file_type=self._media_file_type(file_storage.get("content_type")),
+                created_at=datetime.utcnow(),
+            )
+            db.add(media_record)
+
+        media_record.invoice_id = invoice_id
+        media_record.filename = file_storage.get("original_filename") or media_record.filename
+        media_record.original_filename = file_storage.get("original_filename") or media_record.original_filename
+        media_record.file_path = file_path or media_record.file_path
+        media_record.file_url = file_storage.get("url") or media_record.file_url
+        media_record.content_hash = content_hash or media_record.content_hash
+        media_record.content_type = file_storage.get("content_type") or media_record.content_type
+        media_record.file_size = file_storage.get("file_size") or media_record.file_size
+        media_record.file_type = self._media_file_type(media_record.content_type)
+        media_record.status = "processed"
+        existing_metadata = (
+            media_record.processing_metadata
+            if isinstance(media_record.processing_metadata, dict)
+            else {}
+        )
+        media_record.processing_metadata = {
+            **existing_metadata,
+            "file_storage": file_storage,
+            "access_scope": file_storage.get("access_scope") or "user",
+            "user_scope_prefix": file_storage.get("user_scope_prefix"),
+            "processing_status": "processed",
+        }
+        media_record.updated_at = datetime.utcnow()
+        db.flush()
+        return media_record.id
 
     def _extract_vendor_name(self, invoice_data: Dict[str, Any]) -> str:
         vendor_data = invoice_data.get("vendor", {})

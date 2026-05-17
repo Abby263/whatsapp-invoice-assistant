@@ -30,6 +30,7 @@ Classify the input into one of the following intent categories:
 - Any question about specific products or services that could be found in invoices should be classified as invoice_query
 - Questions about how much something costs or how many of an item were purchased should be invoice_query
 - Only classify as "general" if the query is about the bot's capabilities or how to use it
+- Off-topic general knowledge, news, coding, entertainment, weather, sports, or unrelated history questions are general. Do not force them into invoice_query unless they clearly ask about the user's saved receipt or invoice data.
 - If in doubt between general and invoice_query, prefer invoice_query when the question references products, prices, or purchases
 - FOLLOW-UP QUERIES: If a user asks about something mentioned in previous messages (like "Where did I get it from?", "How much did it cost?"), classify as the same intent as the related previous message
 
@@ -218,4 +219,4 @@ Output:
   "intent": "invoice_query",
   "confidence": 0.95,
   "explanation": "The user is asking about purchase history of a specific product which would be found in invoice data."
-} 
+}

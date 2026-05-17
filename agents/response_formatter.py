@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
+from services.conversation_policy import compact_whatsapp_message
 from constants.fallback_messages import GENERAL_FALLBACKS, QUERY_FALLBACKS
 
 # Configure logger for this module
@@ -136,6 +137,7 @@ class ResponseFormatterAgent(BaseAgent):
 
             local_response = self._format_locally(content, content_for_llm, format_type)
             if local_response:
+                local_response = compact_whatsapp_message(local_response)
                 return AgentOutput(
                     content=local_response,
                     confidence=0.9,
@@ -265,15 +267,6 @@ class ResponseFormatterAgent(BaseAgent):
         # - Ensuring proper emoji rendering
         # - Formatting lists properly
 
-        # Example: Check if message is too long for WhatsApp
-        MAX_WHATSAPP_LENGTH = 4096  # WhatsApp message length limit
-
-        if len(text) > MAX_WHATSAPP_LENGTH:
-            logger.warning(f"Message exceeds WhatsApp length limit: {len(text)} characters")
-            # Truncate with indicator
-            text = text[:MAX_WHATSAPP_LENGTH - 100] + "\n\n[Message truncated due to length limits]"
-            logger.debug("Message truncated to fit WhatsApp length limit")
-
         # Example: Ensure proper spacing after emojis
         # This regex would be more sophisticated in a real implementation
         import re
@@ -283,7 +276,7 @@ class ResponseFormatterAgent(BaseAgent):
         if len(text) != original_length:
             logger.debug(f"Adjusted emoji spacing (original: {original_length}, new: {len(text)})")
 
-        return text
+        return compact_whatsapp_message(text)
 
     def _count_emojis(self, text: str) -> int:
         """

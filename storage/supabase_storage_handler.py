@@ -9,6 +9,7 @@ import hashlib
 import logging
 import mimetypes
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, BinaryIO, Dict, Optional, Union
@@ -100,6 +101,7 @@ class SupabaseStorageHandler:
 
         checksum = hashlib.sha256(file_bytes).hexdigest()
         metadata = metadata or {}
+        user_scope_prefix = self.generate_user_path(user_id, file_type)
         object_path = self._generate_file_key(
             file_name=file_name,
             user_id=user_id,
@@ -151,6 +153,8 @@ class SupabaseStorageHandler:
                     "user_id": str(user_id),
                     "original_filename": file_name,
                     "metadata": metadata,
+                    "access_scope": "user",
+                    "user_scope_prefix": user_scope_prefix,
                     "existing_object": True,
                 }
             raise RuntimeError(
@@ -171,6 +175,8 @@ class SupabaseStorageHandler:
             "user_id": str(user_id),
             "original_filename": file_name,
             "metadata": metadata,
+            "access_scope": "user",
+            "user_scope_prefix": user_scope_prefix,
         }
 
     def generate_url(self, file_key: str, expiration: int = 3600) -> str:
@@ -216,7 +222,13 @@ class SupabaseStorageHandler:
 
     def generate_user_path(self, user_id: Union[str, UUID, int], file_type: str) -> str:
         """Return the user-scoped object path prefix."""
-        return f"{str(user_id).strip('/')}/{file_type.strip('/')}"
+        return f"users/{self._safe_path_segment(user_id)}/{self._safe_path_segment(file_type)}"
+
+    def _safe_path_segment(self, value: Union[str, UUID, int]) -> str:
+        """Normalize a user-controlled value into one Supabase object key segment."""
+        safe_value = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value or "").strip())
+        safe_value = safe_value.strip(".-/")
+        return safe_value or "unknown"
 
     def _headers(self, content_type: str) -> Dict[str, str]:
         return {

@@ -24,10 +24,11 @@ from agents.file_validator import FileValidatorAgent
 from agents.data_extractor import DataExtractorAgent
 from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
+from services.conversation_policy import compact_whatsapp_message
 from langchain_app.state import IntentType, FileType
 from utils.base_agent import AgentInput, AgentContext
 from constants.fallback_messages import FILE_PROCESSING_FALLBACKS
-from storage import StorageConfigurationError, SupabaseStorageHandler
+from storage import StorageConfigurationError, record_media_upload, store_user_upload
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +74,26 @@ async def process_file_message(
             prepared_file_metadata,
         )
 
+    _store_original_upload(
+        file_path=file_path,
+        file_name=file_name or os.path.basename(file_path),
+        user_id=user_id,
+        document_type="invoices",
+        content_type=file_type,
+        file_metadata=prepared_file_metadata,
+    )
+
     # Validate the file
     validation_result = await validate_file(file_path, normalized_file_type)
 
     if not validation_result.get("is_valid", False):
         logger.warning(f"Invalid file: {validation_result.get('reason', 'Unknown reason')}")
+        _update_media_status(
+            user_id=user_id,
+            file_metadata=prepared_file_metadata,
+            status="error",
+            processing_metadata={"validation_result": validation_result},
+        )
         return await format_invalid_file_response(validation_result, file_name or file_path)
 
     # Extract data if it's a valid invoice
@@ -116,6 +132,12 @@ async def process_file_message(
             return best_effort_result
 
     # Handle non-invoice but valid files
+    _update_media_status(
+        user_id=user_id,
+        file_metadata=prepared_file_metadata,
+        status="error",
+        processing_metadata={"validation_result": validation_result, "reason": "unsupported_format"},
+    )
     return await format_unsupported_format_response(file_name or file_path, normalized_file_type)
 
 
@@ -358,6 +380,8 @@ async def process_invoice_file(
                 extraction_result["metadata"]["item_ids"] = item_ids
                 if storage_result.content.get("duplicate"):
                     extraction_result["metadata"]["duplicate"] = True
+                if storage_result.content.get("media_id"):
+                    extraction_result["metadata"]["media_id"] = storage_result.content.get("media_id")
             else:
                 error_message = storage_result.error if storage_result else "No result returned from storage agent"
                 storage_error = error_message
@@ -445,9 +469,13 @@ async def extract_invoice_data(
             file_content = f.read()
 
         prepared_file_metadata = _prepare_file_metadata(file_path, file_metadata, file_content)
-        file_storage = None
+        file_storage = (
+            prepared_file_metadata.get("file_storage")
+            if isinstance(prepared_file_metadata.get("file_storage"), dict)
+            else None
+        )
         storage_error = None
-        if user_id:
+        if user_id and not file_storage:
             try:
                 file_mime_type, _ = mimetypes.guess_type(file_path)
                 if not file_mime_type:
@@ -470,15 +498,26 @@ async def extract_invoice_data(
                     **prepared_file_metadata,
                 }
 
-                storage_handler = SupabaseStorageHandler()
-                file_storage = storage_handler.upload_file(
-                    file_content=file_content,
+                file_storage = store_user_upload(
+                    file_path=file_path,
                     file_name=os.path.basename(file_path),
                     user_id=user_id,
                     content_type=file_mime_type,
-                    file_type="invoices",
-                    metadata=upload_metadata
+                    document_type="invoices",
+                    metadata=upload_metadata,
                 )
+                media_record = record_media_upload(
+                    user_id=user_id,
+                    file_storage=file_storage,
+                    status="uploaded",
+                    processing_metadata={
+                        "file_metadata": prepared_file_metadata,
+                        "source": "extract_invoice_data",
+                    },
+                )
+                if media_record:
+                    file_storage["media_id"] = media_record.get("media_id")
+                    prepared_file_metadata["media_record"] = media_record
                 logger.info(
                     "Invoice file uploaded to Supabase Storage: %s",
                     file_storage.get("file_key"),
@@ -570,6 +609,82 @@ def _prepare_file_metadata(
     return metadata
 
 
+def _store_original_upload(
+    file_path: str,
+    file_name: str,
+    user_id: Optional[Union[str, UUID]],
+    document_type: str,
+    content_type: str,
+    file_metadata: Dict[str, Any],
+) -> None:
+    """Persist the original upload before validation/extraction."""
+
+    if not user_id:
+        return
+
+    try:
+        storage_metadata = store_user_upload(
+            file_path=file_path,
+            file_name=file_name,
+            user_id=user_id,
+            document_type=document_type,
+            content_type=content_type,
+            metadata={
+                **file_metadata,
+                "user_id": str(user_id),
+                "document_type": document_type,
+                "storage_class": "original_upload",
+            },
+        )
+        media_record = record_media_upload(
+            user_id=user_id,
+            file_storage=storage_metadata,
+            status="uploaded",
+            processing_metadata={
+                "file_metadata": file_metadata,
+                "source": file_metadata.get("source") or "direct_upload",
+            },
+        )
+        if media_record:
+            storage_metadata["media_id"] = media_record.get("media_id")
+            file_metadata["media_record"] = media_record
+        file_metadata["file_storage"] = storage_metadata
+        logger.info(
+            "Stored original upload for user=%s path=%s media_id=%s",
+            user_id,
+            storage_metadata.get("file_key"),
+            storage_metadata.get("media_id"),
+        )
+    except StorageConfigurationError as exc:
+        file_metadata["storage_error"] = str(exc)
+        logger.warning("Original upload skipped because storage is not configured: %s", exc)
+    except Exception as exc:
+        file_metadata["storage_error"] = str(exc)
+        logger.exception("Original upload could not be stored: %s", exc)
+
+
+def _update_media_status(
+    user_id: Optional[Union[str, UUID]],
+    file_metadata: Dict[str, Any],
+    status: str,
+    processing_metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    file_storage = file_metadata.get("file_storage")
+    if not user_id or not isinstance(file_storage, dict):
+        return
+    media_record = record_media_upload(
+        user_id=user_id,
+        file_storage=file_storage,
+        status=status,
+        processing_metadata={
+            "file_metadata": file_metadata,
+            **(processing_metadata or {}),
+        },
+    )
+    if media_record:
+        file_metadata["media_record"] = media_record
+
+
 def _calculate_file_checksum(file_path: str, file_content: Optional[bytes] = None) -> str:
     digest = hashlib.sha256()
     if file_content is not None:
@@ -599,35 +714,26 @@ def _find_existing_media_by_checksum(
 
         session = get_db_session()
         try:
-            candidates = (
+            media = (
                 session.query(Media)
-                .filter(Media.user_id == user_id_value)
+                .filter(Media.user_id == user_id_value, Media.content_hash == checksum)
                 .order_by(Media.created_at.desc())
-                .limit(500)
-                .all()
+                .first()
             )
-            for media in candidates:
-                metadata = media.processing_metadata or {}
-                if not isinstance(metadata, dict):
-                    continue
-                stored_checksum = (
-                    getattr(media, "content_hash", None)
-                    or metadata.get("checksum_sha256")
-                    or metadata.get("metadata", {}).get("checksum_sha256")
-                )
-                if stored_checksum == checksum:
-                    return {
-                        "id": media.id,
-                        "invoice_id": media.invoice_id,
-                        "filename": media.filename,
-                        "file_path": media.file_path,
-                        "file_url": media.file_url,
-                        "content_type": media.content_type,
-                        "file_size": media.file_size,
-                        "content_hash": stored_checksum,
-                        "processing_metadata": metadata,
-                        "created_at": media.created_at.isoformat() if media.created_at else None,
-                    }
+            if media:
+                metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
+                return {
+                    "id": media.id,
+                    "invoice_id": media.invoice_id,
+                    "filename": media.filename,
+                    "file_path": media.file_path,
+                    "file_url": media.file_url,
+                    "content_type": media.content_type,
+                    "file_size": media.file_size,
+                    "content_hash": media.content_hash,
+                    "processing_metadata": metadata,
+                    "created_at": media.created_at.isoformat() if media.created_at else None,
+                }
 
             invoice_candidates = (
                 session.query(Invoice)
@@ -772,9 +878,6 @@ async def format_extraction_response(
     Returns:
         Dict containing the formatted response
     """
-    llm_factory = LLMFactory()
-    agent = ResponseFormatterAgent(llm_factory=llm_factory)
-
     file_storage = None
     if "metadata" in extraction_result:
         file_storage = (
@@ -823,40 +926,47 @@ async def format_extraction_response(
             currency = data.get("currency", "USD")
 
         items = data.get("items", [])
+        if not isinstance(items, list):
+            items = []
 
         items_text = ""
         if items and len(items) > 0:
-            label = "Ledger entries" if is_ledger else "Items"
-            items_text = f"\n\n📋 {label}:"
-            visible_items = items[:8]
+            label = "Entries" if is_ledger else "Items"
+            items_text = f"\n\n{label} saved: {len(items)}"
+            visible_items = items[:4]
             for item in visible_items:
                 if not isinstance(item, dict):
                     continue
                 description = item.get("description", "Item")
                 quantity = item.get("quantity", 1)
-                unit_price = item.get("unit_price", 0)
                 total_price = item.get("total_price", 0)
-                items_text += f"\n- {description}: {quantity} x {unit_price} {currency} = {total_price} {currency}"
+                if is_ledger:
+                    items_text += f"\n- {description}: {total_price} {currency}"
+                else:
+                    unit_price = item.get("unit_price", 0)
+                    items_text += f"\n- {description}: {quantity} x {unit_price} = {total_price} {currency}"
             remaining = len(items) - len(visible_items)
             if remaining > 0:
-                items_text += f"\n- ...and {remaining} more saved entries."
+                items_text += f"\n- {remaining} more saved"
 
         document_label = "ledger page" if is_ledger else "invoice"
-        response = f"✅ I've successfully processed your {document_label} from {file_name}!\n\n"
-        response += f"🏢 Vendor: {vendor_name}\n" if not is_ledger else ""
+        response = f"Saved {document_label}: {file_name}\n\n"
+        response += f"Vendor: {vendor_name}\n" if not is_ledger else ""
         if invoice_number and invoice_number != "Unknown":
-            response += f"📝 Invoice #{invoice_number}\n"
-        response += f"💰 Total: {total} {currency}\n"
+            response += f"Invoice: {invoice_number}\n"
+        response += f"Total: {total} {currency}\n"
         if date and date != "Unknown Date":
-            response += f"📅 Dated: {date}\n"
+            response += f"Date: {date}\n"
         if due_date and due_date != "Unknown":
-            response += f"⏱️ Due by: {due_date}"
+            response += f"Due: {due_date}\n"
         response += items_text
 
         if file_url:
-            response += f"\n\n🔗 Your invoice has been saved and is available here."
+            response += "\n\nOriginal file is saved privately to your workspace."
 
-        return response
+        response += "\n\nAsk a question like: What did I spend on printing?"
+
+        return compact_whatsapp_message(response, max_chars=900)
 
     # For sample data, use a templated response
     if is_sample_data:
@@ -869,75 +979,12 @@ async def format_extraction_response(
             "confidence": 0.9
         }
 
-    # Create a proper AgentInput object with file storage info if available
-    metadata = {
-        "intent": IntentType.FILE_PROCESSING.value,
-        "extraction_result": extraction_result,
-        "file_name": file_name,
-        "response_type": "invoice_summary"  # Specify the type of response we want
+    file_url = file_storage.get("url") if file_storage else None
+    response = create_formatted_response(invoice_data, file_url)
+    return {
+        "content": response,
+        "confidence": 0.85,
     }
-
-    if file_storage:
-        metadata["file_storage"] = file_storage
-        metadata["s3_storage"] = file_storage
-
-    agent_input = AgentInput(
-        content="Format invoice extraction response",
-        metadata=metadata
-    )
-
-    try:
-        # First attempt with the ResponseFormatterAgent
-        result = await agent.process(agent_input)
-
-        # Only proceed if we got some response content
-        if result and hasattr(result, "content") and result.content:
-            # Validate the response quality using LLM-based validation
-            validation_context = {
-                "invoice_data": invoice_data,
-                "has_file_storage": file_storage is not None
-            }
-
-            validation_result = await llm_factory.validate_response(
-                response_content=result.content,
-                response_type="invoice_summary",
-                context=validation_context
-            )
-
-            # Check if the response is valid based on validation results
-            if validation_result.get("is_valid", False) and validation_result.get("confidence", 0) >= 0.6:
-                logger.info(f"Response validation successful: {validation_result.get('confidence')}")
-                return {
-                    "content": result.content,
-                    "confidence": result.confidence
-                }
-            else:
-                # Log why validation failed
-                issues = validation_result.get("issues", [])
-                logger.warning(f"Response validation failed: {', '.join(issues)}")
-        else:
-            logger.warning("ResponseFormatterAgent returned no content")
-
-        # If validation failed or no content was returned, use our fallback formatter
-        file_url = file_storage.get("url") if file_storage else None
-        response = create_formatted_response(invoice_data, file_url)
-
-        return {
-            "content": response,
-            "confidence": 0.8
-        }
-
-    except Exception as e:
-        logger.exception(f"Error formatting extraction response: {str(e)}")
-
-        # Create a response using our helper function as fallback
-        file_url = file_storage.get("url") if file_storage else None
-        response = create_formatted_response(invoice_data, file_url)
-
-        return {
-            "content": response,
-            "confidence": 0.7
-        }
 
 
 async def format_invalid_file_response(

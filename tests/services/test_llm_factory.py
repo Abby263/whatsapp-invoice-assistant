@@ -71,6 +71,24 @@ def test_load_prompt_template_not_found(llm_factory):
     with pytest.raises(ValueError):
         llm_factory.load_prompt_template("non_existent_prompt")
 
+
+def test_load_prompt_template_searches_nested_prompt_folders(tmp_path):
+    prompts_dir = tmp_path / "prompts"
+    nested_dir = prompts_dir / "document_processing"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "invoice_data_extraction_prompt.txt").write_text(
+        "Extract data.\n{{DOCUMENT_EXTRACTION_SCHEMA}}",
+        encoding="utf-8",
+    )
+
+    factory = LLMFactory.__new__(LLMFactory)
+    factory.prompts_dir = prompts_dir
+    factory.prompt_cache = {}
+
+    template = factory.load_prompt_template("invoice_data_extraction_prompt")
+
+    assert "REQUIRED DOCUMENT EXTRACTION JSON CONTRACT" in template
+
 def test_get_task_config(llm_factory):
     """Test getting task-specific configurations."""
     # Mock TASK_LLM_CONFIGS
