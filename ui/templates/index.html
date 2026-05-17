@@ -53,6 +53,10 @@
                     <i class="fas fa-diagram-project"></i>
                     <span>Inspector</span>
                 </button>
+                <button type="button" class="nav-item" data-view="connections">
+                    <i class="fas fa-link"></i>
+                    <span>Connections</span>
+                </button>
                 <button type="button" class="nav-item" data-view="settings">
                     <i class="fas fa-sliders"></i>
                     <span>Settings</span>
@@ -88,7 +92,6 @@
                     <div class="topbar-auth" id="authSection" data-auth-state="disabled">
                         <span class="auth-status" id="authStatus">Auth optional</span>
                         <button id="signInBtn" class="auth-action-btn" type="button">Sign in</button>
-                        <button id="linkWhatsappBtn" class="auth-action-btn is-secondary" type="button">Link WhatsApp</button>
                         <div id="clerkUserButton" class="clerk-user-button"></div>
                     </div>
                     <a class="topbar-github-link" href="https://github.com/Abby263/whatsapp-invoice-assistant" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository">
@@ -98,7 +101,7 @@
                     <div class="topbar-user" id="topbarUser" data-link-state="unlinked">
                         <i class="fas fa-circle-user"></i>
                         <select id="whatsappNumberSelect" class="topbar-user-select" aria-label="Active user">
-                            <option value="">Link WhatsApp</option>
+                            <option value="">No WhatsApp linked</option>
                         </select>
                     </div>
                     <button id="themeToggleBtn" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch to dark mode" title="Toggle theme">
@@ -565,6 +568,58 @@
                                         <dd id="userWhatsappDisplay">Not linked</dd>
                                     </div>
                                 </dl>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <!-- ============== CONNECTIONS VIEW ============== -->
+                <section class="view view-connections" data-view="connections">
+                    <div class="settings-grid">
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>WhatsApp connection</h3>
+                                    <p>Connect the same WhatsApp number used for receipt uploads so web history, analytics, and chat stay scoped to one user.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="connection-primary">
+                                    <div class="connection-icon" aria-hidden="true">
+                                        <i class="fab fa-whatsapp"></i>
+                                    </div>
+                                    <div>
+                                        <strong id="connectionPrimaryNumber">No number connected</strong>
+                                        <span id="connectionPrimaryHint">Sign in and connect your WhatsApp number to load receipt uploads on this website.</span>
+                                    </div>
+                                </div>
+                                <div class="settings-actions-row">
+                                    <button id="linkWhatsappPrimaryBtn" class="btn btn-primary" type="button">
+                                        <i class="fab fa-whatsapp"></i>
+                                        <span>Connect WhatsApp</span>
+                                    </button>
+                                    <button id="refreshConnectionsBtn" class="btn btn-ghost" type="button">
+                                        <i class="fas fa-rotate"></i>
+                                        <span>Refresh</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="card">
+                            <div class="card-head">
+                                <div>
+                                    <h3>Connected numbers</h3>
+                                    <p>Numbers available to this signed-in workspace.</p>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="connected-number-list" id="connectedNumbersList">
+                                    <div class="empty-state" id="connectionsEmpty">
+                                        <i class="fab fa-whatsapp"></i>
+                                        <p>No WhatsApp number is connected yet.</p>
+                                    </div>
+                                </div>
                             </div>
                         </section>
                     </div>

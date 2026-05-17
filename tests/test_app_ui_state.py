@@ -37,6 +37,21 @@ def test_demo_init_starts_without_default_whatsapp_number(monkeypatch):
     assert data["whatsapp_number"] is None
 
 
+def test_hosted_ui_uses_single_connections_entrypoint(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+
+    client = hosted_app.app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'data-view="connections"' in html
+    assert 'id="linkWhatsappBtn"' not in html
+    assert html.count("Connect WhatsApp") == 1
+    assert "No WhatsApp linked" in html
+
+
 def test_demo_link_whatsapp_requires_explicit_number(monkeypatch):
     monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
     monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: _AuthContext())

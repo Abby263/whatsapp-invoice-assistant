@@ -52,9 +52,14 @@ const topbarSubtitle = document.getElementById('topbarSubtitle');
 const authSection = document.getElementById('authSection');
 const authStatus = document.getElementById('authStatus');
 const signInBtn = document.getElementById('signInBtn');
-const linkWhatsappBtn = document.getElementById('linkWhatsappBtn');
 const clerkUserButton = document.getElementById('clerkUserButton');
 const topbarUser = document.getElementById('topbarUser');
+const linkWhatsappPrimaryBtn = document.getElementById('linkWhatsappPrimaryBtn');
+const refreshConnectionsBtn = document.getElementById('refreshConnectionsBtn');
+const connectedNumbersList = document.getElementById('connectedNumbersList');
+const connectionsEmpty = document.getElementById('connectionsEmpty');
+const connectionPrimaryNumber = document.getElementById('connectionPrimaryNumber');
+const connectionPrimaryHint = document.getElementById('connectionPrimaryHint');
 
 // View metadata for topbar copy
 const VIEW_META = {
@@ -73,6 +78,10 @@ const VIEW_META = {
     inspector: {
         title: 'Workflow inspector',
         subtitle: 'LangGraph steps, intent, and token usage for the most recent message.'
+    },
+    connections: {
+        title: 'Connections',
+        subtitle: 'Connect WhatsApp numbers and verify which account is active.'
     },
     settings: {
         title: 'Settings',
@@ -106,12 +115,17 @@ function setWhatsappLinkState(state) {
     }
 }
 
-function setWhatsappUnlinked(label = 'Link WhatsApp') {
+function setWhatsappUnlinked(label = 'No WhatsApp linked') {
     whatsappNumber = '';
     userId = '0';
     setWhatsappLinkState('unlinked');
     setElementText(userWhatsappDisplay, 'Not linked');
     setElementText(userIdDisplay, userId || '0');
+    setElementText(connectionPrimaryNumber, 'No number connected');
+    setElementText(connectionPrimaryHint, 'Sign in and connect your WhatsApp number to load receipt uploads on this website.');
+    if (linkWhatsappPrimaryBtn) {
+        linkWhatsappPrimaryBtn.querySelector('span').textContent = 'Connect WhatsApp';
+    }
 
     if (whatsappNumberSelect) {
         whatsappNumberSelect.innerHTML = '';
@@ -146,6 +160,11 @@ function setActiveWhatsappUser(user) {
     setWhatsappLinkState('linked');
     setElementText(userIdDisplay, userId);
     setElementText(userWhatsappDisplay, whatsappNumber);
+    setElementText(connectionPrimaryNumber, whatsappNumber);
+    setElementText(connectionPrimaryHint, 'Receipts sent from this WhatsApp number will appear in the web history after processing.');
+    if (linkWhatsappPrimaryBtn) {
+        linkWhatsappPrimaryBtn.querySelector('span').textContent = 'Update WhatsApp';
+    }
 
     if (whatsappNumberSelect) {
         whatsappNumberSelect.disabled = false;
@@ -366,8 +385,8 @@ async function setupAuth() {
         });
     }
 
-    if (linkWhatsappBtn) {
-        linkWhatsappBtn.addEventListener('click', linkAuthenticatedWhatsappNumber);
+    if (linkWhatsappPrimaryBtn) {
+        linkWhatsappPrimaryBtn.addEventListener('click', linkAuthenticatedWhatsappNumber);
     }
 
     if (typeof window.Clerk.addListener === 'function') {
@@ -419,14 +438,14 @@ async function handleSignedInUser() {
             setAuthUiState('signed-in', 'Signed in');
         } else {
             authState.needsLink = true;
-            setAuthUiState('needs-link', 'Link WhatsApp');
+            setAuthUiState('signed-in', 'Signed in');
             updateWorkspaceAuthAvailability();
             addSystemMessage('Sign-in complete. Link your WhatsApp number so web and WhatsApp receipts use the same account.');
         }
     } catch (error) {
         console.error('Error syncing Clerk user:', error);
         authState.needsLink = true;
-        setAuthUiState('needs-link', 'Sync needed');
+        setAuthUiState('signed-in', 'Signed in');
         updateWorkspaceAuthAvailability();
     }
 }
@@ -447,6 +466,8 @@ async function linkAuthenticatedWhatsappNumber() {
     if (!window.Clerk || !window.Clerk.isSignedIn) {
         if (window.Clerk) {
             window.Clerk.openSignIn();
+        } else {
+            addSystemMessage('Sign-in is not available in this environment.');
         }
         return;
     }
@@ -476,6 +497,7 @@ async function linkAuthenticatedWhatsappNumber() {
             addSystemMessage(`Linked this workspace to WhatsApp number ${data.user.whatsapp_number}.`);
             initializeApp();
             loadUsers();
+            loadHistory();
             updateDatabaseCounts();
         } else {
             addSystemMessage(`Could not link WhatsApp number: ${data.message}`);
@@ -543,7 +565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (!whatsappNumber) {
-        setWhatsappUnlinked(authState.needsLink ? 'Link WhatsApp' : 'No user selected');
+        setWhatsappUnlinked(authState.needsLink ? 'No WhatsApp linked' : 'No user selected');
     }
 
     // Setup WhatsApp number select event handling
@@ -573,6 +595,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (refreshHistoryBtn) {
         refreshHistoryBtn.addEventListener('click', loadHistory);
+    }
+
+    if (refreshConnectionsBtn) {
+        refreshConnectionsBtn.addEventListener('click', loadUsers);
     }
 
     if (deleteAllHistoryBtn) {
@@ -635,6 +661,10 @@ function switchView(viewName) {
 
     if (viewName === 'chat' && messageInput) {
         setTimeout(() => messageInput.focus(), 50);
+    }
+
+    if (viewName === 'connections') {
+        loadUsers();
     }
 }
 
@@ -729,12 +759,13 @@ function loadUsers() {
             if (data.status === 'success' && Array.isArray(data.users)) {
                 const currentValue = whatsappNumberSelect.value;
                 const users = data.users.filter(user => normalizeUiWhatsappNumber(user.whatsapp_number));
+                renderConnectedNumbers(users);
 
                 if (data.needs_link || users.length === 0) {
                     if (preserveActiveWhatsappSelection('users response had no linked users')) {
                         return;
                     }
-                    setWhatsappUnlinked(data.needs_link ? 'Link WhatsApp' : 'No user selected');
+                    setWhatsappUnlinked(data.needs_link ? 'No WhatsApp linked' : 'No user selected');
                     updateWorkspaceAuthAvailability();
                     return;
                 }
@@ -763,6 +794,57 @@ function loadUsers() {
         .catch(error => {
             console.error('Error loading users:', error);
         });
+}
+
+function renderConnectedNumbers(users = []) {
+    if (!connectedNumbersList) {
+        return;
+    }
+
+    connectedNumbersList.innerHTML = '';
+    const normalizedUsers = users.filter(user => normalizeUiWhatsappNumber(user.whatsapp_number));
+
+    if (!normalizedUsers.length) {
+        if (connectionsEmpty) {
+            connectedNumbersList.appendChild(connectionsEmpty);
+            connectionsEmpty.style.display = 'grid';
+        }
+        setElementText(connectionPrimaryNumber, whatsappNumber || 'No number connected');
+        setElementText(
+            connectionPrimaryHint,
+            whatsappNumber
+                ? 'This number is active locally, but the server did not return it as a connected account.'
+                : 'Sign in and connect your WhatsApp number to load receipt uploads on this website.'
+        );
+        return;
+    }
+
+    normalizedUsers.forEach(user => {
+        const number = normalizeUiWhatsappNumber(user.whatsapp_number);
+        const row = document.createElement('article');
+        row.className = 'connected-number-row';
+        const isActive = number === whatsappNumber;
+        row.innerHTML = `
+            <div class="connected-number-main">
+                <span class="connected-number-icon"><i class="fab fa-whatsapp"></i></span>
+                <div>
+                    <strong>${escapeHtml(number)}</strong>
+                    <span>${escapeHtml(user.name || 'Linked user')}${isActive ? ' · Active' : ''}</span>
+                </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-small" ${isActive ? 'disabled' : ''}>
+                ${isActive ? 'Active' : 'Use'}
+            </button>
+        `;
+        row.querySelector('button').addEventListener('click', () => {
+            if (isActive) {
+                return;
+            }
+            setActiveWhatsappUser(user);
+            initializeForUser(number);
+        });
+        connectedNumbersList.appendChild(row);
+    });
 }
 
 // Function to switch the active user
@@ -817,7 +899,7 @@ function initializeForUser(whatsappNumber) {
                         hideLoading();
                         return;
                     }
-                    setWhatsappUnlinked('Link WhatsApp');
+                    setWhatsappUnlinked('No WhatsApp linked');
                     addSystemMessage('Link your WhatsApp number before loading receipts.');
                     hideLoading();
                     return;
@@ -894,7 +976,7 @@ function initializeApp() {
                         return;
                     }
                     authState.needsLink = true;
-                    setWhatsappUnlinked('Link WhatsApp');
+                    setWhatsappUnlinked('No WhatsApp linked');
                     updateWorkspaceAuthAvailability();
                     return;
                 }
@@ -1905,6 +1987,8 @@ function renderHistory(records) {
         const row = document.createElement('article');
         row.className = 'history-row';
         const isGenerated = record.kind === 'generated_invoice';
+        const fileUrl = record.file_url || record.signed_url || record.url || '';
+        const contentType = (record.content_type || '').toLowerCase();
         const title = isGenerated
             ? (record.invoice_number || `Generated invoice #${record.id}`)
             : (record.title || record.filename || `Receipt #${record.id}`);
@@ -1923,17 +2007,38 @@ function renderHistory(records) {
             ? formatGeneratedCurrency(record.total_amount, record.currency || 'USD')
             : 'No total';
         const created = record.created_at ? new Date(record.created_at).toLocaleDateString() : 'Recent';
+        const filenameExtension = String(record.filename || '').split('.').pop().toLowerCase();
+        const isImage = (
+            contentType.startsWith('image/') ||
+            ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(filenameExtension)
+        );
+        const previewMarkup = fileUrl
+            ? (
+                isImage
+                    ? `<img class="history-thumb" src="${escapeAttribute(fileUrl)}" alt="${escapeAttribute(title)}">`
+                    : `<span class="history-file-icon"><i class="fas fa-file-lines"></i></span>`
+            )
+            : `<span class="history-file-icon"><i class="fas fa-file-lines"></i></span>`;
+        const viewMarkup = fileUrl
+            ? `<a href="${escapeAttribute(fileUrl)}" target="_blank" rel="noopener" title="Open uploaded file"><i class="fas fa-arrow-up-right-from-square"></i><span>View</span></a>`
+            : '';
 
         row.innerHTML = `
             <div class="history-main">
-                <strong>${escapeHtml(title)}</strong>
-                <span>${escapeHtml(subtitle || record.kind || 'Saved record')}</span>
+                <div class="history-preview">
+                    ${previewMarkup}
+                    <div>
+                        <strong>${escapeHtml(title)}</strong>
+                        <span>${escapeHtml(subtitle || record.kind || 'Saved record')}</span>
+                    </div>
+                </div>
             </div>
             <div class="history-meta">
                 <strong>${escapeHtml(amount)}</strong>
                 <span>${escapeHtml(created)}</span>
             </div>
             <div class="history-actions">
+                ${viewMarkup}
                 <button type="button" class="icon-btn danger" title="Delete" aria-label="Delete saved history">
                     <i class="fas fa-trash-can"></i>
                 </button>
