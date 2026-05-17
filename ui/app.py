@@ -11,6 +11,7 @@ import asyncio
 import logging
 import sys
 import argparse
+from collections import defaultdict
 from pathlib import Path
 from contextlib import asynccontextmanager, contextmanager
 from flask import Flask, render_template, request, jsonify, send_from_directory
@@ -227,8 +228,31 @@ USER_ID = None  # Will be fetched based on WhatsApp number
 # Global variable to store agent traces
 agent_traces = []
 
-# Global variable to store conversation history
-CONVERSATION_HISTORY = []
+# Local UI memory is scoped by resolved app user id or WhatsApp number.
+CONVERSATION_IDS_BY_USER: Dict[str, str] = {}
+CONVERSATION_HISTORY_BY_USER: Dict[str, List[Dict[str, str]]] = defaultdict(list)
+
+
+def _local_memory_key(user_id: Optional[int], whatsapp_number: Optional[str]) -> str:
+    return str(user_id or whatsapp_number or "anonymous")
+
+
+def _local_conversation_id(user_id: Optional[int], whatsapp_number: Optional[str]) -> str:
+    key = _local_memory_key(user_id, whatsapp_number)
+    if key not in CONVERSATION_IDS_BY_USER:
+        CONVERSATION_IDS_BY_USER[key] = str(uuid.uuid4())
+    return CONVERSATION_IDS_BY_USER[key]
+
+
+def _local_conversation_history(user_id: Optional[int], whatsapp_number: Optional[str]) -> List[Dict[str, str]]:
+    return CONVERSATION_HISTORY_BY_USER[_local_memory_key(user_id, whatsapp_number)]
+
+
+def _reset_local_conversation(user_id: Optional[int], whatsapp_number: Optional[str]) -> str:
+    key = _local_memory_key(user_id, whatsapp_number)
+    CONVERSATION_IDS_BY_USER[key] = str(uuid.uuid4())
+    CONVERSATION_HISTORY_BY_USER[key] = []
+    return CONVERSATION_IDS_BY_USER[key]
 
 
 def get_request_auth(optional: bool = True) -> Optional[ClerkAuthContext]:
@@ -572,7 +596,7 @@ def auth_link_whatsapp():
 @app.route('/api/message', methods=['POST'])
 def api_message():
     try:
-        global CONVERSATION_ID, CONVERSATION_HISTORY, USER_ID, WHATSAPP_NUMBER
+        global CONVERSATION_ID, USER_ID, WHATSAPP_NUMBER
 
         auth_context, linked_user, auth_response = require_linked_user()
         if auth_response:
@@ -606,13 +630,18 @@ def api_message():
             # Handle file message (you can add logic here if needed)
             pass
 
-        # Process the message using our test handler
-        # Pass the current conversation history to maintain context
+        conversation_id = _local_conversation_id(USER_ID, WHATSAPP_NUMBER)
+        conversation_history = _local_conversation_history(USER_ID, WHATSAPP_NUMBER)
+        CONVERSATION_ID = conversation_id
 
-        # Log the conversation history we're passing
-        logger.info(f"Passing conversation history with {len(CONVERSATION_HISTORY)} messages")
-        if CONVERSATION_HISTORY:
-            for i, msg in enumerate(CONVERSATION_HISTORY):
+        logger.info(
+            "Passing conversation history with %s messages for user_id=%s whatsapp=%s",
+            len(conversation_history),
+            USER_ID,
+            WHATSAPP_NUMBER,
+        )
+        if conversation_history:
+            for i, msg in enumerate(conversation_history):
                 logger.info(f"History item {i}: {msg['role']} - {msg['content'][:30]}...")
 
         # Process message with history
@@ -620,20 +649,25 @@ def api_message():
             handle_message,
             message,
             USER_ID,
-            CONVERSATION_ID,
+            conversation_id,
             is_file=is_file,
-            conversation_history=CONVERSATION_HISTORY
+            conversation_history=conversation_history
         )
 
         # Update conversation history with the new exchange
-        CONVERSATION_HISTORY.append({"role": "user", "content": message})
-        CONVERSATION_HISTORY.append({"role": "assistant", "content": result.get("message", "")})
+        conversation_history.append({"role": "user", "content": message})
+        conversation_history.append({"role": "assistant", "content": result.get("message", "")})
 
         # Keep only the last MAX_CHAT_HISTORY messages to avoid context getting too long
-        if len(CONVERSATION_HISTORY) > MAX_CHAT_HISTORY:
-            CONVERSATION_HISTORY = CONVERSATION_HISTORY[-MAX_CHAT_HISTORY:]
+        if len(conversation_history) > MAX_CHAT_HISTORY:
+            key = _local_memory_key(USER_ID, WHATSAPP_NUMBER)
+            CONVERSATION_HISTORY_BY_USER[key] = conversation_history[-MAX_CHAT_HISTORY:]
 
-        logger.info(f"Updated conversation history now has {len(CONVERSATION_HISTORY)} messages")
+        logger.info(
+            "Updated conversation history now has %s messages for user_id=%s",
+            len(_local_conversation_history(USER_ID, WHATSAPP_NUMBER)),
+            USER_ID,
+        )
 
         # Add WhatsApp number and user ID to the result
         result["whatsapp_number"] = WHATSAPP_NUMBER
@@ -695,7 +729,8 @@ def upload_file():
 
             # Process the file using the /file command with improved async handling
             command = f"/file {file_path}"
-            response = run_async(handle_message, command, USER_ID, CONVERSATION_ID)
+            conversation_id = _local_conversation_id(USER_ID, WHATSAPP_NUMBER)
+            response = run_async(handle_message, command, USER_ID, conversation_id)
 
             return jsonify({
                 'status': 'success',
@@ -1328,15 +1363,11 @@ def uploaded_file(filename):
 def initialize():
     """Initialize the test environment"""
     try:
-        global CONVERSATION_ID, CONVERSATION_HISTORY, WHATSAPP_NUMBER, USER_ID
+        global CONVERSATION_ID, WHATSAPP_NUMBER, USER_ID
 
         auth_context, linked_user, auth_response = require_linked_user()
         if auth_response:
             return auth_response
-
-        # Reset conversation ID for new session
-        CONVERSATION_ID = str(uuid.uuid4())
-        CONVERSATION_HISTORY = []
 
         # Get WhatsApp number from request or use default
         whatsapp_number = (
@@ -1353,11 +1384,14 @@ def initialize():
         if not linked_user:
             run_async(ensure_test_user_exists)
 
+        CONVERSATION_ID = _reset_local_conversation(USER_ID, WHATSAPP_NUMBER)
+
         return jsonify({
             'status': 'success',
             'message': 'Test environment initialized',
             'user_id': USER_ID,
             'whatsapp_number': WHATSAPP_NUMBER,
+            'conversation_id': CONVERSATION_ID,
             'auth': {
                 'clerk_user_id': auth_context.clerk_user_id if auth_context else None,
                 'needs_link': bool(auth_context and not linked_user)

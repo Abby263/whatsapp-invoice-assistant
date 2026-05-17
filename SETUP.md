@@ -97,6 +97,7 @@ Notes:
 - `HITL_CONFIRMATION_REQUIRED=true` keeps extracted receipt rows out of `invoices`, `items`, and embeddings until the user replies on WhatsApp with `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Delete requests require exact `CONFIRM DELETE ...` commands.
 - `CONVERSATION_MEMORY_WINDOW_MESSAGES` controls how many recent user/assistant messages are passed back into the agent for multi-turn context.
 - `CONVERSATION_MEMORY_MAX_STORED_MESSAGES` caps stored messages per active user conversation before older messages are pruned.
+- Conversation memory is always loaded by internal `users.id` for production user-scoped requests. Do not send browser/client-provided conversation history to the backend as a source of truth.
 
 Optional local-only variables:
 
