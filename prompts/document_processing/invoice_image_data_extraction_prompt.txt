@@ -10,67 +10,7 @@ IMPORTANT GUIDELINES:
 7. For handwritten ledger/account pages, extract each visible row as an item. Preserve mixed Hindi/English text in descriptions.
 8. If no single vendor exists on a ledger page, set vendor.name to "Handwritten ledger".
 
-REQUIRED OUTPUT FORMAT:
-```json
-{
-  "vendor": {
-    "name": "Vendor Name",
-    "address": "Full address if available",
-    "contact": "Phone/email if available",
-    "website": "Website if available"
-  },
-  "transaction": {
-    "invoice_number": "123456",
-    "date": "YYYY-MM-DD",
-    "due_date": "YYYY-MM-DD",
-    "po_number": "PO reference if available",
-    "order_number": "Order number if available",
-    "page_number": "Ledger/notebook page number if visible"
-  },
-  "items": [
-    {
-      "description": "Item description",
-      "quantity": 2,
-      "unit": "units/hours/etc",
-      "unit_price": 100.00,
-      "total_price": 200.00,
-      "transaction_date": "YYYY-MM-DD if visible or inferable",
-      "raw_date": "Original written date text if visible",
-      "entry_type": "expense|income|transfer|unknown",
-      "item_category": "Short category if inferable",
-      "item_code": "Use transaction_date for handwritten ledger rows when available"
-    }
-  ],
-  "financial": {
-    "subtotal": 200.00,
-    "discount": 0.00,
-    "tax": {
-      "total": 20.00,
-      "details": [
-        {
-          "type": "GST/VAT/etc",
-          "rate": 10,
-          "amount": 20.00
-        }
-      ]
-    },
-    "shipping": 15.00,
-    "total": 235.00,
-    "amount_paid": 235.00,
-    "amount_due": 0.00,
-    "currency": "USD"
-  },
-  "additional_info": {
-    "document_type": "invoice|receipt|handwritten_ledger|statement|unknown",
-    "payment_terms": "Payment terms if available",
-    "notes": "Any additional notes",
-    "payment_instructions": "Payment instructions if available",
-    "source_language": "Primary language/script visible in the document",
-    "extraction_notes": "Short uncertainty note if handwriting is unclear"
-  },
-  "confidence_score": 0.95
-}
-```
+{{DOCUMENT_EXTRACTION_SCHEMA}}
 
 Analyze the image carefully and extract all visible information. Pay special attention to:
 - Headers and footers containing company information

@@ -131,7 +131,12 @@ class FileValidatorAgent(BaseAgent):
                                 logger.warning(f"Could not load {image_prompt_name} via LLMFactory: {str(e)}")
 
                                 # Fall back to direct file loading
-                                prompt_path = Path(__file__).parent.parent / "prompts" / "file_validator_image_prompt.txt"
+                                prompt_path = (
+                                    Path(__file__).parent.parent
+                                    / "prompts"
+                                    / "document_processing"
+                                    / "file_validator_image_prompt.txt"
+                                )
 
                                 if prompt_path.exists():
                                     with open(prompt_path, "r") as f:

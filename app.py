@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request
 
 from services import live_backend
+from services.conversation_policy import compact_whatsapp_message
 from utils.clerk_auth import (
     ClerkAuthError,
     get_auth_config,
@@ -308,6 +309,7 @@ def whatsapp_webhook():
             or result.get("content")
             or "I received your message, but could not produce a response."
         )
+        message = compact_whatsapp_message(message)
         logger.info("Twilio webhook processed with status=%s", result.get("status", "unknown"))
         return _twilio_message_response(message)
     except Exception as exc:

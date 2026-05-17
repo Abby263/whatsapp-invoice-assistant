@@ -23,6 +23,8 @@ from langchain_app.text_processing_workflow import process_text_message as proce
 from langchain_app.file_processing_workflow import process_file_message as process_file
 from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
+from services.conversation_policy import media_processing_ack
+from services.twilio_messaging import send_processing_ack
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +263,12 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 results = []
                 seen_checksums: set[str] = set()
                 media_count = _parse_num_media(message_data.get("NumMedia"))
+                if media_count > 0:
+                    send_processing_ack(
+                        to_number=sender,
+                        from_number=message_data.get("To") or os.environ.get("TWILIO_PHONE_NUMBER"),
+                        body=media_processing_ack(media_count),
+                    )
 
                 async with httpx.AsyncClient() as client:
                     for index in range(media_count):
@@ -476,7 +484,6 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         metadata = result.get("metadata", {})
         index = metadata.get("media_index")
         label = f"Attachment {index + 1}" if isinstance(index, int) else "Attachment"
-        message = result.get("message") or result.get("content") or ""
         if metadata.get("duplicate"):
             state = "duplicate"
         elif result.get("status") == "error":
@@ -485,11 +492,14 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             state = "saved"
         else:
             state = "processed"
-        detail_lines.append(f"{label}: {state}. {message}".strip())
+        if state == "failed":
+            detail_lines.append(f"{label}: failed")
+        else:
+            detail_lines.append(f"{label}: {state}")
 
     return {
         "status": "success" if successes else "error",
-        "message": " ".join(summary_parts) + "\n" + "\n".join(detail_lines),
+        "message": " ".join(summary_parts) + "\n" + "\n".join(detail_lines[:8]),
         "metadata": {
             "intent": IntentType.FILE_PROCESSING.value,
             "media_count": len(results),

@@ -8,6 +8,7 @@ import os
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
 from constants.prompt_mappings import AgentType
+from schemas.llm_outputs import is_ledger_document, normalize_document_extraction
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -173,7 +174,11 @@ class DataExtractorAgent(BaseAgent):
                     "error": "Failed to parse extraction response"
                 }
 
-            normalized_data = self._normalize_extracted_data(parsed_result)
+            normalized_data = (
+                parsed_result
+                if self._is_test_sample_data_format(parsed_result)
+                else normalize_document_extraction(parsed_result)
+            )
 
             # Extract confidence score and check for errors
             confidence = parsed_result.get("confidence_score", 0.0)
@@ -284,7 +289,7 @@ class DataExtractorAgent(BaseAgent):
             logger.warning(f"Missing required sections in extracted data: {missing}")
             return False
 
-        is_ledger = self._is_ledger_document(data)
+        is_ledger = is_ledger_document(data)
 
         # Vendor section should have a name at minimum
         if not is_ledger and not data.get("vendor", {}).get("name"):
@@ -324,162 +329,3 @@ class DataExtractorAgent(BaseAgent):
             return False
 
         return True
-
-    def _normalize_extracted_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Clean and normalize the extracted data.
-
-        This method standardizes date formats, ensures numeric values for prices,
-        and handles any edge cases in the extracted data.
-
-        Args:
-            data: The raw extracted data dictionary
-
-        Returns:
-            Normalized data dictionary
-        """
-        # Handle test format data differently
-        if self._is_test_sample_data_format(data):
-            return data
-
-        # Create a deep copy to avoid modifying the original
-        normalized = json.loads(json.dumps(data))
-
-        vendor = self._ensure_dict_section(normalized, "vendor")
-        transaction = self._ensure_dict_section(normalized, "transaction")
-        additional_info = self._ensure_dict_section(normalized, "additional_info")
-        financial = self._ensure_dict_section(normalized, "financial")
-
-        is_ledger = self._is_ledger_document(normalized)
-        if is_ledger and not vendor.get("name"):
-            vendor["name"] = "Handwritten ledger"
-        if is_ledger:
-            additional_info.setdefault("document_type", "handwritten_ledger")
-            financial.setdefault("currency", "INR")
-
-        items = normalized.get("items", [])
-        if items is None:
-            normalized["items"] = []
-            items = normalized["items"]
-        elif not isinstance(items, list):
-            normalized["items"] = [items]
-            items = normalized["items"]
-
-        for i, item in enumerate(items):
-            if not isinstance(item, dict):
-                item = {"description": str(item) if item is not None else "Unknown item"}
-                items[i] = item
-
-            self._normalize_item(item, is_ledger)
-            if item.get("transaction_date") and not transaction.get("date"):
-                transaction["date"] = item["transaction_date"]
-
-        for key in ("subtotal", "total"):
-            if key in financial and financial[key] is not None:
-                financial[key] = self._coerce_number(financial[key], 0.0)
-
-        tax = financial.get("tax")
-        if isinstance(tax, dict):
-            if tax.get("total") is not None:
-                tax["total"] = self._coerce_number(tax["total"], 0.0)
-            details = tax.get("details")
-            if isinstance(details, list):
-                for detail in details:
-                    if isinstance(detail, dict) and detail.get("amount") is not None:
-                        detail["amount"] = self._coerce_number(detail["amount"], 0.0)
-
-        if self._is_ledger_document(normalized):
-            if financial.get("currency") is None:
-                financial["currency"] = "INR"
-            if financial.get("total") is None:
-                ledger_total = sum(
-                    self._coerce_number(item.get("total_price"), 0.0)
-                    for item in normalized.get("items", [])
-                    if isinstance(item, dict)
-                    and str(item.get("entry_type", "")).lower() != "income"
-                )
-                financial["total"] = ledger_total
-
-        return normalized
-
-    def _ensure_dict_section(self, data: Dict[str, Any], key: str) -> Dict[str, Any]:
-        value = data.get(key, {})
-        if isinstance(value, dict):
-            data[key] = value
-            return value
-        data[key] = {"name": str(value)} if key == "vendor" and value else {}
-        return data[key]
-
-    def _normalize_item(self, item: Dict[str, Any], is_ledger: bool) -> None:
-        if item.get("amount") is not None and item.get("total_price") is None:
-            item["total_price"] = item.get("amount")
-        if item.get("price") is not None and item.get("unit_price") is None:
-            item["unit_price"] = item.get("price")
-        item["description"] = str(item.get("description") or ("Ledger entry" if is_ledger else "Unknown item")).strip()
-        item["quantity"] = self._coerce_number(item.get("quantity"), 1.0) or 1.0
-
-        if item.get("total_price") is not None:
-            item["total_price"] = self._coerce_number(item["total_price"], 0.0)
-        if item.get("unit_price") is not None:
-            item["unit_price"] = self._coerce_number(item["unit_price"], 0.0)
-
-        if item.get("total_price") is None and item.get("unit_price") is not None:
-            item["total_price"] = item["unit_price"] * item["quantity"]
-        if item.get("unit_price") is None and item.get("total_price") is not None:
-            item["unit_price"] = item["total_price"] / item["quantity"]
-
-        if is_ledger:
-            item.setdefault("entry_type", "unknown")
-            item["entry_type"] = str(item["entry_type"]).lower()
-            item.setdefault("unit", "entry")
-            item.setdefault("item_category", item["entry_type"] or "ledger_entry")
-            if item.get("transaction_date") and not item.get("item_code"):
-                item["item_code"] = item["transaction_date"]
-            elif item.get("raw_date") and not item.get("item_code"):
-                item["item_code"] = item["raw_date"]
-            if item.get("item_code"):
-                item["item_code"] = str(item["item_code"])[:50]
-            if item.get("item_category"):
-                item["item_category"] = str(item["item_category"])[:50]
-
-            description_prefixes = [
-                str(item.get("transaction_date") or "").strip(),
-                str(item.get("raw_date") or "").strip(),
-            ]
-            for prefix in reversed([value for value in description_prefixes if value]):
-                if prefix not in item["description"]:
-                    item["description"] = f"{prefix} - {item['description']}"
-
-    def _is_ledger_document(self, data: Dict[str, Any]) -> bool:
-        additional_info = data.get("additional_info", {}) if isinstance(data, dict) else {}
-        additional = additional_info if isinstance(additional_info, dict) else {}
-        document_type = str(additional.get("document_type") or "").lower()
-        if any(value in document_type for value in ("ledger", "account_book", "notebook")):
-            return True
-        vendor = data.get("vendor", {}) if isinstance(data, dict) else {}
-        vendor_name = vendor.get("name") if isinstance(vendor, dict) else vendor
-        if "ledger" in str(vendor_name or "").lower():
-            return True
-        items = data.get("items") or [] if isinstance(data, dict) else []
-        if not isinstance(items, list):
-            return False
-        dated_items = sum(
-            1
-            for item in items
-            if isinstance(item, dict)
-            and (item.get("transaction_date") or item.get("raw_date") or item.get("entry_type"))
-        )
-        return dated_items >= 2
-
-    def _coerce_number(self, value: Any, default: float = 0.0) -> float:
-        if value in (None, ""):
-            return default
-        if isinstance(value, (int, float)):
-            return float(value)
-        cleaned = re.sub(r"[^\d.\-]", "", str(value))
-        if cleaned in ("", "-", ".", "-."):
-            return default
-        try:
-            return float(cleaned)
-        except (TypeError, ValueError):
-            return default
