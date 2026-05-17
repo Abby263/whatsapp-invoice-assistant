@@ -420,7 +420,7 @@ def _write_last_sql_query_log(
 
 def post_process_sql_for_vector(sql: str) -> str:
     """
-    Post-process SQL to ensure correct pgvector syntax.
+    Post-process SQL to ensure correct pgvector and PostgreSQL syntax.
 
     Args:
         sql: Raw SQL string from the agent
@@ -429,6 +429,22 @@ def post_process_sql_for_vector(sql: str) -> str:
         Processed SQL with corrected pgvector syntax
     """
     import re
+
+    # PostgreSQL only supports ROUND(value, precision) for numeric, not double
+    # precision. Our amount columns are Float, so aggregate summaries need an
+    # explicit cast before rounding to two decimals.
+    sql = re.sub(
+        r"ROUND\(\s*(COALESCE\(\s*(?:SUM|AVG|MIN|MAX)\([^)]+\)\s*,\s*0(?:\.0)?\s*\))\s*,\s*(\d+)\s*\)",
+        r"ROUND(CAST(\1 AS numeric), \2)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+    sql = re.sub(
+        r"ROUND\(\s*((?:SUM|AVG|MIN|MAX)\([^)]+\))\s*,\s*(\d+)\s*\)",
+        r"ROUND(CAST(\1 AS numeric), \2)",
+        sql,
+        flags=re.IGNORECASE,
+    )
 
     # Fix vector search syntax if needed (ensure consistent format)
     if "to_vector(" in sql.lower():

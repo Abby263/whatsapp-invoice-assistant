@@ -18,7 +18,12 @@ from PIL import Image
 
 from langchain_app.text_processing_workflow import process_text_message, classify_intent
 from langchain_app.general_response_workflow import process_general_response, process_greeting
-from langchain_app.invoice_query_workflow import process_invoice_query, convert_to_sql, execute_query
+from langchain_app.invoice_query_workflow import (
+    process_invoice_query,
+    convert_to_sql,
+    execute_query,
+    post_process_sql_for_vector,
+)
 from langchain_app.invoice_creator_workflow import process_invoice_creation, extract_invoice_entities
 from langchain_app.file_processing_workflow import (
     _has_storable_extraction_data,
@@ -239,6 +244,21 @@ async def test_convert_to_sql_ignores_readonly_debug_log():
 
     assert "error" not in result
     assert result["sql_query"] == "SELECT * FROM invoices WHERE user_id = :user_id"
+
+
+def test_post_process_sql_casts_float_aggregates_before_rounding():
+    sql = (
+        "SELECT ROUND(COALESCE(SUM(inv.total_amount), 0), 2) AS total_spent, "
+        "ROUND(COALESCE(AVG(inv.total_amount), 0), 2) AS average_invoice_amount, "
+        "ROUND(MAX(inv.total_amount), 2) AS largest_invoice_amount "
+        "FROM invoices inv WHERE inv.user_id = :user_id"
+    )
+
+    processed = post_process_sql_for_vector(sql)
+
+    assert "ROUND(CAST(COALESCE(SUM(inv.total_amount), 0) AS numeric), 2)" in processed
+    assert "ROUND(CAST(COALESCE(AVG(inv.total_amount), 0) AS numeric), 2)" in processed
+    assert "ROUND(CAST(MAX(inv.total_amount) AS numeric), 2)" in processed
 
 
 @pytest.mark.asyncio
