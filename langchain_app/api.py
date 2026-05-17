@@ -58,10 +58,13 @@ async def process_text_message(
             conversation_history=conversation_history or []
         )
         
-        # Update the result processing to handle cases where content is missing
-        if result and "error" in result:
+        # Update the result processing to handle cases where content is missing.
+        # AgentOutput dictionaries include ``error: None`` on successful local
+        # responses, so only treat the result as an error when the error value
+        # is truthy or the status is explicitly failed.
+        if result and (result.get("error") or result.get("status") == "error"):
             return {
-                "message": f"Error: {result['error']}",
+                "message": f"Error: {result.get('error') or result.get('message') or 'Processing failed'}",
                 "status": "error",
                 "type": "text",
                 "user_id": user_id
