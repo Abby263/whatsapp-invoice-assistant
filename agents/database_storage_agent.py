@@ -398,7 +398,7 @@ class DatabaseStorageAgent(BaseAgent):
         metadata = extraction_result.get("metadata") if isinstance(extraction_result, dict) else None
         if not isinstance(metadata, dict):
             return None
-        storage = metadata.get("file_storage") or metadata.get("s3_storage")
+        storage = metadata.get("file_storage")
         return storage if isinstance(storage, dict) else None
 
     def _extract_content_hash(

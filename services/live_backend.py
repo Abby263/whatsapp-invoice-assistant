@@ -595,7 +595,6 @@ def latest_file_storage(auth_context: Any = None) -> Dict[str, Any]:
             "status": "not_found",
             "message": "No uploaded file metadata found",
             "file_storage": {},
-            "s3_storage": {},
         }
 
     file_url, file_path, content_type, file_size, metadata = row
@@ -613,7 +612,7 @@ def latest_file_storage(auth_context: Any = None) -> Dict[str, Any]:
     if storage_info.get("file_key"):
         storage_info["url"] = SupabaseStorageHandler().generate_url(storage_info["file_key"])
 
-    return {"status": "success", "file_storage": storage_info, "s3_storage": storage_info}
+    return {"status": "success", "file_storage": storage_info}
 
 
 def normalize_whatsapp_number(value: Optional[str], default: Optional[str] = DEFAULT_WHATSAPP_NUMBER) -> str:

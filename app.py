@@ -859,7 +859,6 @@ def agent_flow():
             "user_id": None,
             "whatsapp_number": None,
             "file_storage": {},
-            "s3_storage": {},
         }
     )
 
@@ -875,7 +874,6 @@ def step_logs(step_name: str):
                 f"{timestamp} - vercel-demo - INFO - Production execution requires configured backend services",
             ],
             "file_storage": {},
-            "s3_storage": {},
         }
     )
 
@@ -892,7 +890,6 @@ def memory_config():
 
 
 @app.get("/api/file-storage-info")
-@app.get("/api/s3-info")
 def file_storage_info():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
@@ -908,7 +905,6 @@ def file_storage_info():
             "status": "not_found",
             "message": "No files are persisted in the hosted UI demo.",
             "file_storage": {},
-            "s3_storage": {},
         }
     ), 404
 

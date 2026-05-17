@@ -886,7 +886,6 @@ def get_agent_flow():
             'user_id': user_id,
             'whatsapp_number': whatsapp_number,
             'file_storage': file_storage_info,
-            's3_storage': file_storage_info
         })
     except Exception as e:
         logger.exception(f"Error generating agent flow visualization: {str(e)}")
@@ -1308,7 +1307,6 @@ def get_step_logs(step_name):
 
         if file_storage_info:
             response_data['file_storage'] = file_storage_info
-            response_data['s3_storage'] = file_storage_info
             logger.info(f"Including file storage info in response: {file_storage_info}")
 
         return jsonify(response_data)
@@ -1378,7 +1376,6 @@ def initialize():
         })
 
 @app.route('/api/file-storage-info')
-@app.route('/api/s3-info')
 def get_file_storage_info():
     """Return storage information for the most recent uploaded invoice file."""
     try:
@@ -1441,7 +1438,6 @@ def get_file_storage_info():
         return jsonify({
             "status": "success",
             "file_storage": storage_info,
-            "s3_storage": storage_info
         })
 
     except Exception as e:

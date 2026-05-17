@@ -15,10 +15,10 @@ const itemCount = document.getElementById('itemCount');
 const userIdDisplay = document.getElementById('userIdDisplay');
 const userWhatsappDisplay = document.getElementById('userWhatsappDisplay');
 const whatsappNumberSelect = document.getElementById('whatsappNumberSelect');
-const s3StorageSection = document.getElementById('s3StorageSection');
-const s3FileKey = document.getElementById('s3FileKey');
-const s3Url = document.getElementById('s3Url');
-const s3UrlContainer = document.getElementById('s3UrlContainer');
+const fileStorageSection = document.getElementById('fileStorageSection');
+const fileStorageKey = document.getElementById('fileStorageKey');
+const fileStorageUrl = document.getElementById('fileStorageUrl');
+const fileStorageUrlContainer = document.getElementById('fileStorageUrlContainer');
 const dashboardReceiptCount = document.getElementById('dashboardReceiptCount');
 const dashboardItemCount = document.getElementById('dashboardItemCount');
 const dashboardIntent = document.getElementById('dashboardIntent');
@@ -224,19 +224,19 @@ function updateFileStorageInfo(storage) {
         return;
     }
 
-    s3StorageSection.style.display = 'block';
+    fileStorageSection.style.display = 'block';
     const provider = storage.provider || 'Supabase';
     setElementText(storageProvider, provider);
-    s3FileKey.textContent = storage.file_key || storage.path || 'None';
+    fileStorageKey.textContent = storage.file_key || storage.path || 'None';
     setElementText(dashboardStorageStatus, `${provider} ready`);
 
     if (storage.url) {
-        s3Url.href = storage.url;
-        s3Url.textContent = 'View File';
-        s3UrlContainer.style.display = 'block';
+        fileStorageUrl.href = storage.url;
+        fileStorageUrl.textContent = 'View File';
+        fileStorageUrlContainer.style.display = 'block';
     } else {
-        s3Url.href = '#';
-        s3Url.textContent = 'None';
+        fileStorageUrl.href = '#';
+        fileStorageUrl.textContent = 'None';
     }
 }
 
@@ -1295,7 +1295,7 @@ function updateAgentPanel(data) {
         fetch('/api/file-storage-info')
             .then(response => response.json())
             .then(storageData => {
-                const storage = storageData.file_storage || storageData.s3_storage;
+                const storage = storageData.file_storage;
                 if (storageData.status === 'success' && storage) {
                     updateFileStorageInfo(storage);
                     console.log("Successfully retrieved file storage info:", storage);
@@ -1344,8 +1344,8 @@ function updateAgentPanel(data) {
                     });
                 }
 
-                const flowStorage = flowData.file_storage || flowData.s3_storage;
-                if (flowStorage && Object.keys(flowStorage).length > 0 && s3StorageSection.style.display !== 'block') {
+                const flowStorage = flowData.file_storage;
+                if (flowStorage && Object.keys(flowStorage).length > 0 && fileStorageSection.style.display !== 'block') {
                     updateFileStorageInfo(flowStorage);
                 }
             } else {
@@ -1408,7 +1408,7 @@ function showStepLogs(stepName) {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                const stepStorage = data.file_storage || data.s3_storage;
+                const stepStorage = data.file_storage;
                 if (stepStorage && Object.keys(stepStorage).length > 0) {
                     updateFileStorageInfo(stepStorage);
                     console.log("Updated file storage info from step logs:", stepStorage);
@@ -1433,11 +1433,11 @@ function showStepLogs(stepName) {
 
                 // Add file storage info if available
                 if (stepStorage && Object.keys(stepStorage).length > 0) {
-                    const s3InfoSection = document.createElement('div');
-                    s3InfoSection.className = 'storage-info-section';
-                    s3InfoSection.innerHTML = `
+                    const fileStorageInfoSection = document.createElement('div');
+                    fileStorageInfoSection.className = 'storage-info-section';
+                    fileStorageInfoSection.innerHTML = `
                         <h4>File Storage Information</h4>
-                        <div class="s3-storage-info">
+                        <div class="file-storage-info">
                             ${stepStorage.file_key ? `<div class="storage-item">
                                 <span class="label">File Key:</span>
                                 <span class="value">${stepStorage.file_key}</span>
@@ -1454,7 +1454,7 @@ function showStepLogs(stepName) {
                             </div>` : ''}
                         </div>
                     `;
-                    modalBody.appendChild(s3InfoSection);
+                    modalBody.appendChild(fileStorageInfoSection);
                 }
 
                 // Process and structure the logs
