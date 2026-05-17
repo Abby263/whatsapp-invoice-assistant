@@ -30,6 +30,33 @@ async def test_process_text_message_ignores_empty_agent_error(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_process_text_message_resolves_missing_user_id_from_sender(monkeypatch):
+    captured = {}
+
+    async def fake_process_text(text_content, user_id=None, conversation_history=None):
+        captured["user_id"] = user_id
+        return {
+            "content": "You spent INR 7,825 across 1 invoice.",
+            "error": None,
+            "status": "success",
+            "metadata": {"intent": "invoice_query"},
+            "confidence": 0.9,
+        }
+
+    monkeypatch.setattr(api, "process_text", fake_process_text)
+    monkeypatch.setattr(api, "extract_user_id_from_sender", lambda sender: "42")
+
+    result = await api.process_text_message(
+        message="Show my expense summary",
+        sender="whatsapp:+15551234567",
+    )
+
+    assert captured["user_id"] == "42"
+    assert result["status"] == "success"
+    assert result["user_id"] == "42"
+
+
+@pytest.mark.asyncio
 async def test_process_whatsapp_message_returns_greeting_content(monkeypatch):
     async def fake_process_text(text_content, user_id=None, conversation_history=None):
         return {

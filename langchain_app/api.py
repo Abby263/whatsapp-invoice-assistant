@@ -76,6 +76,13 @@ async def process_text_message(
     logger.info(f"Processing text message from {sender}")
     
     try:
+        if user_id is None:
+            user_id = extract_user_id_from_sender(sender)
+            if user_id:
+                logger.info("Resolved missing text-message user_id from sender")
+            else:
+                logger.warning("Could not resolve text-message user_id from sender %s", sender)
+
         # Process the text message through the specialized workflow
         result = await process_text(
             text_content=message,
