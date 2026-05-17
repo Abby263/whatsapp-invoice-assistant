@@ -50,6 +50,7 @@ const authStatus = document.getElementById('authStatus');
 const signInBtn = document.getElementById('signInBtn');
 const linkWhatsappBtn = document.getElementById('linkWhatsappBtn');
 const clerkUserButton = document.getElementById('clerkUserButton');
+const topbarUser = document.getElementById('topbarUser');
 
 // View metadata for topbar copy
 const VIEW_META = {
@@ -79,7 +80,7 @@ const VIEW_META = {
 let isProcessing = false;
 let conversationId = generateUUID();
 let userId = "0";
-let whatsappNumber = "+1234567890"; // Default WhatsApp number
+let whatsappNumber = "";
 let authState = {
     enabled: false,
     required: false,
@@ -92,6 +93,75 @@ const nativeFetch = window.fetch.bind(window);
 function setElementText(element, value) {
     if (element) {
         element.textContent = value;
+    }
+}
+
+function setWhatsappLinkState(state) {
+    if (topbarUser) {
+        topbarUser.dataset.linkState = state;
+    }
+}
+
+function setWhatsappUnlinked(label = 'Link WhatsApp') {
+    whatsappNumber = '';
+    userId = '0';
+    setWhatsappLinkState('unlinked');
+    setElementText(userWhatsappDisplay, 'Not linked');
+    setElementText(userIdDisplay, userId || '0');
+
+    if (whatsappNumberSelect) {
+        whatsappNumberSelect.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = label;
+        whatsappNumberSelect.appendChild(option);
+        whatsappNumberSelect.value = '';
+        whatsappNumberSelect.disabled = true;
+    }
+}
+
+function normalizeUiWhatsappNumber(value) {
+    const normalized = (value || '').trim();
+    return normalized === '+1234567890' ? '' : normalized;
+}
+
+function setActiveWhatsappUser(user) {
+    if (!user) {
+        setWhatsappUnlinked();
+        return;
+    }
+
+    const number = normalizeUiWhatsappNumber(user.whatsapp_number);
+    if (!number) {
+        setWhatsappUnlinked();
+        return;
+    }
+
+    userId = user.id || userId || '0';
+    whatsappNumber = number;
+    setWhatsappLinkState('linked');
+    setElementText(userIdDisplay, userId);
+    setElementText(userWhatsappDisplay, whatsappNumber);
+
+    if (whatsappNumberSelect) {
+        whatsappNumberSelect.disabled = false;
+        const existingOption = Array.from(whatsappNumberSelect.options).find(
+            option => option.value === whatsappNumber
+        );
+        const option = existingOption || document.createElement('option');
+        option.value = whatsappNumber;
+        option.textContent = `${user.name || 'Linked user'} (${whatsappNumber})`;
+        option.dataset.userId = userId;
+        if (!existingOption) {
+            if (
+                whatsappNumberSelect.options.length === 1 &&
+                !whatsappNumberSelect.options[0].value
+            ) {
+                whatsappNumberSelect.innerHTML = '';
+            }
+            whatsappNumberSelect.appendChild(option);
+        }
+        whatsappNumberSelect.value = whatsappNumber;
     }
 }
 
@@ -271,6 +341,7 @@ async function setupAuth() {
                 authState.isSignedIn = false;
                 authState.needsLink = false;
                 authState.user = null;
+                setWhatsappUnlinked();
                 setAuthUiState('signed-out', 'Sign in required');
                 updateWorkspaceAuthAvailability();
             }
@@ -326,12 +397,12 @@ async function handleSignedInUser() {
 function getClerkProfilePayload(user) {
     const primaryEmail = user?.primaryEmailAddress?.emailAddress || '';
     const fullName = user?.fullName || [user?.firstName, user?.lastName].filter(Boolean).join(' ');
-    const primaryPhone = user?.primaryPhoneNumber?.phoneNumber || whatsappNumber;
+    const primaryPhone = user?.primaryPhoneNumber?.phoneNumber || '';
 
     return {
         email: primaryEmail,
         name: fullName,
-        whatsapp_number: primaryPhone || whatsappNumber,
+        whatsapp_number: primaryPhone || whatsappNumber || '',
     };
 }
 
@@ -344,7 +415,7 @@ async function linkAuthenticatedWhatsappNumber() {
     }
 
     const user = authState.user || window.Clerk.user;
-    const defaultNumber = user?.primaryPhoneNumber?.phoneNumber || whatsappNumber || '+1234567890';
+    const defaultNumber = user?.primaryPhoneNumber?.phoneNumber || whatsappNumber || '';
     const linkedNumber = prompt('Enter the WhatsApp number used for receipt uploads:', defaultNumber);
     if (!linkedNumber) {
         return;
@@ -386,25 +457,7 @@ function applyLinkedUser(linkedUser) {
     }
 
     authState.needsLink = false;
-    userId = linkedUser.id || userId;
-    whatsappNumber = linkedUser.whatsapp_number || whatsappNumber;
-    setElementText(userIdDisplay, userId);
-    setElementText(userWhatsappDisplay, whatsappNumber);
-
-    if (whatsappNumberSelect) {
-        const existingOption = Array.from(whatsappNumberSelect.options).find(
-            option => option.value === whatsappNumber
-        );
-        const label = `${linkedUser.name || 'Linked user'} (${whatsappNumber})`;
-        const option = existingOption || document.createElement('option');
-        option.value = whatsappNumber;
-        option.textContent = label;
-        option.dataset.userId = userId;
-        if (!existingOption) {
-            whatsappNumberSelect.appendChild(option);
-        }
-        whatsappNumberSelect.value = whatsappNumber;
-    }
+    setActiveWhatsappUser(linkedUser);
 
     updateWorkspaceAuthAvailability();
     loadGeneratedInvoices();
@@ -434,6 +487,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupTheme();
     setupNavigation();
     setupAuthenticatedFetch();
+    setWhatsappUnlinked();
     await setupAuth();
 
     const canLoadWorkspace = (
@@ -450,9 +504,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         addSystemMessage('Sign in to connect your WhatsApp receipts with this workspace.');
     }
 
-    // Set user information in the UI
-    if (userIdDisplay) userIdDisplay.textContent = userId;
-    if (userWhatsappDisplay) userWhatsappDisplay.textContent = whatsappNumber;
+    if (!whatsappNumber) {
+        setWhatsappUnlinked(authState.needsLink ? 'Link WhatsApp' : 'No user selected');
+    }
 
     // Setup WhatsApp number select event handling
     if (whatsappNumberSelect) {
@@ -619,58 +673,40 @@ function setupCommandCenter() {
 
 // Function to load users into the dropdown
 function loadUsers() {
+    if (!whatsappNumberSelect) {
+        return;
+    }
+
     fetch('/api/users')
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success' && Array.isArray(data.users)) {
-                // Save current value
                 const currentValue = whatsappNumberSelect.value;
+                const users = data.users.filter(user => normalizeUiWhatsappNumber(user.whatsapp_number));
 
-                // Clear existing options
+                if (data.needs_link || users.length === 0) {
+                    setWhatsappUnlinked(data.needs_link ? 'Link WhatsApp' : 'No user selected');
+                    updateWorkspaceAuthAvailability();
+                    return;
+                }
+
                 whatsappNumberSelect.innerHTML = '';
 
-                // Add users to dropdown
-                data.users.forEach(user => {
+                users.forEach(user => {
                     const option = document.createElement('option');
-                    option.value = user.whatsapp_number;
-                    option.textContent = `${user.name} (${user.whatsapp_number})`;
+                    const number = normalizeUiWhatsappNumber(user.whatsapp_number);
+                    option.value = number;
+                    option.textContent = `${user.name || 'Linked user'} (${number})`;
                     option.dataset.userId = user.id;
                     whatsappNumberSelect.appendChild(option);
                 });
 
-                // Try to restore previous selection, or select first user
-                if (data.users.length > 0) {
-                    // Try to find and select the option with the current WhatsApp number
-                    const matchingOption = Array.from(whatsappNumberSelect.options).find(
-                        option => option.value === currentValue
-                    );
-
-                    if (matchingOption) {
-                        whatsappNumberSelect.value = currentValue;
-                    } else {
-                        // Default to first user
-                        whatsappNumberSelect.selectedIndex = 0;
-                        whatsappNumber = whatsappNumberSelect.value;
-
-                        // Get the user ID from the selected option
-                        const selectedOption = whatsappNumberSelect.options[whatsappNumberSelect.selectedIndex];
-                        if (selectedOption.dataset.userId) {
-                            userId = selectedOption.dataset.userId;
-                            userIdDisplay.textContent = userId;
-                        }
-                    }
-
-                    updateSelectedUser();
-                    updateDatabaseCounts();
-                } else {
-                    const option = document.createElement('option');
-                    option.value = whatsappNumber;
-                    option.textContent = whatsappNumber;
-                    option.dataset.userId = userId;
-                    whatsappNumberSelect.appendChild(option);
-                    whatsappNumberSelect.value = whatsappNumber;
-                    updateSelectedUser();
-                }
+                const selectedUser = (
+                    users.find(user => normalizeUiWhatsappNumber(user.whatsapp_number) === currentValue)
+                    || users[0]
+                );
+                setActiveWhatsappUser(selectedUser);
+                updateDatabaseCounts();
             } else {
                 console.error('Failed to load users:', data.message);
             }
@@ -688,10 +724,14 @@ function switchUser() {
     }
 
     const newWhatsappNumber = whatsappNumberSelect.value;
+    if (!newWhatsappNumber) {
+        setWhatsappUnlinked();
+        return;
+    }
 
     // Get the user ID from the selected option
     const selectedOption = whatsappNumberSelect.options[whatsappNumberSelect.selectedIndex];
-    const newUserId = selectedOption.dataset.userId;
+    const newUserId = selectedOption?.dataset.userId;
 
     // If user hasn't changed, do nothing
     if (newWhatsappNumber === whatsappNumber && newUserId === userId) {
@@ -712,12 +752,24 @@ function switchUser() {
 
 // Function to initialize for a specific user
 function initializeForUser(whatsappNumber) {
+    if (!whatsappNumber) {
+        setWhatsappUnlinked();
+        return;
+    }
+
     showLoading();
 
     fetch(`/api/init?whatsapp_number=${encodeURIComponent(whatsappNumber)}`)
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
+                if (data.needs_link) {
+                    setWhatsappUnlinked('Link WhatsApp');
+                    addSystemMessage('Link your WhatsApp number before loading receipts.');
+                    hideLoading();
+                    return;
+                }
+
                 // Update user information
                 if (data.user_id) {
                     userId = data.user_id;
@@ -783,23 +835,19 @@ function initializeApp() {
             if (data.status === 'success') {
                 console.log('Test environment initialized');
 
-                // Update user information
-                if (data.user_id) {
-                    userId = data.user_id;
-                    userIdDisplay.textContent = userId;
+                if (data.needs_link) {
+                    authState.needsLink = true;
+                    setWhatsappUnlinked('Link WhatsApp');
+                    updateWorkspaceAuthAvailability();
+                    return;
                 }
 
-                if (data.whatsapp_number) {
-                    whatsappNumber = data.whatsapp_number;
-
-                    // Will be set by loadUsers, but set as fallback
-                    if (whatsappNumberSelect.options.length === 0) {
-                        const option = document.createElement('option');
-                        option.value = whatsappNumber;
-                        option.textContent = whatsappNumber;
-                        whatsappNumberSelect.appendChild(option);
-                        whatsappNumberSelect.value = whatsappNumber;
-                    }
+                if (data.user_id && normalizeUiWhatsappNumber(data.whatsapp_number)) {
+                    setActiveWhatsappUser({
+                        id: data.user_id,
+                        name: data.user_name || 'Linked user',
+                        whatsapp_number: data.whatsapp_number
+                    });
                 }
 
             } else {
@@ -815,6 +863,10 @@ function initializeApp() {
 
 function sendMessage() {
     const message = messageInput.value.trim();
+    if (authState.required && !whatsappNumber) {
+        addSystemMessage('Link your WhatsApp number before using the workspace.');
+        return;
+    }
     if (message && !isProcessing) {
         // Clear input
         messageInput.value = '';
@@ -886,24 +938,11 @@ function processMessage(message) {
             }
 
             if (data.whatsapp_number) {
-                whatsappNumber = data.whatsapp_number;
-                // Update the select input value if it doesn't already match
-                if (whatsappNumberSelect.value !== whatsappNumber) {
-                    const matchingOption = Array.from(whatsappNumberSelect.options).find(
-                        option => option.value === whatsappNumber
-                    );
-
-                    if (matchingOption) {
-                        whatsappNumberSelect.value = whatsappNumber;
-                    } else {
-                        // If no matching option found, add one
-                        const option = document.createElement('option');
-                        option.value = whatsappNumber;
-                        option.textContent = whatsappNumber;
-                        whatsappNumberSelect.appendChild(option);
-                        whatsappNumberSelect.value = whatsappNumber;
-                    }
-                }
+                setActiveWhatsappUser({
+                    id: data.user_id || userId,
+                    name: data.user_name || 'Linked user',
+                    whatsapp_number: data.whatsapp_number
+                });
             }
         } else {
             addSystemMessage(`Error: ${data.message}`);
@@ -933,6 +972,11 @@ function sendCommand(command) {
 
 function uploadFile() {
     if (fileInput.files.length === 0 || isProcessing) {
+        return;
+    }
+    if (authState.required && !whatsappNumber) {
+        addSystemMessage('Link your WhatsApp number before uploading receipts.');
+        fileInput.value = '';
         return;
     }
 
@@ -979,8 +1023,11 @@ function uploadFile() {
             }
 
             if (data.whatsapp_number) {
-                whatsappNumber = data.whatsapp_number;
-                whatsappNumberSelect.value = whatsappNumber;
+                setActiveWhatsappUser({
+                    id: data.user_id || userId,
+                    name: data.user_name || 'Linked user',
+                    whatsapp_number: data.whatsapp_number
+                });
             }
         } else {
             addSystemMessage(`Error: ${data.message}`);
@@ -1247,8 +1294,11 @@ function updateAgentPanel(data) {
                 }
 
                 if (flowData.whatsapp_number) {
-                    whatsappNumber = flowData.whatsapp_number;
-                    whatsappNumberSelect.value = whatsappNumber;
+                    setActiveWhatsappUser({
+                        id: flowData.user_id || userId,
+                        name: flowData.user_name || 'Linked user',
+                        whatsapp_number: flowData.whatsapp_number
+                    });
                 }
 
                 const flowStorage = flowData.file_storage || flowData.s3_storage;
@@ -2265,23 +2315,24 @@ function initUI() {
 
 function updateSelectedUser() {
     if (!whatsappNumberSelect || whatsappNumberSelect.options.length === 0) {
-        setElementText(userIdDisplay, userId);
-        setElementText(userWhatsappDisplay, whatsappNumber);
+        if (!whatsappNumber) {
+            setWhatsappUnlinked();
+        }
         return;
     }
 
     const selectedOption = whatsappNumberSelect.options[whatsappNumberSelect.selectedIndex];
-    if (!selectedOption) {
-        setElementText(userIdDisplay, userId);
-        setElementText(userWhatsappDisplay, whatsappNumber);
+    if (!selectedOption || !selectedOption.value) {
+        setWhatsappUnlinked();
         return;
     }
 
-    whatsappNumber = selectedOption.value || whatsappNumber;
+    whatsappNumber = selectedOption.value;
     if (selectedOption.dataset.userId) {
         userId = selectedOption.dataset.userId;
     }
 
+    setWhatsappLinkState('linked');
     setElementText(userIdDisplay, userId);
     setElementText(userWhatsappDisplay, whatsappNumber);
 }
@@ -2337,7 +2388,7 @@ function showCreateUserDialog() {
             <div class="modal-body">
                 <div class="form-group">
                     <label for="newWhatsappNumber">WhatsApp Number*:</label>
-                    <input type="text" id="newWhatsappNumber" placeholder="+1234567890" required>
+                    <input type="text" id="newWhatsappNumber" placeholder="+1XXXXXXXXXX" required>
                 </div>
                 <div class="form-group">
                     <label for="newUserName">Name:</label>

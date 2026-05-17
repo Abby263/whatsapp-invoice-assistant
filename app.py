@@ -9,6 +9,7 @@ private infrastructure.
 from __future__ import annotations
 
 import os
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -28,6 +29,7 @@ from utils.clerk_auth import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
 load_dotenv(PROJECT_ROOT / ".env")
 DEFAULT_WHATSAPP_NUMBER = "+1234567890"
 DEFAULT_USER = {
@@ -227,6 +229,13 @@ def _twilio_message_response(message: str, status_code: int = 200):
     return Response(body, status=status_code, mimetype="application/xml")
 
 
+def _mask_number(value: str | None) -> str:
+    value = value or ""
+    if len(value) <= 6:
+        return "***"
+    return f"{value[:4]}...{value[-4:]}"
+
+
 def _twilio_request_is_valid() -> bool:
     if os.environ.get("TWILIO_VALIDATE_REQUESTS", "").lower() not in {"1", "true", "yes"}:
         return True
@@ -274,24 +283,35 @@ def health():
 @app.post("/webhook")
 @app.post("/api/webhook")
 def whatsapp_webhook():
+    form_data = request.form.to_dict(flat=True)
+    logger.info(
+        "Twilio webhook received from %s with NumMedia=%s and Body length=%s",
+        _mask_number(form_data.get("From")),
+        form_data.get("NumMedia", "0"),
+        len(form_data.get("Body", "")),
+    )
     if not _live_backend_enabled():
         backend_config = live_backend.backend_configuration_status()
+        logger.warning("Twilio webhook rejected because backend is not configured: %s", backend_config.get("reason"))
         return _twilio_message_response(
             f"The WhatsApp backend is not configured yet: {backend_config.get('reason')}.",
             status_code=503,
         )
     if not _twilio_request_is_valid():
+        logger.warning("Twilio webhook rejected because request signature was invalid")
         return _twilio_message_response("Invalid Twilio request signature.", status_code=403)
 
     try:
-        result = live_backend.process_twilio_webhook(request.form.to_dict(flat=True))
+        result = live_backend.process_twilio_webhook(form_data)
         message = (
             result.get("message")
             or result.get("content")
             or "I received your message, but could not produce a response."
         )
+        logger.info("Twilio webhook processed with status=%s", result.get("status", "unknown"))
         return _twilio_message_response(message)
     except Exception as exc:
+        logger.exception("Twilio webhook failed")
         return _twilio_message_response(
             f"Sorry, I could not process that message right now: {str(exc)}",
             status_code=500,
@@ -355,8 +375,7 @@ def auth_sync():
             "message": "Clerk session synchronized in demo mode",
             "identity": _auth_identity_payload(auth_context),
             "linked_user": linked_user,
-            "suggested_whatsapp_number": data.get("whatsapp_number")
-            or DEFAULT_WHATSAPP_NUMBER,
+            "suggested_whatsapp_number": data.get("whatsapp_number") or None,
         }
     )
 
@@ -445,19 +464,15 @@ def initialize():
             )
         except Exception as exc:
             return _live_error(exc)
-    linked_user = (
-        DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else DEFAULT_USER
-    )
-    whatsapp_number = request.args.get("whatsapp_number", DEFAULT_WHATSAPP_NUMBER)
+    linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
+    whatsapp_number = request.args.get("whatsapp_number")
     return jsonify(
         {
             "status": "success",
             "message": "Hosted UI demo initialized.",
             "conversation_id": str(uuid4()),
-            "user_id": linked_user["id"] if linked_user else DEFAULT_USER["id"],
-            "whatsapp_number": (
-                linked_user["whatsapp_number"] if linked_user else whatsapp_number
-            ),
+            "user_id": linked_user["id"] if linked_user else None,
+            "whatsapp_number": linked_user["whatsapp_number"] if linked_user else whatsapp_number,
             "needs_link": bool(auth_context and not linked_user),
             "degraded": True,
         }
@@ -475,7 +490,7 @@ def get_users():
         except Exception as exc:
             return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
-    users = [linked_user] if linked_user else [DEFAULT_USER]
+    users = [linked_user] if linked_user else []
     return jsonify(
         {
             "status": "success",
@@ -816,8 +831,8 @@ def agent_flow():
                 "EmbeddingGenerator",
                 "ResponseFormatter",
             ],
-            "user_id": DEFAULT_USER["id"],
-            "whatsapp_number": DEFAULT_WHATSAPP_NUMBER,
+            "user_id": None,
+            "whatsapp_number": None,
             "file_storage": {},
             "s3_storage": {},
         }

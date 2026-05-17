@@ -95,10 +95,10 @@
                         <i class="fab fa-github" aria-hidden="true"></i>
                         <span>GitHub</span>
                     </a>
-                    <div class="topbar-user">
+                    <div class="topbar-user" id="topbarUser" data-link-state="unlinked">
                         <i class="fas fa-circle-user"></i>
                         <select id="whatsappNumberSelect" class="topbar-user-select" aria-label="Active user">
-                            <option value="+1234567890">+1234567890</option>
+                            <option value="">Link WhatsApp</option>
                         </select>
                     </div>
                     <button id="themeToggleBtn" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch to dark mode" title="Toggle theme">
@@ -535,7 +535,7 @@
                                     </div>
                                     <div class="kv-row">
                                         <dt>WhatsApp number</dt>
-                                        <dd id="userWhatsappDisplay">+1234567890</dd>
+                                        <dd id="userWhatsappDisplay">Not linked</dd>
                                     </div>
                                 </dl>
                             </div>

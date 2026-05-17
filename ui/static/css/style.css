@@ -491,6 +491,14 @@ input, select, textarea {
     font-size: 16px;
 }
 
+.topbar-user[data-link-state="unlinked"] {
+    color: var(--muted);
+}
+
+.topbar-user[data-link-state="unlinked"] .topbar-user-select {
+    color: var(--muted);
+}
+
 .topbar-user-select {
     appearance: none;
     background: transparent;
@@ -508,6 +516,11 @@ input, select, textarea {
     overflow: hidden;
     white-space: nowrap;
     outline: none;
+}
+
+.topbar-user-select:disabled {
+    cursor: default;
+    opacity: 1;
 }
 
 .topbar-user-select option {
