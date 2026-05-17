@@ -154,7 +154,8 @@ Every uploaded file follows the same contract before it reaches analytics:
 7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands.
 8. Only after `APPROVE <upload_id>` does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
 9. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
-10. Deletes require human confirmation: browser deletes include a confirmation dialog, and WhatsApp deletes require exact `CONFIRM DELETE ...` commands before rows or files are removed.
+10. Text turns load recent Supabase-backed conversation memory so short follow-ups stay attached to the same user context across WhatsApp and the website.
+11. Deletes require human confirmation: browser deletes include a confirmation dialog, and WhatsApp deletes require exact `CONFIRM DELETE ...` commands before rows or files are removed.
 
 ## Runtime Components
 
@@ -172,8 +173,9 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [storage/user_uploads.py](storage/user_uploads.py) | User-scoped upload paths, media registry writes, and duplicate lookup metadata. |
 | [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
 | [services/history_service.py](services/history_service.py) | User-scoped listing and deletion of receipt history, generated invoices, messages, usage rows, and stored files. |
+| [services/conversation_memory.py](services/conversation_memory.py) | Supabase Postgres-backed active conversation memory for WhatsApp and web multi-turn context. |
 | [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
-| [memory/](memory) | In-memory conversation state with optional MongoDB persistence when explicitly enabled. |
+| [memory/](memory) | Legacy in-memory and optional MongoDB checkpoint helpers for local experiments. |
 
 ## Data Model
 

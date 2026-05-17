@@ -13,7 +13,6 @@ import mimetypes
 import os
 import shutil
 import tempfile
-from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urlparse
@@ -23,8 +22,6 @@ from utils.phone_numbers import normalize_whatsapp_number as normalize_phone_num
 
 
 DEFAULT_WHATSAPP_NUMBER = "+1234567890"
-_CONVERSATION_HISTORY: dict[str, list[dict[str, str]]] = defaultdict(list)
-_MAX_HISTORY_MESSAGES = 50
 
 
 def is_live_backend_enabled() -> bool:
@@ -206,14 +203,19 @@ def list_users(auth_context: Any = None) -> Dict[str, Any]:
         session.close()
 
 
-def initialize_workspace(auth_context: Any, whatsapp_number: Optional[str]) -> Dict[str, Any]:
+def initialize_workspace(
+    auth_context: Any,
+    whatsapp_number: Optional[str],
+    reset_conversation: bool = False,
+) -> Dict[str, Any]:
     linked_user = get_linked_user(auth_context.clerk_user_id) if auth_context else None
     if linked_user:
         user = serialize_user(linked_user)
+        conversation_id = _reset_or_current_conversation_id(user["id"], reset_conversation)
         return {
             "status": "success",
             "message": "Workspace initialized",
-            "conversation_id": _conversation_key(user["id"]),
+            "conversation_id": conversation_id,
             "user_id": user["id"],
             "whatsapp_number": user["whatsapp_number"],
             "needs_link": False,
@@ -229,10 +231,11 @@ def initialize_workspace(auth_context: Any, whatsapp_number: Optional[str]) -> D
         }
 
     user = get_or_create_user_for_whatsapp(whatsapp_number or DEFAULT_WHATSAPP_NUMBER)
+    conversation_id = _reset_or_current_conversation_id(user["id"], reset_conversation)
     return {
         "status": "success",
         "message": "Workspace initialized",
-        "conversation_id": _conversation_key(user["id"]),
+        "conversation_id": conversation_id,
         "user_id": user["id"],
         "whatsapp_number": user["whatsapp_number"],
         "needs_link": False,
@@ -310,22 +313,16 @@ def process_chat_message(auth_context: Any, payload: Dict[str, Any]) -> Dict[str
 
     user_id = user["id"]
     key = _conversation_key(user_id)
-    history = _CONVERSATION_HISTORY[key]
     result = run_async(
         process_text_message(
             message=message,
             sender=f"whatsapp:{user['whatsapp_number']}",
             user_id=user_id,
             conversation_id=key,
-            conversation_history=history,
         )
     )
 
     response_message = result.get("message") or result.get("content") or ""
-    history.append({"role": "user", "content": message})
-    history.append({"role": "assistant", "content": response_message})
-    del history[:-_MAX_HISTORY_MESSAGES]
-
     result.setdefault("status", "success")
     result.setdefault("message", response_message)
     result["whatsapp_number"] = user["whatsapp_number"]
@@ -366,7 +363,6 @@ def process_upload(auth_context: Any, uploaded_file: Any, form: Dict[str, Any]) 
                 sender=f"whatsapp:{user['whatsapp_number']}",
                 user_id=user["id"],
                 conversation_id=_conversation_key(user["id"]),
-                conversation_history=_CONVERSATION_HISTORY[_conversation_key(user["id"])],
             )
         )
         result.setdefault("status", "success")
@@ -640,6 +636,15 @@ def normalize_whatsapp_number(value: Optional[str], default: Optional[str] = DEF
 
 def _conversation_key(user_id: str) -> str:
     return f"user-{user_id}"
+
+
+def _reset_or_current_conversation_id(user_id: str, reset_conversation: bool) -> str:
+    if not reset_conversation:
+        return _conversation_key(user_id)
+    from services.conversation_memory import start_new_conversation
+
+    conversation_id = start_new_conversation(user_id)
+    return str(conversation_id) if conversation_id is not None else _conversation_key(user_id)
 
 
 def _has_placeholder(value: str) -> bool:
