@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
-from constants.fallback_messages import GENERAL_FALLBACKS, QUERY_FALLBACKS
+from constants.fallback_messages import BOT_INTRO_RESPONSE, GENERAL_FALLBACKS, QUERY_FALLBACKS
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -340,8 +340,8 @@ class ResponseFormatterAgent(BaseAgent):
         return markers
 
     def _format_locally(self, content: Any, content_for_llm: str, format_type: str) -> Optional[str]:
-        if format_type == "greeting":
-            return "Welcome to the WhatsApp Invoice Assistant. I can help with receipts, invoices, and spending questions."
+        if format_type in {"greeting", "help"}:
+            return BOT_INTRO_RESPONSE
 
         if format_type == "general":
             return GENERAL_FALLBACKS["default"]

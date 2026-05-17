@@ -54,7 +54,9 @@ async def test_format_greeting_response(response_formatter_agent):
     assert isinstance(result, AgentOutput)
     assert result.content is not None
     assert isinstance(result.content, str)
-    assert "Welcome" in result.content
+    assert "WhatsApp Invoice Assistant" in result.content
+    assert "receipt photo or PDF" in result.content
+    assert "Create an invoice" in result.content
     assert result.status == "success"
     assert result.confidence >= 0.8
     
@@ -250,5 +252,5 @@ async def test_format_complex_data(response_formatter_agent):
     assert "Staples" in result.content
     assert result.status == "success"
     assert result.confidence >= 0.8
-    
-    logger.info(f"Complex data format result: {result.content}") 
+
+    logger.info(f"Complex data format result: {result.content}")

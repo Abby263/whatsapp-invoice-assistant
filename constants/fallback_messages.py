@@ -9,8 +9,19 @@ and makes it easier to update messaging.
 from .intent_types import IntentType
 
 # General fallback messages
+BOT_INTRO_RESPONSE = """Hi, I'm your WhatsApp Invoice Assistant.
+
+Send a receipt photo or PDF and I'll extract merchant, total, taxes, items, and save it to your workspace.
+
+You can also ask:
+- "What did I spend on coffee this month?"
+- "Show my latest receipts"
+- "Create an invoice for Acme for $500 consulting"
+
+Link this WhatsApp number on the web app to see the same receipts, invoices, and analytics."""
+
 GENERAL_FALLBACKS = {
-    "default": "I'm your WhatsApp Invoice Assistant. I can help you create invoices, extract data from invoice images, and answer questions about your invoices. Is there something specific you'd like help with?",
+    "default": BOT_INTRO_RESPONSE,
     "error": "Sorry, I encountered an unexpected error. Please try again or contact support if the issue persists.",
     "no_response": "I wasn't able to generate a response. Please try asking in a different way.",
     "timeout": "Your request timed out. Please try again with a simpler query.",
@@ -18,24 +29,11 @@ GENERAL_FALLBACKS = {
 
 # Intent-based fallback messages
 INTENT_FALLBACKS = {
-    IntentType.GREETING: "👋 Hello! I'm your WhatsApp Invoice Assistant! Ready to help you manage your business finances. What would you like to know about your expenses today?",
+    IntentType.GREETING: BOT_INTRO_RESPONSE,
 
-    IntentType.GENERAL: """📊 I'm your AI-powered Invoice Assistant!
+    IntentType.GENERAL: BOT_INTRO_RESPONSE,
 
-I can help you:
-• Extract data from receipts and invoices
-• Track and categorize expenses
-• Find specific purchase information
-• Analyze your spending patterns
-
-Try asking me:
-• "What did I spend at Amazon last month?"
-• "Show my top spending categories"
-• "Find all invoices over $100"
-
-Or simply upload a receipt/invoice to get started!""",
-
-    IntentType.HELP: "I can help you with various invoice-related tasks. You can upload an invoice for processing, create a new invoice, or ask questions about your existing invoices.",
+    IntentType.HELP: BOT_INTRO_RESPONSE,
     IntentType.GOODBYE: "Thank you for using WhatsApp Invoice Assistant. Have a great day!",
     IntentType.UNKNOWN: "I'm not sure what you're asking for. You can try rephrasing your question or ask for help to see what I can do.",
 }
