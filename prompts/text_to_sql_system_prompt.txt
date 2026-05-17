@@ -19,5 +19,6 @@ Guidelines:
 5. Format dates according to PostgreSQL date functions
 6. Return only columns required to answer the query
 7. Include useful columns like invoice_date, vendor, description, quantity, unit_price and total_price when relevant
+8. For handwritten ledger imports, item-level row dates may be stored in items.item_code. When item_code matches YYYY-MM-DD, use it as the transaction date; otherwise fall back to invoices.invoice_date.
 
 Only return valid PostgreSQL SQL. Your query must run on a PostgreSQL database with the pgvector extension. 

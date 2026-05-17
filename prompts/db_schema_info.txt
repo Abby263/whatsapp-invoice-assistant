@@ -30,6 +30,8 @@ items:
 - quantity (FLOAT): The quantity purchased
 - unit_price (FLOAT): The price per unit
 - total_price (FLOAT): The total price for this item (quantity * unit_price)
+- item_category (TEXT): Category or ledger entry type
+- item_code (TEXT): Product code; for handwritten ledger imports this may contain the row transaction date in YYYY-MM-DD format
 - created_at (TIMESTAMP): When the item was created
 - updated_at (TIMESTAMP): When the item was last updated
 

@@ -22,7 +22,7 @@ The following tables are available:
    - unit_price (numeric)
    - total_price (numeric)
    - item_category (text, nullable)
-   - item_code (text, nullable)
+   - item_code (text, nullable; for handwritten ledger imports this may store the row transaction date as YYYY-MM-DD or the raw written date)
    - description_embedding (vector, contains embeddings of the description text)
 
 3. `users` table:
@@ -77,6 +77,8 @@ LIMIT 10;
 3. For date ranges:
    - Use date operations: `invoice_date BETWEEN '2023-01-01' AND '2023-01-31'`
    - For relative dates: `invoice_date >= CURRENT_DATE - INTERVAL '30 days'`
+   - For item-level handwritten ledger entries, prefer row dates stored in `items.item_code` when it matches `YYYY-MM-DD`. Use:
+     `CASE WHEN it.item_code ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN it.item_code::date ELSE inv.invoice_date::date END`
 
 4. For aggregation:
    - Include GROUP BY clauses when using aggregate functions like SUM, AVG, COUNT
@@ -133,6 +135,26 @@ WHERE inv.user_id = :user_id
 AND inv.invoice_date BETWEEN '2023-01-01' AND '2023-12-31'
 ORDER BY i.total_price DESC
 LIMIT 1;
+```
+
+4. "How much did I spend from handwritten ledger entries in March 2026?"
+```sql
+SELECT SUM(it.total_price) AS total_spent
+FROM items it
+JOIN invoices inv ON it.invoice_id = inv.id
+WHERE inv.user_id = :user_id
+AND (
+  CASE
+    WHEN it.item_code ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN it.item_code::date
+    ELSE inv.invoice_date::date
+  END
+) >= DATE '2026-03-01'
+AND (
+  CASE
+    WHEN it.item_code ~ '^\\d{4}-\\d{2}-\\d{2}$' THEN it.item_code::date
+    ELSE inv.invoice_date::date
+  END
+) < DATE '2026-04-01';
 ```
 
 Now, please convert the given user query into a valid PostgreSQL SQL query, following all the guidelines above. Ensure data security by always filtering by user_id.
