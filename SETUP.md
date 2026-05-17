@@ -1,379 +1,69 @@
 # Setup Guide
 
-This guide covers the services, secrets, and commands required to run the WhatsApp Invoice Assistant locally or in a production-like environment.
+This guide is for running the WhatsApp Invoice Assistant end to end with the current Vercel deployment, Supabase, Clerk, OpenAI, and Twilio WhatsApp.
 
-## Current Deployment Mode
+## Production URLs
 
-The public Vercel URL is:
+Hosted app:
 
 ```text
 https://whatsapp-invoice-assistant.vercel.app
 ```
 
-That deployment serves the hosted UI through `app.py`. When production environment variables are present, the same Vercel app also exposes the live backend paths, including `/webhook`, `/api/message`, `/api/upload`, generated invoice APIs, Clerk WhatsApp linking, Supabase Storage, and Supabase Postgres persistence. If the database variables are absent, it intentionally falls back to demo mode.
+Twilio incoming WhatsApp webhook:
 
-Before real-time testing, verify which mode you are in:
+```text
+https://whatsapp-invoice-assistant.vercel.app/webhook
+```
+
+Use `POST` for the webhook method. Do not use an ngrok URL for production Twilio traffic.
+
+Quick checks:
 
 ```bash
 curl https://whatsapp-invoice-assistant.vercel.app/health
-curl https://whatsapp-invoice-assistant.vercel.app/api/generated-invoices
-npx vercel env ls
+
+curl -i -X POST https://whatsapp-invoice-assistant.vercel.app/webhook \
+  --data-urlencode 'From=whatsapp:+15551234567' \
+  --data-urlencode 'To=whatsapp:+1<your-twilio-whatsapp-sender>' \
+  --data-urlencode 'Body=Hey' \
+  --data-urlencode 'NumMedia=0'
 ```
 
-If `/health` returns `runtime=vercel-production` and `backend_enabled=true`, Twilio can target this URL:
+Expected webhook result:
 
-```text
-https://whatsapp-invoice-assistant.vercel.app/webhook
-```
+- HTTP `200`
+- `content-type: application/xml`
+- response body starts with `<Response><Message>...`
 
-If `/health` returns `runtime=vercel-ui-demo`, the deployment is still demo-only.
+## Required Services
 
-## Real-Time Testing Readiness
-
-You are ready to test real data only after all of these are true:
-
-| Area | Required before real-time testing |
+| Service | Used for |
 | --- | --- |
-| Supabase Postgres | `DATABASE_URL` points to the Supabase transaction/session pooler for Vercel runtime. |
-| Migrations | `DIRECT_URL` points to the Supabase direct/session URL and `PYTHONPATH=. poetry run alembic upgrade head` has completed successfully. |
-| pgvector | `create extension if not exists vector;` has run in Supabase SQL editor. |
-| Supabase Storage | Private `receipts` bucket exists and `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` can write to it. |
-| OpenAI | `OPENAI_API_KEY` is set and the account has access/billing for chat and embeddings. |
-| Clerk | Publishable/secret keys are set, `CLERK_REQUIRE_AUTH=true`, and authorized parties include the live URL. |
-| WhatsApp/Twilio | Twilio inbound webhook points to a publicly reachable `/webhook` endpoint. |
-| Real backend | `/health` on the Vercel app reports `runtime=vercel-production` and `/webhook` returns TwiML on POST. |
+| Vercel | Hosted web UI and Flask webhook/API routes in `app.py`. |
+| Supabase Postgres | Users, receipts, extracted invoice data, generated invoices, and pgvector embeddings. |
+| Supabase Storage | Private storage for uploaded receipts and generated invoice documents. |
+| Clerk | Website authentication and linking a web user to a WhatsApp number. |
+| OpenAI | Intent routing, extraction, responses, and embeddings. |
+| Twilio WhatsApp | Incoming WhatsApp text/media webhooks. |
 
-Testing scope by deployment:
+## Required Environment Variables
 
-| Target | What you can test |
-| --- | --- |
-| Current Vercel `app.py` deployment with env vars | UI, Clerk auth, WhatsApp webhook, receipt upload, extraction, Supabase persistence, generated invoices, and dashboard APIs. |
-| Current Vercel `app.py` deployment without DB env vars | UI, theme, navigation, demo chat, demo generated invoices. Data is in memory and not durable. |
-| Local `ui/app.py` with `.env` | Receipt upload, extraction, Supabase storage, generated invoices, dashboard analytics, Clerk link flow if configured. |
-| FastAPI `api/main.py` with public HTTPS URL | Twilio WhatsApp webhook, text messages, media downloads, file processing workflow. |
-| Full production | Website + WhatsApp using the same Supabase database and the same `users.id` mapping. |
-
-## 1. Prerequisites
-
-Install these tools locally:
-
-| Tool | Version | Purpose |
-| --- | --- | --- |
-| Python | 3.9 or newer | Application runtime. |
-| Poetry | Latest stable | Dependency management. |
-| Git | Latest stable | Source control. |
-| Supabase account | Any paid/free project | Postgres, pgvector, and receipt storage. |
-| Clerk account | Any project | Web authentication and user identity. |
-| OpenAI account | API access enabled | Chat model and embeddings. |
-| Twilio account | WhatsApp sandbox or sender | WhatsApp webhook testing and production traffic. |
-| MongoDB | Optional | Persistent conversation memory. |
-| Redis | Optional | Background task infrastructure. |
-| Docker | Optional | Containerized local stack. |
-
-## 2. Clone and Install
-
-```bash
-git clone https://github.com/Abby263/whatsapp-invoice-assistant.git
-cd whatsapp-invoice-assistant
-cp .env.example .env
-poetry install
-```
-
-If `poetry` is not installed:
-
-```bash
-pip install poetry
-```
-
-## 3. Supabase Setup
-
-Supabase is the production storage platform for this project.
-
-### 3.1 Create a Project
-
-1. Go to [Supabase](https://supabase.com/).
-2. Create a new project.
-3. Save the project reference ID and database password.
-
-### 3.2 Get the Database URL
-
-In Supabase:
-
-1. Open your project.
-2. Go to `Project Settings` -> `Database`.
-3. Copy a Postgres connection string.
-4. Use either direct connection or pooler connection.
-
-Runtime pooler format for Vercel/serverless:
+Set these in Vercel production and in local `.env` when testing locally.
 
 ```env
-DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
-```
+DATABASE_URL=postgresql://postgres.<project-ref>:<encoded-password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
+DIRECT_URL=postgresql://postgres.<project-ref>:<encoded-password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
 
-Migration/direct-session format:
-
-```env
-DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
-```
-
-If the database password contains reserved URL characters, encode them before
-placing the password in `DATABASE_URL` or `DIRECT_URL`. For example, `@` must
-be written as `%40`. An encoding-safe fallback is to provide the raw password
-separately:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_DB_PASSWORD=<raw-database-password>
-```
-
-When `SUPABASE_DB_PASSWORD` is used, the app builds and encodes a direct
-Supabase database connection string for you. For Vercel/serverless production,
-prefer an encoded pooler `DATABASE_URL`.
-
-The app resolves database configuration in this order:
-
-1. `DATABASE_URL`
-2. `SUPABASE_DATABASE_URL`
-3. `SUPABASE_PROJECT_ID` plus `SUPABASE_DB_PASSWORD`
-4. `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` plus `SUPABASE_DB_PASSWORD`
-
-Alembic migrations prefer `DIRECT_URL` and fall back to `DATABASE_URL`. Supabase snippets sometimes include `?pgbouncer=true`; the Python runtime strips that flag before connecting because psycopg/libpq does not accept it as a connection option.
-
-The Supabase project URL and publishable key are API settings, not database credentials. They are enough for browser-only Supabase client calls protected by Row Level Security, but this project also runs a server-side Twilio webhook, SQLAlchemy queries, Alembic migrations, pgvector writes, and private Storage uploads. For real end-to-end testing you still need `DATABASE_URL`, `DIRECT_URL`, and a server-only storage key.
-
-### 3.3 Enable pgvector
-
-Open the Supabase SQL editor and run:
-
-```sql
-create extension if not exists vector;
-```
-
-The Alembic migrations also try to create the extension, but enabling it explicitly makes setup failures easier to diagnose.
-
-### 3.4 Create the Receipt and Generated-Invoice Storage Bucket
-
-1. Go to `Storage`.
-2. Create a bucket named `receipts`.
-3. Keep the bucket private.
-4. Store the bucket name in `.env`:
-
-```env
-SUPABASE_STORAGE_BUCKET=receipts
-```
-
-The same private bucket stores original receipt uploads and generated outgoing invoice documents. Object paths are user-scoped:
-
-- `<user-id>/invoices/...` for uploaded receipt files.
-- `<user-id>/generated-invoices/...` for generated invoice DOCX/PDF files.
-
-Local development can fall back to `ui/uploads` if Supabase Storage is missing. Production runtimes such as Vercel fail invoice generation clearly when storage is not configured because local files are not durable.
-
-### 3.5 Get Supabase API Keys
-
-Go to `Project Settings` -> `API`.
-
-Use:
-
-```env
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SECRET_KEY=<sb_secret_...>
-```
-
-You do not need to set both `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL`, or both `SUPABASE_PUBLISHABLE_KEY` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Prefer the `NEXT_PUBLIC_*` names because the website needs those browser-safe values. The app still accepts the non-`NEXT_PUBLIC` aliases for older deployments.
-
-Important: `SUPABASE_SECRET_KEY` must only be used server-side. Do not expose it in client-side code or a `NEXT_PUBLIC_*` variable. Private bucket uploads and signed URLs should use `SUPABASE_SECRET_KEY` in production. If your Supabase dashboard only shows the legacy service-role key, the runtime also accepts `SUPABASE_SERVICE_ROLE_KEY`.
-
-## 4. OpenAI Setup
-
-1. Go to [OpenAI API keys](https://platform.openai.com/api-keys).
-2. Create a project API key.
-3. Add it to `.env`:
-
-```env
-OPENAI_API_KEY=<your-openai-api-key>
-OPENAI_API_MODEL=gpt-5.4-mini
-```
-
-The code now reads `OPENAI_API_MODEL` for chat and image extraction. Make sure your OpenAI project has access to the model ID you configure. Embeddings use `text-embedding-3-small` in `utils/vector_utils.py`; copy `config/env.yaml.example` to ignored `config/env.yaml` only if you prefer YAML-based local overrides.
-
-## 5. WhatsApp and Twilio Setup
-
-The FastAPI webhook expects Twilio-style WhatsApp payload fields such as `From`, `Body`, `NumMedia`, and `MediaUrl0`.
-
-### 5.1 Twilio Sandbox
-
-1. Go to [Twilio Console](https://console.twilio.com/).
-2. Open `Messaging` -> `Try it out` -> `Send a WhatsApp message`.
-3. Join the sandbox from your WhatsApp device.
-4. Copy:
-   - Account SID
-   - Auth Token
-   - WhatsApp sandbox sender
-
-Add:
-
-```env
-TWILIO_ACCOUNT_SID=<account-sid>
-TWILIO_AUTH_TOKEN=<auth-token>
-TWILIO_PHONE_NUMBER=whatsapp:+14155238886
-```
-
-`whatsapp:+14155238886` is Twilio's sandbox sender. Use it only while testing inside the sandbox.
-
-### 5.2 Use a Purchased Twilio Number for WhatsApp
-
-A purchased Twilio phone number can be used only after it is approved/onboarded as a WhatsApp sender. Buying an SMS/voice number is not enough by itself.
-
-1. In Twilio Console, open `Messaging` -> `Senders` -> `WhatsApp senders`.
-2. Start the WhatsApp sender onboarding flow.
-3. Choose or register the purchased Twilio number you want to use.
-4. Complete Meta Business/WhatsApp Business approval if Twilio asks for it.
-5. After the sender is approved, set:
-
-```env
-TWILIO_PHONE_NUMBER=whatsapp:+1<your-approved-twilio-number>
-```
-
-Keep the `whatsapp:` prefix. Inbound webhook payloads will still use `From=whatsapp:+<customer-number>` and `To=whatsapp:+<your-approved-twilio-number>`.
-
-### 5.3 Webhook URL
-
-For local webhook testing, expose FastAPI with a secure tunnel such as ngrok:
-
-```bash
-poetry run uvicorn api.main:app --host 0.0.0.0 --port 8000
-ngrok http 8000
-```
-
-Set the Twilio inbound webhook to:
-
-```text
-https://<your-ngrok-domain>/webhook
-```
-
-Use `POST` as the method.
-
-For this Vercel deployment, set Twilio's `When a message comes in` webhook to:
-
-```text
-https://whatsapp-invoice-assistant.vercel.app/webhook
-```
-
-Use `POST` as the method. The endpoint returns TwiML so Twilio can send the chatbot response back into WhatsApp.
-
-## 6. Clerk Authentication Setup
-
-Clerk is used for website sign-in. The app still stores receipts and invoices under the internal `users.id`, while Clerk provides the web identity. A signed-in user links their WhatsApp number once; after that, website activity and WhatsApp receipt uploads resolve to the same `users` row.
-
-### 6.1 Create a Clerk Application
-
-1. Go to [Clerk](https://clerk.com/).
-2. Create an application.
-3. Enable the sign-in methods you want, ideally phone number plus email so users can link the same WhatsApp number.
-4. In Clerk Dashboard, open `Configure` -> `API keys`.
-5. Copy the publishable key and secret key.
-
-Add:
-
-```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
-CLERK_SECRET_KEY=<clerk-secret-key>
-CLERK_REQUIRE_AUTH=true
-```
-
-The Flask UI also accepts `CLERK_PUBLISHABLE_KEY`, but `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is the preferred name because Clerk and Vercel commonly provision it.
-
-### 6.2 Production Hardening
-
-The backend verifies Clerk session JWTs using the Clerk JWKS endpoint. The issuer is derived from the publishable key by default. For stricter production configuration, set:
-
-```env
-CLERK_JWT_ISSUER=https://<your-clerk-frontend-api-domain>
-CLERK_JWKS_URL=https://<your-clerk-frontend-api-domain>/.well-known/jwks.json
-CLERK_AUTHORIZED_PARTIES=https://your-production-domain.com
-```
-
-For the current Vercel deployment, set:
-
-```env
-CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
-```
-
-### 6.3 WhatsApp Link Flow
-
-1. User signs in on the website with Clerk.
-2. User clicks `Link WhatsApp`.
-3. The app links `users.clerk_user_id` to the row with the same `users.whatsapp_number`.
-4. WhatsApp uploads continue to use the phone number path.
-5. Website dashboard queries use the Clerk-linked internal `users.id`.
-
-This is the bridge that makes a receipt uploaded over WhatsApp visible to the same user in the web UI.
-
-## 7. Generated Invoice Setup
-
-Outgoing invoice generation uses the same services already required by receipt processing:
-
-| Requirement | Why it is needed |
-| --- | --- |
-| Supabase Postgres migrations | Creates `generated_invoices` and `generated_invoice_items`. |
-| Supabase Storage | Stores generated invoice DOCX/PDF files in a private bucket. |
-| Clerk or WhatsApp user mapping | Ensures generated invoices belong to the same internal `users.id` as uploaded receipts. |
-| Company profile defaults | Reuses seller, client, currency, tax, and payment terms across WhatsApp and website generation. |
-
-Run migrations after pulling this feature:
-
-```bash
-PYTHONPATH=. poetry run alembic upgrade head
-```
-
-In the website, open `Settings` -> `Company profile` to save reusable seller/client defaults. Users can also save defaults from the **Generate invoice** form. WhatsApp invoice requests reuse those defaults automatically once the sender's WhatsApp number resolves to the same user row.
-
-Production note: generated invoice files must use Supabase Storage. The local `ui/uploads` fallback is only for development and should not be used as a durable production store.
-
-## 8. MongoDB Memory Setup
-
-MongoDB is optional. It stores conversation memory and can back LangGraph checkpointing.
-
-Local MongoDB:
-
-```env
-MONGODB_URI=mongodb://localhost:27017/whatsapp_invoice_assistant
-USE_MONGODB=true
-```
-
-Run without MongoDB memory:
-
-```env
-USE_MONGODB=false
-```
-
-The local UI command already uses `USE_MONGODB=false` by default in the Makefile.
-
-## 9. Redis Setup
-
-Redis is optional for current local UI testing, but the project includes Celery/Redis dependencies for background work patterns.
-
-```env
-REDIS_URL=redis://localhost:6379/0
-```
-
-## 10. Complete `.env` Example
-
-```env
-DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
-DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
-NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
-SUPABASE_SECRET_KEY=<sb_secret_...>
-SUPABASE_DB_PASSWORD=<raw-database-password>
 SUPABASE_STORAGE_BUCKET=receipts
 
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 CLERK_SECRET_KEY=<clerk-secret-key>
-CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 CLERK_REQUIRE_AUTH=true
+CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 
 OPENAI_API_KEY=<openai-api-key>
 OPENAI_API_MODEL=gpt-5.4-mini
@@ -381,10 +71,22 @@ OPENAI_API_MODEL=gpt-5.4-mini
 TWILIO_ACCOUNT_SID=<twilio-account-sid>
 TWILIO_AUTH_TOKEN=<twilio-auth-token>
 TWILIO_PHONE_NUMBER=whatsapp:+1<approved-twilio-whatsapp-sender>
+```
 
-MONGODB_URI=mongodb://localhost:27017/whatsapp_invoice_assistant
+Notes:
+
+- `DATABASE_URL` is for runtime. Use the Supabase pooler URL for Vercel/serverless.
+- `DIRECT_URL` is for migrations.
+- If the database password contains reserved URL characters, encode them before placing it in `DATABASE_URL` or `DIRECT_URL`. For example, `@` becomes `%40`.
+- `SUPABASE_SECRET_KEY` is server-side only. Never expose it as a `NEXT_PUBLIC_*` variable.
+- `SUPABASE_SERVICE_ROLE_KEY` is accepted as a legacy fallback if your Supabase project does not show `SUPABASE_SECRET_KEY`.
+- `TWILIO_PHONE_NUMBER` must be the WhatsApp-enabled sender, with the `whatsapp:` prefix.
+
+Optional local-only variables:
+
+```env
 USE_MONGODB=false
-
+MONGODB_URI=mongodb://localhost:27017/whatsapp_invoice_assistant
 REDIS_URL=redis://localhost:6379/0
 DEBUG=false
 LOG_LEVEL=INFO
@@ -392,83 +94,50 @@ PORT=8000
 HOST=0.0.0.0
 ```
 
-### 10.1 Required Production Variables
+MongoDB and Redis are not required for the current Vercel real-time WhatsApp test path.
 
-For real-time testing, these variables are mandatory in whichever runtime hosts the real backend:
+## Supabase Setup
 
-| Variable | Required for | Notes |
-| --- | --- | --- |
-| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Runtime database | Use the Supabase pooler connection string for Vercel/serverless runtime. Required unless `SUPABASE_DB_PASSWORD` is provided with a Supabase URL/project ref. |
-| `DIRECT_URL` or `SUPABASE_DIRECT_URL` | Migrations | Use a direct or session-pooler connection string for Alembic migrations. |
-| `NEXT_PUBLIC_SUPABASE_URL` | Public Supabase API and Storage URL | Browser-safe project URL, for example `https://<project-ref>.supabase.co`. `SUPABASE_URL` is accepted as a legacy alias. |
-| `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Storage and private server access | Server-side only. Required for private bucket uploads and signed URLs. |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase API access | Browser-safe publishable key. `SUPABASE_PUBLISHABLE_KEY` is accepted as a legacy alias. |
-| `SUPABASE_STORAGE_BUCKET` | Storage | Use `receipts` unless you created a different bucket. |
-| `OPENAI_API_KEY` | Extraction, chat, embeddings | Required for real agent execution. |
-| `OPENAI_API_MODEL` | Chat and image extraction | Set to `gpt-5.4-mini` if your OpenAI project has access. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Web auth | Browser key for the Clerk sign-in UI. |
-| `CLERK_SECRET_KEY` | Web auth | Server-side key. |
-| `CLERK_REQUIRE_AUTH` | Web auth | Set `true` for user-level receipt and invoice isolation. |
-| `CLERK_AUTHORIZED_PARTIES` | Web auth | Include `https://whatsapp-invoice-assistant.vercel.app` and local URLs used for testing. |
-| `TWILIO_ACCOUNT_SID` | WhatsApp | Required when Twilio downloads media or sends responses. |
-| `TWILIO_AUTH_TOKEN` | WhatsApp | Required for authenticated Twilio media URLs. |
-| `TWILIO_PHONE_NUMBER` | WhatsApp | Twilio WhatsApp sender, for example sandbox `whatsapp:+14155238886` or approved sender `whatsapp:+1...`. |
-| `USE_MONGODB` | Memory | Set `false` unless MongoDB is configured and reachable. |
-| `MONGODB_URI` | Memory | Required only when `USE_MONGODB=true`. |
-| `REDIS_URL` | Background jobs | Optional for current local testing. |
+### 1. Create Project
 
-For local development, keep these in `.env`. For Vercel or another host, add them in that platform's environment variable manager and redeploy.
+1. Open Supabase.
+2. Create or open the project used by this app.
+3. Copy the project ref from the project URL: `https://<project-ref>.supabase.co`.
+4. Open `Project Settings` -> `Database` and copy/reset the database password.
 
-### 10.2 Validate Environment Values
+### 2. Configure Database URLs
 
-Before real testing, run:
-
-```bash
-python3 scripts/validate_env.py --env-file .env
-```
-
-The validator prints only status lines; it never prints secret values. Treat any `MISSING` line as a blocker for real WhatsApp/Supabase/OpenAI testing. Redacted placeholder values such as `sb`, `sk-pro`, `AC2`, or `cf3` are intentionally rejected because they look configured in dashboards but fail at runtime.
-
-Make sure `DATABASE_URL` and any legacy service-role JWT belong to the same project ref as `NEXT_PUBLIC_SUPABASE_URL`; do not reuse credentials from another Supabase project.
-
-### 10.3 Using Supabase/Vercel-Style Variable Names
-
-The runtime accepts these aliases:
-
-| Existing app name | Also accepted |
-| --- | --- |
-| `SUPABASE_URL` | `NEXT_PUBLIC_SUPABASE_URL` |
-| `SUPABASE_KEY` | `SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SECRET_KEY` |
-| `CLERK_PUBLISHABLE_KEY` | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
-
-Most browser-only Supabase apps need only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. This repo needs more because it is not browser-only: the Twilio webhook and invoice processor run server-side, write directly to Postgres/pgvector, run migrations, and store private files. If your Vercel project currently has only the two public Supabase values, add at least one database credential and one server-side storage key before real receipt testing:
+Use the Supabase pooler connection string for Vercel runtime:
 
 ```env
-# Database, choose one:
-DATABASE_URL=<supabase-postgres-url>
-SUPABASE_DATABASE_URL=<supabase-pooler-url>
-DIRECT_URL=<supabase-direct-or-session-url>
-# or
-SUPABASE_DB_PASSWORD=<supabase-database-password>
-
-# Private storage/admin access:
-SUPABASE_SECRET_KEY=<sb_secret_...>
-# or legacy:
-SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+DATABASE_URL=postgresql://postgres.<project-ref>:<encoded-password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
 ```
 
-Also set `CLERK_REQUIRE_AUTH=true` in production when receipts and generated invoices must be user-scoped.
+Use the direct/session connection string for migrations:
 
-## 11. Database Migration
+```env
+DIRECT_URL=postgresql://postgres.<project-ref>:<encoded-password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
+```
 
-Run migrations after configuring Supabase:
+If Supabase includes `?pgbouncer=true`, the app strips it for Python runtime compatibility, but it is cleaner to omit it.
+
+### 3. Enable pgvector
+
+Open Supabase SQL Editor and run:
+
+```sql
+create extension if not exists vector;
+```
+
+### 4. Run Migrations
+
+From the repository root:
 
 ```bash
 PYTHONPATH=. poetry run alembic upgrade head
 ```
 
-Confirm the generated-invoice tables exist in Supabase SQL editor:
+Confirm core tables exist:
 
 ```sql
 select table_name
@@ -478,40 +147,187 @@ where table_schema = 'public'
     'users',
     'invoices',
     'items',
+    'media',
+    'invoice_embeddings',
     'generated_invoices',
-    'generated_invoice_items',
-    'invoice_embeddings'
+    'generated_invoice_items'
   )
 order by table_name;
 ```
 
-Check database connectivity:
+### 5. Configure Storage
 
-```bash
-make db-status
+1. Open `Storage`.
+2. Create a private bucket named `receipts`.
+3. Set:
+
+```env
+SUPABASE_STORAGE_BUCKET=receipts
 ```
 
-Update embeddings after importing or backfilling invoice data:
+Storage paths are user-scoped:
 
-```bash
-make update-embeddings
+- Uploaded receipts: `<user-id>/invoices/...`
+- Generated invoice files: `<user-id>/generated-invoices/...`
+
+## OpenAI Setup
+
+1. Open the OpenAI dashboard.
+2. Create an API key for this project.
+3. Set:
+
+```env
+OPENAI_API_KEY=<openai-api-key>
+OPENAI_API_MODEL=gpt-5.4-mini
 ```
 
-## 12. Run Locally
+The configured model handles chat, intent routing, and image/text extraction. Embeddings use `text-embedding-3-small`.
 
-### FastAPI Webhook API
+## Clerk Setup
 
-```bash
-make start
+1. Create a Clerk application.
+2. Enable the sign-in methods you want. Phone plus email is recommended.
+3. Open `Configure` -> `API keys`.
+4. Set:
+
+```env
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+CLERK_SECRET_KEY=<clerk-secret-key>
+CLERK_REQUIRE_AUTH=true
+CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 ```
 
-API health:
+How account linking works:
 
-```bash
-curl http://localhost:8000/health
+1. User signs in on the website.
+2. User clicks `Link WhatsApp`.
+3. User enters the same WhatsApp number used to send receipts.
+4. The app links Clerk `sub` to the internal `users` row for that WhatsApp number.
+5. Website receipts, WhatsApp uploads, generated invoices, and analytics resolve to the same `users.id`.
+
+## Twilio WhatsApp Setup
+
+### 1. Use an Approved WhatsApp Sender
+
+A purchased Twilio phone number only works for WhatsApp after it is onboarded and approved as a WhatsApp sender.
+
+1. Open Twilio Console.
+2. Go to `Messaging` -> `Senders` -> `WhatsApp senders`.
+3. Open the approved sender, for example `whatsapp:+1...`.
+4. Set `Webhook URL for incoming messages` / `When a message comes in` to:
+
+```text
+https://whatsapp-invoice-assistant.vercel.app/webhook
 ```
 
-### Operator UI
+5. Set method to `POST`.
+6. Save.
+
+Set the sender in Vercel:
+
+```env
+TWILIO_PHONE_NUMBER=whatsapp:+1<approved-twilio-whatsapp-sender>
+```
+
+### 2. Update the Messaging Service
+
+If the WhatsApp sender is attached to a Twilio Messaging Service, update the service webhook too. When Twilio Request Inspector shows a `MessagingServiceSid`, this Messaging Service integration is the webhook path Twilio is using.
+
+1. Open Twilio Console.
+2. Go to `Messaging` -> `Services`.
+3. Open the service, for example `Invoice Assistant`.
+4. Open `Integration`.
+5. Under incoming messages, set `Request URL` / `Send a webhook` to:
+
+```text
+https://whatsapp-invoice-assistant.vercel.app/webhook
+```
+
+6. Set method to `POST`.
+7. Save.
+
+### 3. Verify Twilio Delivery
+
+Send `Hey` to your Twilio WhatsApp number. In Twilio Message Details -> Request Inspector, verify:
+
+| Field | Expected value |
+| --- | --- |
+| URL | `https://whatsapp-invoice-assistant.vercel.app/webhook` |
+| Product | Programmable SMS / WhatsApp |
+| HTTP status | `200` |
+| Response content type | `application/xml` |
+| Response body | TwiML `<Response><Message>...` |
+
+If Twilio shows `11200` and the URL is an old ngrok domain, the webhook is still configured incorrectly. Replace every inbound WhatsApp webhook URL with the Vercel webhook above.
+
+## Vercel Setup
+
+### 1. Link Project
+
+From the repository root:
+
+```bash
+npx vercel link
+```
+
+### 2. Add Production Env Vars
+
+```bash
+npx vercel env add DATABASE_URL production
+npx vercel env add DIRECT_URL production
+npx vercel env add NEXT_PUBLIC_SUPABASE_URL production
+npx vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production
+npx vercel env add SUPABASE_SECRET_KEY production
+npx vercel env add SUPABASE_STORAGE_BUCKET production
+npx vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY production
+npx vercel env add CLERK_SECRET_KEY production
+npx vercel env add CLERK_REQUIRE_AUTH production
+npx vercel env add CLERK_AUTHORIZED_PARTIES production
+npx vercel env add OPENAI_API_KEY production
+npx vercel env add OPENAI_API_MODEL production
+npx vercel env add TWILIO_ACCOUNT_SID production
+npx vercel env add TWILIO_AUTH_TOKEN production
+npx vercel env add TWILIO_PHONE_NUMBER production
+```
+
+Check values are present:
+
+```bash
+npx vercel env ls
+```
+
+Validate local `.env` values before copying them to Vercel:
+
+```bash
+python3 scripts/validate_env.py --env-file .env
+```
+
+The validator redacts secret values and rejects common placeholders such as `sb`, `sk-pro`, `AC2`, and `cf3`.
+
+### 3. Deploy
+
+```bash
+npx vercel deploy --prod
+```
+
+After changing env vars, redeploy:
+
+```bash
+npx vercel redeploy --prod
+```
+
+## Local Development
+
+Install:
+
+```bash
+git clone https://github.com/Abby263/whatsapp-invoice-assistant.git
+cd whatsapp-invoice-assistant
+cp .env.example .env
+poetry install
+```
+
+Run the local UI:
 
 ```bash
 make ui-run
@@ -523,235 +339,136 @@ Open:
 http://localhost:5001
 ```
 
-The UI can render in degraded mode when Supabase is unavailable, but upload, extraction, storage, and search require working Supabase and OpenAI credentials.
-
-### 12.1 Local Full-Flow Smoke Tests
-
-Run these before testing with real users:
+Run the alternate FastAPI webhook locally only when you need local API testing:
 
 ```bash
-# Database and migrations
-PYTHONPATH=. poetry run alembic current
-PYTHONPATH=. poetry run alembic upgrade head
-
-# API health
+make start
 curl http://localhost:8000/health
-
-# UI health
-curl http://localhost:5001/api/db-status?user_id=1
-curl http://localhost:5001/api/generated-invoices?user_id=1
 ```
 
-Then test in the UI:
+Local Twilio webhook testing requires a public HTTPS tunnel, but production Twilio should use the Vercel webhook URL.
 
-1. Open `http://localhost:5001`.
-2. Create or select a user.
-3. Open `Settings` -> `Company profile` and save seller defaults.
-4. Open `Receipts` -> `Generate invoice`, create an invoice, and confirm it appears in `Generated invoices`.
-5. Upload a sample PDF or image receipt.
-6. Confirm the file appears in Supabase Storage under `<user-id>/invoices/...`.
-7. Ask a chat question such as `What did I spend this month?`.
+## End-to-End Test Plan
 
-Generated invoice files should appear in Supabase Storage under:
+### 1. Backend Health
+
+```bash
+curl https://whatsapp-invoice-assistant.vercel.app/health
+```
+
+Expected:
+
+- `status=ok`
+- `backend_enabled=true`
+- `runtime=vercel-production`
+
+### 2. Webhook Smoke Test
+
+```bash
+curl -i -X POST https://whatsapp-invoice-assistant.vercel.app/webhook \
+  --data-urlencode 'From=whatsapp:+15551234567' \
+  --data-urlencode 'To=whatsapp:+1<your-twilio-whatsapp-sender>' \
+  --data-urlencode 'Body=Hey' \
+  --data-urlencode 'NumMedia=0'
+```
+
+Expected: HTTP `200` with TwiML.
+
+### 3. WhatsApp Text Test
+
+1. Send `Hey` from WhatsApp to the Twilio sender.
+2. Confirm Twilio Request Inspector shows the Vercel webhook URL and HTTP `200`.
+3. Confirm WhatsApp receives an assistant response.
+
+### 4. WhatsApp Receipt Test
+
+1. Send a receipt image or PDF over WhatsApp.
+2. Confirm Supabase Storage has a new object under `<user-id>/invoices/...`.
+3. Confirm Supabase tables have new `invoices`, `items`, `media`, and embedding rows.
+4. Ask a question such as `What did I spend this month?`.
+
+### 5. Web Link Test
+
+1. Open `https://whatsapp-invoice-assistant.vercel.app`.
+2. Sign in with Clerk.
+3. Click `Link WhatsApp`.
+4. Enter the same WhatsApp number used in the Twilio `From` field, including country code.
+5. Confirm the top-right user selector shows the linked WhatsApp number.
+6. Confirm receipts and generated invoices are visible for that user.
+
+### 6. Invoice Generation Test
+
+1. Save company defaults in `Settings` -> `Company profile`.
+2. Generate an invoice from the website or ask over WhatsApp.
+3. Confirm Supabase Storage has `<user-id>/generated-invoices/...`.
+4. Confirm Supabase Postgres has a `generated_invoices` row.
+
+## Troubleshooting
+
+### Twilio Error `11200`
+
+Check Twilio Request Inspector:
+
+- If the URL is an old ngrok URL, update the WhatsApp sender and Messaging Service webhooks to `https://whatsapp-invoice-assistant.vercel.app/webhook`.
+- If HTTP status is not `200`, open Vercel logs for the production deployment.
+- If response is not XML/TwiML, verify the webhook method is `POST`.
+
+### Twilio Request Inspector Shows HTTP `404`
+
+The webhook URL is wrong or points to an offline tunnel. Use:
 
 ```text
-<user-id>/generated-invoices/...
+https://whatsapp-invoice-assistant.vercel.app/webhook
 ```
 
-Receipt upload files should appear under:
+### `/health` Shows Missing Supabase Secret
 
-```text
-<user-id>/invoices/...
+Add one server-side key:
+
+```env
+SUPABASE_SECRET_KEY=<sb_secret_...>
 ```
 
-### 12.2 WhatsApp Real-Time Smoke Test
+or:
 
-After the FastAPI backend is public over HTTPS and Twilio points to `/webhook`:
-
-1. Send a plain WhatsApp message to the Twilio sandbox.
-2. Confirm the backend logs show `Received webhook`.
-3. Send a receipt PDF or image through WhatsApp.
-4. Confirm Supabase Storage has a new `<user-id>/invoices/...` object.
-5. Confirm Supabase Postgres has new `invoices`, `items`, and embedding rows.
-6. Sign in to the website with Clerk.
-7. Link the same WhatsApp number.
-8. Confirm the web dashboard shows the same user's receipts and generated invoices.
-9. Ask WhatsApp to generate an outgoing invoice.
-10. Confirm Supabase Storage has `<user-id>/generated-invoices/...` and Postgres has a `generated_invoices` row.
-
-## 13. Vercel UI Deployment
-
-The repository includes a Vercel-compatible Flask entrypoint in `app.py`. This deployment is intentionally lightweight and serves the operator UI in demo mode. It is useful for README demos and product review, while the full WhatsApp processing backend should run with the production services listed above.
-
-Current public UI:
-
-```text
-https://whatsapp-invoice-assistant.vercel.app
+```env
+SUPABASE_SERVICE_ROLE_KEY=<legacy-service-role-key>
 ```
 
-Deploy from the repository root:
+Redeploy after adding it.
 
-```bash
-npx vercel deploy --prod --scope <vercel-team-or-user-scope>
-```
-
-Vercel uses:
-
-- `app.py` for the hosted UI/demo routes.
-- `requirements.txt` for minimal hosted UI dependencies.
-- `vercel.json` for the Flask project preset.
-- `.vercelignore` to exclude local databases, secrets, tests, generated files, and heavyweight backend modules from the UI bundle.
-
-### 13.1 Vercel Environment Variables
-
-Check whether Vercel has production variables configured:
-
-```bash
-npx vercel env ls
-```
-
-Add required variables to production:
-
-```bash
-npx vercel env add DATABASE_URL production
-npx vercel env add NEXT_PUBLIC_SUPABASE_URL production
-npx vercel env add SUPABASE_SECRET_KEY production
-npx vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production
-npx vercel env add SUPABASE_STORAGE_BUCKET production
-npx vercel env add OPENAI_API_KEY production
-npx vercel env add OPENAI_API_MODEL production
-npx vercel env add NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY production
-npx vercel env add CLERK_SECRET_KEY production
-npx vercel env add CLERK_REQUIRE_AUTH production
-npx vercel env add CLERK_AUTHORIZED_PARTIES production
-npx vercel env add TWILIO_ACCOUNT_SID production
-npx vercel env add TWILIO_AUTH_TOKEN production
-npx vercel env add TWILIO_PHONE_NUMBER production
-```
-
-If you only have the Supabase values from `Project Settings` -> `API`, add one of these database options too:
-
-```bash
-npx vercel env add DATABASE_URL production
-# or
-npx vercel env add SUPABASE_DATABASE_URL production
-# or, if the code should derive the project ref from NEXT_PUBLIC_SUPABASE_URL:
-npx vercel env add SUPABASE_DB_PASSWORD production
-```
-
-For private receipt storage, add `SUPABASE_SECRET_KEY` or the legacy `SUPABASE_SERVICE_ROLE_KEY`. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is safe for browsers, but should not be the only key configured for server-side private storage.
-
-Only add MongoDB and Redis variables to Vercel if the Vercel app is changed to run the real backend paths that need them:
-
-```bash
-npx vercel env add USE_MONGODB production
-npx vercel env add MONGODB_URI production
-npx vercel env add REDIS_URL production
-```
-
-Redeploy after changing env vars:
-
-```bash
-npx vercel redeploy --prod
-```
-
-### 13.2 Important Vercel Limitation
-
-The current Vercel deployment is wired to `app.py`, which returns demo responses for receipt upload, generated invoices, database counts, and embeddings. Setting env vars alone does not make this Vercel deployment process real WhatsApp receipts.
-
-For full production testing, choose one of these approaches:
-
-1. Deploy `ui/app.py` as the real web UI with the env vars above, then use that URL for Clerk web testing.
-2. Deploy `api/main.py` as the public FastAPI backend for Twilio webhooks.
-3. Keep Vercel as the public demo UI and run the real backend elsewhere until the Vercel entrypoint is refactored from demo mode to production mode.
-
-For WhatsApp real-time testing, Twilio must call the FastAPI `/webhook` endpoint, not the demo Vercel UI.
-
-## 14. Docker Setup
-
-Build and run:
-
-```bash
-make docker-build
-make docker-run
-```
-
-Or use compose directly:
-
-```bash
-docker-compose up --build
-```
-
-The compose file includes local Postgres and MongoDB containers for development. Production deployments should use managed Supabase Postgres, Supabase Storage, and a managed MongoDB service if persistent memory is needed.
-
-## 15. Production Deployment Checklist
-
-- Use managed Supabase Postgres with automated backups.
-- Enable `vector` in Supabase.
-- Keep the receipt bucket private.
-- Store `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, and Twilio secrets in your platform secret manager.
-- Restrict CORS in `api/main.py` to trusted origins.
-- Put the API behind HTTPS.
-- Configure Twilio webhook retries and monitor non-2xx responses.
-- Add API request logging with secret redaction.
-- Configure alerting for storage upload failures, extraction failures, and embedding failures.
-- Run Alembic migrations in CI/CD before app rollout.
-- Use separate Supabase projects for development, staging, and production.
-
-## 16. Troubleshooting
-
-### `No Supabase connection details found`
-
-Set one of:
-
-- `DATABASE_URL`
-- `SUPABASE_DATABASE_URL`
-- `SUPABASE_PROJECT_ID` and `SUPABASE_DB_PASSWORD`
-- `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` plus `SUPABASE_DB_PASSWORD`
-
-### `could not translate host name db.<project>.supabase.co`
-
-Your runtime cannot resolve the Supabase hostname. Check network access, DNS, VPN, and whether the project reference is correct.
-
-### `Supabase Storage upload failed`
+### Database Connection Fails
 
 Check:
 
-- `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL`
-- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_STORAGE_BUCKET`
-- Whether the bucket exists
-- Whether the key belongs to the same Supabase project
+- `DATABASE_URL` uses the right project ref.
+- Password is URL-encoded in `DATABASE_URL` and `DIRECT_URL`.
+- Pooler host and port are correct.
+- `NEXT_PUBLIC_SUPABASE_URL` belongs to the same project.
 
-### Generated invoices are not saved
+### Receipts Upload But Do Not Appear on Website
 
 Check:
 
-- `generated_invoices` and `generated_invoice_items` tables exist.
-- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` is set in the runtime that generates the invoice.
+- The web user signed in with Clerk.
+- The user clicked `Link WhatsApp`.
+- The linked number matches Twilio `From`, including country code.
+- The `users` row has both `whatsapp_number` and `clerk_user_id`.
+
+### Generated Invoices Are Not Saved
+
+Check:
+
+- Migrations ran successfully.
+- `generated_invoices` and `generated_invoice_items` exist.
+- `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` is present.
 - `SUPABASE_STORAGE_BUCKET=receipts` points to an existing private bucket.
-- The runtime is not the Vercel demo `app.py` route. Demo generated invoices are in memory only.
-- Production logs do not show `Generated invoice storage is not available`.
 
-### Embeddings are missing
+### Embeddings Are Missing
 
 Check:
 
-- `OPENAI_API_KEY`
-- OpenAI account billing and project access
-- The `vector` extension
-- The embedding update logs from `make update-embeddings`
-
-### WhatsApp webhook does not receive messages
-
-Check:
-
-- Twilio sandbox join status
-- Public HTTPS webhook URL
-- Twilio webhook method is `POST`
-- FastAPI is reachable at `/webhook`
-- Server logs in `logs/api.log`
-
-### Vercel shows demo responses
-
-This is expected while Vercel is serving `app.py`. The demo app returns `degraded: true` for generated invoices and database status. To test real data, run `ui/app.py` locally with `.env` or deploy the real Flask UI/backend paths with production environment variables.
+- `OPENAI_API_KEY` is valid.
+- OpenAI billing and model access are enabled.
+- `vector` extension exists in Supabase.
+- Embedding jobs are not failing in Vercel logs.
