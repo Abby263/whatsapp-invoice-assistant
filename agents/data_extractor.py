@@ -133,7 +133,11 @@ class DataExtractorAgent(BaseAgent):
                         "mime_type": mime_type,
                         "dimensions": dimensions
                     }
-                    logger.info(f"Prepared image for GPT-4o-mini processing: {file_size} bytes, mime type: {mime_type}")
+                    logger.info(
+                        "Prepared image for configured vision model: %s bytes, mime type: %s",
+                        file_size,
+                        mime_type,
+                    )
                 else:
                     # For other binary files, create a descriptive message
                     content_for_llm = f"Binary file: {file_path}, type: {content_type}, size: {len(file_content)} bytes"
@@ -142,7 +146,7 @@ class DataExtractorAgent(BaseAgent):
                 content_for_llm = file_content
 
             # Call LLM to extract data from the file
-            logger.info(f"Calling GPT-4o-mini for invoice data extraction")
+            logger.info("Calling configured model for invoice data extraction")
             extraction_result = await self.llm_factory.extract_invoice_data(content_for_llm)
 
             # Parse the response - handle triple backtick JSON format

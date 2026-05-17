@@ -8,12 +8,16 @@ private infrastructure.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+from xml.sax.saxutils import escape
 
+from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, render_template, request
 
+from services import live_backend
 from utils.clerk_auth import (
     ClerkAuthError,
     get_auth_config,
@@ -24,6 +28,7 @@ from utils.clerk_auth import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(PROJECT_ROOT / ".env")
 DEFAULT_WHATSAPP_NUMBER = "+1234567890"
 DEFAULT_USER = {
     "id": "demo-user",
@@ -202,6 +207,46 @@ def _is_auth_response(value) -> bool:
     return isinstance(value, tuple)
 
 
+def _live_backend_enabled() -> bool:
+    return live_backend.is_live_backend_enabled()
+
+
+def _live_error(exc: Exception, status_code: int = 500):
+    return jsonify({"status": "error", "message": str(exc)}), status_code
+
+
+def _twilio_message_response(message: str, status_code: int = 200):
+    try:
+        from twilio.twiml.messaging_response import MessagingResponse
+
+        twiml = MessagingResponse()
+        twiml.message(message)
+        body = str(twiml)
+    except Exception:
+        body = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Message>{escape(message)}</Message></Response>"
+    return Response(body, status=status_code, mimetype="application/xml")
+
+
+def _twilio_request_is_valid() -> bool:
+    if os.environ.get("TWILIO_VALIDATE_REQUESTS", "").lower() not in {"1", "true", "yes"}:
+        return True
+    try:
+        from twilio.request_validator import RequestValidator
+
+        token = os.environ.get("TWILIO_AUTH_TOKEN")
+        signature = request.headers.get("X-Twilio-Signature", "")
+        if not token or not signature:
+            return False
+        url = request.url
+        forwarded_proto = request.headers.get("X-Forwarded-Proto")
+        forwarded_host = request.headers.get("X-Forwarded-Host") or request.headers.get("Host")
+        if forwarded_proto and forwarded_host:
+            url = f"{forwarded_proto}://{forwarded_host}{request.full_path.rstrip('?')}"
+        return RequestValidator(token).validate(url, request.form.to_dict(flat=True), signature)
+    except Exception:
+        return False
+
+
 @app.get("/")
 def home():
     return render_template("index.html")
@@ -214,7 +259,43 @@ def favicon():
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok", "runtime": "vercel-ui-demo"})
+    backend_config = live_backend.backend_configuration_status()
+    return jsonify(
+        {
+            "status": "ok",
+            "runtime": "vercel-production" if backend_config["enabled"] else "vercel-ui-demo",
+            "backend_enabled": backend_config["enabled"],
+            "backend_config": backend_config,
+            "webhook_path": "/webhook",
+        }
+    )
+
+
+@app.post("/webhook")
+@app.post("/api/webhook")
+def whatsapp_webhook():
+    if not _live_backend_enabled():
+        backend_config = live_backend.backend_configuration_status()
+        return _twilio_message_response(
+            f"The WhatsApp backend is not configured yet: {backend_config.get('reason')}.",
+            status_code=503,
+        )
+    if not _twilio_request_is_valid():
+        return _twilio_message_response("Invalid Twilio request signature.", status_code=403)
+
+    try:
+        result = live_backend.process_twilio_webhook(request.form.to_dict(flat=True))
+        message = (
+            result.get("message")
+            or result.get("content")
+            or "I received your message, but could not produce a response."
+        )
+        return _twilio_message_response(message)
+    except Exception as exc:
+        return _twilio_message_response(
+            f"Sorry, I could not process that message right now: {str(exc)}",
+            status_code=500,
+        )
 
 
 @app.get("/api/auth/config")
@@ -227,6 +308,17 @@ def auth_me():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            return jsonify(
+                {
+                    "status": "success",
+                    "auth": get_auth_config(),
+                    "identity": live_backend.get_auth_identity(auth_context),
+                }
+            )
+        except Exception as exc:
+            return _live_error(exc)
     return jsonify(
         {
             "status": "success",
@@ -241,6 +333,19 @@ def auth_sync():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            identity = live_backend.get_auth_identity(auth_context)
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "Clerk session synchronized",
+                    "identity": identity,
+                    "linked_user": identity.get("linked_user") if identity else None,
+                }
+            )
+        except Exception as exc:
+            return _live_error(exc)
 
     data = request.get_json(silent=True) or {}
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
@@ -261,6 +366,36 @@ def auth_link_whatsapp():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        if not auth_context:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "Sign in with Clerk before linking a WhatsApp number.",
+                    "auth_required": True,
+                }
+            ), 401
+        try:
+            user = live_backend.link_clerk_to_whatsapp(
+                auth_context,
+                request.get_json(silent=True) or {},
+            )
+            return jsonify(
+                {
+                    "status": "success",
+                    "message": "Clerk account linked to WhatsApp number",
+                    "user": user,
+                    "identity": {
+                        "clerk_user_id": auth_context.clerk_user_id,
+                        "linked_user": user,
+                        "needs_link": False,
+                    },
+                }
+            )
+        except ValueError as exc:
+            return _live_error(exc, 409)
+        except Exception as exc:
+            return _live_error(exc)
     if not auth_context:
         return jsonify(
             {
@@ -300,6 +435,16 @@ def initialize():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            return jsonify(
+                live_backend.initialize_workspace(
+                    auth_context,
+                    request.args.get("whatsapp_number"),
+                )
+            )
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = (
         DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else DEFAULT_USER
     )
@@ -324,6 +469,11 @@ def get_users():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            return jsonify(live_backend.list_users(auth_context))
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
     users = [linked_user] if linked_user else [DEFAULT_USER]
     return jsonify(
@@ -339,6 +489,16 @@ def get_users():
 @app.post("/api/users/create")
 def create_user():
     data = request.get_json(silent=True) or {}
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        try:
+            return jsonify(live_backend.create_or_link_user(auth_context, data))
+        except ValueError as exc:
+            return _live_error(exc, 409)
+        except Exception as exc:
+            return _live_error(exc)
     whatsapp_number = data.get("whatsapp_number") or DEFAULT_WHATSAPP_NUMBER
     user = {
         "id": f"demo-{whatsapp_number.replace('+', '').replace(' ', '')}",
@@ -360,6 +520,15 @@ def create_user():
 @app.get("/api/users/company-profile")
 @app.get("/api/users/company-profile/<user_id>")
 def get_company_profile(user_id: str | None = None):
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.get_company_profile(user_id, auth_context)
+            return jsonify(result), 400 if result.get("status") == "error" else 200
+        except Exception as exc:
+            return _live_error(exc)
     return jsonify(
         {
             "status": "success",
@@ -374,6 +543,15 @@ def get_company_profile(user_id: str | None = None):
 @app.post("/api/users/company-profile")
 def update_company_profile():
     data = request.get_json(silent=True) or {}
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.update_company_profile(data, auth_context)
+            return jsonify(result), 400 if result.get("status") == "error" else 200
+        except Exception as exc:
+            return _live_error(exc)
     return jsonify(
         {
             "status": "success",
@@ -389,6 +567,15 @@ def message():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.process_chat_message(
+                auth_context,
+                request.get_json(silent=True) or {},
+            )
+            return jsonify(result), 403 if result.get("needs_link") else 200
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
     if auth_context and is_auth_required() and not linked_user:
         return jsonify(
@@ -460,6 +647,12 @@ def generated_invoices():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.list_generated(auth_context, request.args.to_dict())
+            return jsonify(result), 403 if result.get("needs_link") else 200
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
     user = linked_user or DEFAULT_USER
     invoices = [
@@ -483,6 +676,16 @@ def generated_invoice_create():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.create_generated(
+                auth_context,
+                request.get_json(silent=True) or {},
+                source="web",
+            )
+            return jsonify(result), 403 if result.get("needs_link") else 200
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
     user = linked_user or DEFAULT_USER
     invoice = _demo_generated_invoice(
@@ -509,6 +712,12 @@ def generated_invoice_analytics():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.generated_analytics(auth_context, request.args.to_dict())
+            return jsonify(result), 403 if result.get("needs_link") else 200
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
     user = linked_user or DEFAULT_USER
     invoices = [
@@ -538,6 +747,17 @@ def upload():
     auth_context = _require_demo_auth()
     if _is_auth_response(auth_context):
         return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.process_upload(
+                auth_context,
+                request.files.get("file"),
+                request.form.to_dict(),
+            )
+            status_code = 403 if result.get("needs_link") else 400 if result.get("status") == "error" else 200
+            return jsonify(result), status_code
+        except Exception as exc:
+            return _live_error(exc)
     linked_user = DEMO_LINKS.get(auth_context.clerk_user_id) if auth_context else None
     if auth_context and is_auth_required() and not linked_user:
         return jsonify(
@@ -572,6 +792,14 @@ def upload():
 
 @app.get("/api/db-status")
 def db_status():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        try:
+            return jsonify(live_backend.database_status(auth_context))
+        except Exception as exc:
+            return _live_error(exc)
     return jsonify(_demo_db_status())
 
 
@@ -626,6 +854,15 @@ def memory_config():
 @app.get("/api/file-storage-info")
 @app.get("/api/s3-info")
 def file_storage_info():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        try:
+            result = live_backend.latest_file_storage(auth_context)
+            return jsonify(result), 404 if result.get("status") == "not_found" else 200
+        except Exception as exc:
+            return _live_error(exc)
     return jsonify(
         {
             "status": "not_found",

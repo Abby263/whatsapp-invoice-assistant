@@ -90,12 +90,32 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     server_key = _first(values, "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY")
     server_key_ref = _project_ref_from_jwt(server_key)
     key_matches = not server_key_ref or server_key_ref == supabase_ref
-    checks.append((not _is_placeholder(server_key) and key_matches, "Supabase server key is set for the configured project"))
+    checks.append(
+        (
+            not _is_placeholder(server_key) and key_matches,
+            "Supabase server key is set for the configured project",
+        )
+    )
 
     database_url = _first(values, "DATABASE_URL", "SUPABASE_DATABASE_URL")
     database_host = urlparse(database_url).hostname or ""
     db_matches = not supabase_ref or supabase_ref in database_host
-    checks.append((not _is_placeholder(database_url) and db_matches, "Supabase database URL is set for the configured project"))
+    checks.append(
+        (
+            not _is_placeholder(database_url) and db_matches,
+            "Supabase database URL is set for the configured project",
+        )
+    )
+
+    direct_url = _first(values, "DIRECT_URL", "SUPABASE_DIRECT_URL")
+    direct_host = urlparse(direct_url).hostname or ""
+    direct_matches = not supabase_ref or supabase_ref in direct_host
+    checks.append(
+        (
+            not _is_placeholder(direct_url) and direct_matches,
+            "Supabase direct/session URL is set for migrations",
+        )
+    )
 
     storage_bucket = _first(values, "SUPABASE_STORAGE_BUCKET", "SUPABASE_RECEIPTS_BUCKET")
     checks.append((storage_bucket == "receipts" or bool(storage_bucket), "Supabase storage bucket is set"))
@@ -126,7 +146,12 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     )
 
     clerk_publishable = _first(values, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY")
-    checks.append((not _is_placeholder(clerk_publishable) and clerk_publishable.startswith("pk_"), "Clerk publishable key is set"))
+    checks.append(
+        (
+            not _is_placeholder(clerk_publishable) and clerk_publishable.startswith("pk_"),
+            "Clerk publishable key is set",
+        )
+    )
 
     clerk_secret = _first(values, "CLERK_SECRET_KEY")
     checks.append((not _is_placeholder(clerk_secret) and clerk_secret.startswith("sk_"), "Clerk secret key is set"))

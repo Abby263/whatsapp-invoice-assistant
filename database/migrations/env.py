@@ -23,14 +23,14 @@ from alembic import context
 
 # Import all SQLAlchemy models here to make them available to Alembic
 from database.schemas import Base
-from database.connection import get_database_url
+from database.connection import get_database_url, get_migration_database_url
 
 # This is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
 # Set the SQLAlchemy URL in the Alembic config
-config.set_main_option("sqlalchemy.url", get_database_url())
+config.set_main_option("sqlalchemy.url", get_migration_database_url())
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -54,7 +54,7 @@ def run_migrations_offline() -> None:
     Calls to context.execute() here emit the given string to the
     script output.
     """
-    url = get_database_url()
+    url = get_migration_database_url()
     
     # Try to create the pgvector extension
     try:
@@ -82,7 +82,7 @@ def run_migrations_online() -> None:
     """
     # Override the URL in the alembic.ini file
     config_section = config.get_section(config.config_ini_section)
-    config_section["sqlalchemy.url"] = get_database_url()
+    config_section["sqlalchemy.url"] = get_migration_database_url()
     
     connectable = engine_from_config(
         config_section,
@@ -109,4 +109,4 @@ def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    run_migrations_online() 
+    run_migrations_online()

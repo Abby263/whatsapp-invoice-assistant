@@ -8,7 +8,6 @@ from enum import Enum, auto
 from typing import Dict, List, Optional, Union, Any
 from pydantic import BaseModel, Field
 import datetime
-from langchain.schema import Document
 
 
 class InputType(str, Enum):
@@ -179,4 +178,4 @@ class FileProcessingState(WorkflowState):
 
     class Config:
         """Pydantic config."""
-        arbitrary_types_allowed = True 
+        arbitrary_types_allowed = True

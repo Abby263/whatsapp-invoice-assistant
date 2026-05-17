@@ -21,22 +21,10 @@ uploads/
 ui/uploads/
 output/
 
-agents/
-api/
-config/
-constants/
-database/
 docker/
 helm/
 images/
-langchain_app/
-memory/
-patches/
-prompts/
 scripts/
-services/
-storage/
-template/
 /templates/
 tests/
 workflows/

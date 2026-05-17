@@ -8,23 +8,16 @@ and the LangGraph workflow, handling request parsing and response formatting.
 import logging
 import os
 import tempfile
-import json
 import shutil
-import asyncio
 from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 from uuid import UUID
-from fastapi import BackgroundTasks
-from urllib.parse import urlparse
-import requests
+import mimetypes
 
 from sqlalchemy.orm import Session
 
 from langchain_app.text_processing_workflow import process_text_message as process_text
 from langchain_app.file_processing_workflow import process_file_message as process_file
-from services.database import get_session, Database
-from langchain_app.workflow import process_input, create_state
-from langchain_app.state import IntentType, FileType, InputType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
 
 logger = logging.getLogger(__name__)
@@ -244,11 +237,16 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             import httpx
             
             temp_dir = Path(tempfile.mkdtemp())
-            file_name = os.path.basename(media_url)
+            file_name = os.path.basename(media_url.split("?", 1)[0]) or "receipt"
+            if "." not in file_name:
+                guessed_ext = mimetypes.guess_extension(media_content_type.split(";", 1)[0])
+                if guessed_ext:
+                    file_name = f"{file_name}{guessed_ext}"
             file_path = temp_dir / file_name
             
             async with httpx.AsyncClient() as client:
-                response = await client.get(media_url)
+                auth = _twilio_media_auth(media_url)
+                response = await client.get(media_url, auth=auth, follow_redirects=True)
                 if response.status_code != 200:
                     logger.error(f"Failed to download media: {response.status_code}")
                     return {
@@ -274,8 +272,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             
             # Clean up the temporary file
             try:
-                os.unlink(file_path)
-                os.rmdir(temp_dir)
+                shutil.rmtree(temp_dir, ignore_errors=True)
             except Exception as e:
                 logger.warning(f"Failed to clean up temporary file: {str(e)}")
             
@@ -294,6 +291,18 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             "status": "error",
             "message": GENERAL_FALLBACKS["no_response"]
         }
+
+
+def _twilio_media_auth(media_url: str):
+    """Return Basic Auth for protected Twilio media URLs when configured."""
+
+    if "api.twilio.com" not in (media_url or ""):
+        return None
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    if not account_sid or not auth_token:
+        return None
+    return (account_sid, auth_token)
 
 
 def extract_user_id_from_sender(sender: str) -> Optional[str]:
