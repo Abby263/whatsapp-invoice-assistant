@@ -25,6 +25,7 @@ from langchain_app.file_processing_workflow import (
     validate_file,
 )
 from langchain_app.state import IntentType, FileType
+from constants.fallback_messages import BOT_INTRO_RESPONSE
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO)
@@ -117,6 +118,8 @@ async def test_text_processing_workflow(sample_greeting_input):
         
         # Verify the result
         assert "WhatsApp Invoice Assistant" in result["content"]
+        assert "receipt photo or PDF" in result["content"]
+        assert "What did I spend" in result["content"]
         assert result["metadata"]["intent"] == IntentType.GREETING.value
         assert 0.4 <= result["confidence"] <= 0.9  # Allow for a range of confidence values
         
@@ -130,7 +133,7 @@ async def test_general_response_workflow():
     # Patch the ResponseFormatterAgent to return a predetermined response
     with patch("agents.response_formatter.ResponseFormatterAgent.process") as mock_process:
         mock_process.return_value = {
-            "content": "I'm your WhatsApp Invoice Assistant. How can I help you?",
+            "content": BOT_INTRO_RESPONSE,
             "confidence": 0.8
         }
         
@@ -145,6 +148,7 @@ async def test_general_response_workflow():
         # Also test greeting process
         result = await process_greeting("Hello")
         assert "I'm your WhatsApp Invoice Assistant" in result["content"]
+        assert "Create an invoice" in result["content"]
         assert result["metadata"]["intent"] == IntentType.GREETING.value
 
 
