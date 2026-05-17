@@ -48,6 +48,9 @@ class _FakeStorage:
     deleted_paths = []
     failed = False
 
+    def generate_url(self, path):
+        return f"https://signed.example/{path}"
+
     def delete_files(self, paths):
         self.__class__.deleted_paths.extend(paths)
         if self.__class__.failed:
@@ -161,6 +164,7 @@ def _seed_history(session_factory):
 
 def test_list_user_history_returns_documents_and_generated_invoices(monkeypatch, session_factory):
     _patch_connection(monkeypatch, session_factory)
+    monkeypatch.setattr(history_service, "SupabaseStorageHandler", _FakeStorage)
     ids = _seed_history(session_factory)
 
     result = history_service.list_user_history(ids["user_id"])
@@ -172,6 +176,10 @@ def test_list_user_history_returns_documents_and_generated_invoices(monkeypatch,
     pending_upload = next(record for record in result["documents"] if record["kind"] == "media")
     assert pending_upload["hitl_status"] == "awaiting_confirmation"
     assert pending_upload["approval_command"] == "APPROVE 2"
+    assert pending_upload["content_type"] == "image/jpeg"
+    assert pending_upload["file_url"] == "https://signed.example/users/1/invoices/unprocessed"
+    invoice_record = next(record for record in result["documents"] if record["kind"] == "invoice")
+    assert invoice_record["file_url"] == "https://signed.example/users/1/invoices/ledger"
     assert result["generated_invoices"][0]["invoice_number"] == "OUT-001"
 
 

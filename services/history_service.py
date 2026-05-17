@@ -320,6 +320,7 @@ def delete_user_history(user_id: int, payload: Dict[str, Any]) -> Dict[str, Any]
 def _serialize_invoice_document(invoice: Any, media_records: Sequence[Any], item_count: int) -> Dict[str, Any]:
     media = media_records[0] if media_records else None
     filename = (media.original_filename or media.filename) if media else None
+    access_url = _media_access_url(media) if media else None
     return {
         "kind": "invoice",
         "id": str(invoice.id),
@@ -334,11 +335,15 @@ def _serialize_invoice_document(invoice: Any, media_records: Sequence[Any], item
         "status": "processed",
         "created_at": _iso(invoice.created_at),
         "file_path": media.file_path if media else None,
+        "file_url": access_url,
+        "signed_url": access_url,
+        "content_type": media.content_type if media else None,
     }
 
 
 def _serialize_media_document(media: Any) -> Dict[str, Any]:
     metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
+    access_url = _media_access_url(media)
     return {
         "kind": "media",
         "id": str(media.id),
@@ -358,6 +363,9 @@ def _serialize_media_document(media: Any) -> Dict[str, Any]:
         "rejection_command": metadata.get("hitl_rejection_command"),
         "created_at": _iso(media.created_at),
         "file_path": media.file_path,
+        "file_url": access_url,
+        "signed_url": access_url,
+        "content_type": media.content_type,
     }
 
 
@@ -417,6 +425,33 @@ def _clean_storage_paths(paths: Iterable[Any]) -> List[str]:
         seen.add(value)
         cleaned.append(value)
     return cleaned
+
+
+def _media_access_url(media: Any) -> Optional[str]:
+    """Return a browser-safe URL for a private media object when available."""
+
+    if not media:
+        return None
+
+    file_url = str(getattr(media, "file_url", "") or "").strip()
+    if file_url.startswith("/uploads/"):
+        return file_url
+
+    file_path = str(getattr(media, "file_path", "") or "").strip().lstrip("/")
+    if not file_path:
+        if file_url.startswith(("http://", "https://")):
+            return file_url
+        return None
+
+    try:
+        return SupabaseStorageHandler().generate_url(file_path)
+    except StorageConfigurationError as exc:
+        logger.warning("Could not sign media file %s because storage is not configured: %s", file_path, exc)
+    except Exception as exc:
+        logger.warning("Could not sign media file %s: %s", file_path, exc)
+    if file_url.startswith(("http://", "https://")):
+        return file_url
+    return None
 
 
 def _coerce_int(value: Any, label: str) -> int:

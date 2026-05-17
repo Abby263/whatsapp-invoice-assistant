@@ -410,13 +410,10 @@ input, select, textarea {
     box-shadow: 0 8px 18px rgba(13, 148, 136, 0.18);
 }
 
-.topbar-auth[data-auth-state="signed-out"] #linkWhatsappBtn,
 .topbar-auth[data-auth-state="signed-out"] #clerkUserButton,
 .topbar-auth[data-auth-state="disabled"] #signInBtn,
-.topbar-auth[data-auth-state="disabled"] #linkWhatsappBtn,
 .topbar-auth[data-auth-state="disabled"] #clerkUserButton,
 .topbar-auth[data-auth-state="signed-in"] #signInBtn,
-.topbar-auth[data-auth-state="signed-in"] #linkWhatsappBtn,
 .topbar-auth[data-auth-state="needs-link"] #signInBtn {
     display: none;
 }
@@ -643,9 +640,105 @@ input, select, textarea {
     gap: 10px;
 }
 
+.connection-primary {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+    margin-bottom: 14px;
+}
+
+.connection-icon,
+.connected-number-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    background: rgba(13, 148, 136, 0.14);
+    color: var(--brand-strong);
+    flex: 0 0 auto;
+}
+
+.connection-primary strong,
+.connected-number-main strong {
+    display: block;
+    color: var(--ink);
+    font-size: 14px;
+}
+
+.connection-primary span,
+.connected-number-main span {
+    display: block;
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.connected-number-list {
+    display: grid;
+    gap: 10px;
+}
+
+.connected-number-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+}
+
+.connected-number-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.connected-number-row .btn:disabled {
+    opacity: 0.7;
+    cursor: default;
+}
+
 .generated-invoice-main,
 .history-main {
     min-width: 0;
+}
+
+.history-preview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.history-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    object-fit: cover;
+    background: var(--surface);
+    flex: 0 0 auto;
+}
+
+.history-file-icon {
+    width: 48px;
+    height: 48px;
+    display: grid;
+    place-items: center;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--brand-strong);
+    flex: 0 0 auto;
 }
 
 .generated-invoice-main strong,
@@ -672,7 +765,8 @@ input, select, textarea {
     gap: 8px;
 }
 
-.generated-invoice-actions a {
+.generated-invoice-actions a,
+.history-actions a {
     display: inline-flex;
     align-items: center;
     gap: 6px;
