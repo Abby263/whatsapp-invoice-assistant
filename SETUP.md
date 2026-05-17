@@ -116,6 +116,20 @@ Migration/direct-session format:
 DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
 ```
 
+If the database password contains reserved URL characters, encode them before
+placing the password in `DATABASE_URL` or `DIRECT_URL`. For example, `@` must
+be written as `%40`. An encoding-safe fallback is to provide the raw password
+separately:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_DB_PASSWORD=<raw-database-password>
+```
+
+When `SUPABASE_DB_PASSWORD` is used, the app builds and encodes a direct
+Supabase database connection string for you. For Vercel/serverless production,
+prefer an encoded pooler `DATABASE_URL`.
+
 The app resolves database configuration in this order:
 
 1. `DATABASE_URL`
@@ -353,6 +367,7 @@ DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SECRET_KEY=<sb_secret_...>
+SUPABASE_DB_PASSWORD=<raw-database-password>
 SUPABASE_STORAGE_BUCKET=receipts
 
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
