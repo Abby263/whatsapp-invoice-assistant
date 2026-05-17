@@ -150,12 +150,8 @@ instance/
 whatsapp_temp/
 ui_users.json
 
-# Docker
-.dockerignore
+# Local compose overrides
 docker-compose.override.yml
-
-# Poetry
-poetry.lock
 
 # Pre-commit hooks
 .pre-commit-config.yaml
@@ -166,13 +162,9 @@ poetry.lock
 
 # Don't ignore these files/directories (keep them in the repo)
 !.env.example
-!docker-compose.yml
-!docker/Dockerfile
 !.flake8
 !alembic.ini
 !README.md
-!TASKS.md
-!docker-run.sh
 !uploads/.gitkeep
 .vercel
 .env*.local

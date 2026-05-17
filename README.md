@@ -1,18 +1,18 @@
 # WhatsApp Invoice Assistant
 
-Production-oriented AI workspace for capturing receipts from WhatsApp, extracting invoice data, storing original receipt files, generating outgoing invoices, generating vector embeddings, and answering finance questions in natural language.
+AI receipt and invoice workspace for WhatsApp-first operators. Users can send receipt images or PDFs to a Twilio WhatsApp number, link the same WhatsApp number to their Clerk web account, review extracted records in the web app, generate outgoing invoices, and ask finance questions over the stored data.
 
-The application combines a WhatsApp webhook API, Clerk web authentication, LangGraph-style agent workflows, Supabase Postgres with pgvector, Supabase Storage, optional MongoDB memory, and an operator UI for testing and workflow inspection.
+The production path runs on Vercel with Flask, Clerk, Twilio, Supabase Postgres, Supabase Storage, pgvector, and OpenAI.
 
-## Live UI
+## Live App
 
-[Open the hosted UI on Vercel](https://whatsapp-invoice-assistant.vercel.app)
+- Web app: [https://whatsapp-invoice-assistant.vercel.app](https://whatsapp-invoice-assistant.vercel.app)
+- Twilio incoming-message webhook: [https://whatsapp-invoice-assistant.vercel.app/webhook](https://whatsapp-invoice-assistant.vercel.app/webhook)
+- Repository: [https://github.com/Abby263/whatsapp-invoice-assistant](https://github.com/Abby263/whatsapp-invoice-assistant)
 
-The Vercel deployment runs the operator UI and, when production environment variables are present, the live backend endpoints. Twilio should use [https://whatsapp-invoice-assistant.vercel.app/webhook](https://whatsapp-invoice-assistant.vercel.app/webhook) as the incoming WhatsApp webhook URL. If database variables are absent, the same app falls back to demo mode for reviewers.
+If production environment variables are missing, the hosted app falls back to demo mode so reviewers can still inspect the interface. Real WhatsApp processing requires the setup in [SETUP.md](SETUP.md).
 
-## UI Demo
-
-The repository includes a lightweight animated GIF captured from the hosted Vercel UI so the product walkthrough renders directly in GitHub.
+## Demo
 
 ![Receipt Intelligence Workspace demo](docs/assets/invoice-command-center-demo.gif)
 
@@ -24,162 +24,144 @@ The repository includes a lightweight animated GIF captured from the hosted Verc
 
 ![Receipt Intelligence Workspace dark mode](docs/assets/ui-command-center-dark.png)
 
-## What This Application Does
+## Product Capabilities
 
-- Captures invoice and receipt files from WhatsApp media messages or the local test UI.
-- Links Clerk web users to WhatsApp numbers so receipts and insights stay scoped to one account across channels.
-- Validates PDF and image uploads before processing.
-- Extracts merchant, invoice metadata, totals, taxes, and line items.
-- Stores original receipt files in Supabase Storage with signed URL access.
-- Persists normalized invoice and item data in Supabase Postgres.
-- Generates outgoing invoices from WhatsApp or the website using saved company/client defaults.
-- Saves generated invoice metadata and line items under the same user account as uploaded receipts.
+- Accepts WhatsApp text, image, and PDF messages through Twilio.
+- Links Clerk web users to WhatsApp numbers so web and WhatsApp activity share one internal `users.id`.
+- Extracts merchant, date, totals, taxes, payment details, and line items from receipts.
+- Stores original receipt files in a private Supabase Storage bucket.
+- Stores normalized invoice, item, media, message, user, and generated-invoice records in Supabase Postgres.
 - Generates OpenAI embeddings and stores them in pgvector columns for semantic search.
-- Routes user messages through LangGraph agents for upload, query, and invoice-creation workflows.
-- Keeps conversation context in MongoDB when memory persistence is enabled.
-- Provides a browser UI to simulate WhatsApp conversations, inspect workflow steps, and monitor database, storage, memory, and vector status.
+- Answers user-scoped finance questions from extracted data.
+- Generates outgoing invoices from WhatsApp or the website using saved seller/client defaults.
+- Shows receipt, invoice, workflow, storage, database, and vector status in the UI.
 
-## Use Case
+Example WhatsApp prompts:
 
-Small businesses and operators can send receipts through WhatsApp, then ask questions such as:
-
-- "What did I spend this month?"
-- "Show the latest uploaded receipts."
-- "How much did I spend on software subscriptions?"
-- "Create an invoice for a new client."
-
-The system is designed to preserve the original receipt file, normalize the extracted records, and make invoices searchable by both structured SQL and semantic similarity.
+- `Hi`
+- `What did I spend on coffee this month?`
+- `Show my latest receipts.`
+- `Create an invoice for Acme for $500 consulting due next Friday.`
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    W["WhatsApp user"] --> T["Twilio WhatsApp webhook"]
-    C["Clerk signed-in user"] --> UI
-    C --> LINK["Link WhatsApp number"]
-    LINK --> UMAP["users.clerk_user_id + users.whatsapp_number"]
-    W --> UMAP
-    O["Operator / developer"] --> UI["Flask test UI :5001"]
+    W["WhatsApp user"] --> TW["Twilio WhatsApp sender"]
+    TW --> WH["Vercel Flask /webhook"]
+    B["Clerk browser user"] --> UI["Vercel Flask web app"]
+    UI --> LINK["Link WhatsApp number"]
 
-    T --> API["Vercel Flask webhook /webhook"]
-    UI --> UIF["Vercel Flask UI + API routes"]
-    UIF --> LAPI["LangChain app API"]
-    API --> LAPI
-    UMAP --> LAPI
+    WH --> API["langchain_app API"]
+    UI --> API
+    LINK --> USER["users.clerk_user_id + users.whatsapp_number"]
+    USER --> API
 
-    LAPI --> WF["LangGraph workflow"]
-    WF --> R["Input router"]
-    R -->|Text| IC["Intent classifier"]
-    R -->|File| FV["File validator"]
+    API --> ROUTER["Input router"]
+    ROUTER -->|Text| INTENT["Intent classifier"]
+    ROUTER -->|Media| VALIDATE["File validator"]
 
-    IC -->|Invoice query| SQL["Text-to-SQL + vector query agent"]
-    IC -->|Invoice creation| IE["Invoice entity extractor"]
-    IC -->|General| RF["Response formatter"]
+    VALIDATE --> EXTRACT["Receipt extraction"]
+    EXTRACT --> STORE["Supabase Storage"]
+    EXTRACT --> DB["Supabase Postgres"]
+    EXTRACT --> EMB["OpenAI embeddings"]
+    EMB --> VEC["pgvector"]
 
-    FV --> DE["Receipt data extractor"]
-    DE --> ST["Supabase Storage private bucket"]
-    DE --> PG["Supabase Postgres"]
-    DE --> EMB["OpenAI embeddings"]
-    EMB --> VEC["pgvector columns"]
-
-    SQL --> PG
+    INTENT -->|Query| SQL["Text-to-SQL and vector search"]
+    SQL --> DB
     SQL --> VEC
-    IE --> GINV["Generated invoice service"]
-    GINV --> GT["DOCX/PDF generator"]
-    GT --> ST
-    GINV --> PG
-    IE --> RF
-    DE --> RF
-    RF --> T
-    RF --> UI
 
-    WF --> MEM["MongoDB memory optional"]
+    INTENT -->|Generate invoice| GEN["Generated invoice service"]
+    GEN --> DOC["DOCX/PDF template generator"]
+    DOC --> STORE
+    GEN --> DB
+
+    INTENT -->|General| RESP["LLM response formatter"]
+    EXTRACT --> RESP
+    SQL --> RESP
+    GEN --> RESP
+    RESP --> WH
+    RESP --> UI
 ```
 
-### Runtime Components
+## Runtime Components
 
 | Component | Purpose |
 | --- | --- |
-| Vercel Flask entrypoint (`app.py`) | Hosted UI, Clerk-authenticated API routes, Twilio `/webhook`, and live Supabase-backed processing when env vars are configured. |
-| FastAPI (`api/main.py`) | Local or alternate production API surface for WhatsApp webhook deployments. |
-| Flask UI (`ui/app.py`) | Local operator UI for receipt upload, chat simulation, and workflow inspection. |
-| Clerk (`utils/clerk_auth.py`) | Browser sign-in, session JWT verification, and account-to-WhatsApp linking. |
-| LangGraph workflow (`langchain_app/`) | Routes text and files through specialized agent nodes. |
-| Agents (`agents/`) | Intent classification, file validation, extraction, SQL/vector query generation, response formatting. |
-| Generated invoice service (`services/generated_invoice_service.py`) | Merges saved defaults, creates DOCX/PDF files, stores files, and persists outgoing invoice records. |
-| Supabase Postgres | Primary relational store for users, invoices, line items, messages, and embedding metadata. |
-| pgvector | Semantic search over item descriptions and invoice embeddings. |
-| Supabase Storage | Private receipt file storage with signed URLs generated on demand. |
-| OpenAI | LLM and embedding provider. |
-| MongoDB | Optional persistent conversation memory and LangGraph checkpoint storage. |
-| Redis/Celery | Background-work infrastructure hooks for production deployments. |
+| [app.py](app.py) | Vercel Flask entrypoint for the hosted UI, `/webhook`, auth APIs, upload/chat routes, generated invoices, and health checks. |
+| [ui/app.py](ui/app.py) | Local operator UI for development and workflow inspection. |
+| [services/live_backend.py](services/live_backend.py) | Production bridge from Flask routes to Supabase, Clerk identity, Twilio media, receipt processing, and invoice generation. |
+| [langchain_app/](langchain_app) | Text, file, query, and invoice-generation workflow routing. |
+| [agents/](agents) | LLM-backed intent classification, validation, extraction, SQL generation, RAG, and response formatting. |
+| [database/](database) | SQLAlchemy models, connection handling, CRUD helpers, and Alembic migrations. |
+| [storage/supabase_storage_handler.py](storage/supabase_storage_handler.py) | Private Supabase Storage uploads and signed URL generation. |
+| [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
+| [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
+| [memory/](memory) | In-memory conversation state with optional MongoDB persistence when explicitly enabled. |
 
-## Receipt Upload Flow
+## Data Model
 
-```mermaid
-sequenceDiagram
-    participant User as WhatsApp/User
-    participant API as API or UI
-    participant Graph as LangGraph
-    participant Storage as Supabase Storage
-    participant DB as Supabase Postgres
-    participant OpenAI as OpenAI Embeddings
+The application stores user-scoped operational data in Supabase Postgres:
 
-    User->>API: Send receipt PDF/image
-    API->>Graph: process_file_message
-    Graph->>Graph: Validate file and classify input
-    Graph->>Storage: Upload original receipt
-    Graph->>Graph: Extract invoice fields and line items
-    Graph->>DB: Store invoice and item records
-    Graph->>OpenAI: Generate embeddings
-    Graph->>DB: Store pgvector embeddings
-    Graph->>API: Return extraction summary and metadata
-    API->>User: Send assistant response
+- `users`: Clerk identity, WhatsApp number, profile data, and invoice-generation defaults.
+- `invoices`: extracted receipt or invoice header data.
+- `items`: line items extracted from uploaded receipts.
+- `media`: uploaded receipt metadata, content hashes, storage paths, and duplicate detection fields.
+- `generated_invoices` and `generated_invoice_items`: outgoing invoices created from WhatsApp or the web app.
+- `conversations`, `messages`, and `whatsapp_messages`: chat history and delivery metadata.
+- pgvector embedding columns: semantic search over invoice and item content.
+
+Uploaded receipt files and generated invoice documents are stored in the private Supabase Storage bucket configured by `SUPABASE_STORAGE_BUCKET`, defaulting to `receipts`. The database stores metadata and storage paths; the app generates signed URLs when users need to view a file.
+
+## Why Supabase Storage Instead Of S3
+
+The app already uses Supabase Postgres, pgvector, and server-side Supabase credentials. Keeping receipt files in Supabase Storage means private file storage, signed links, metadata, row ownership, and vector-backed analytics live in one platform. This repo no longer contains an active S3 storage path.
+
+## Setup
+
+Full setup lives in [SETUP.md](SETUP.md). The minimum production services are:
+
+| Service | Required For |
+| --- | --- |
+| Supabase Postgres | Users, receipts, generated invoices, pgvector embeddings, and migrations. |
+| Supabase Storage | Private receipt and generated-invoice document storage. |
+| Clerk | Web sign-in and WhatsApp account linking. |
+| Twilio WhatsApp | Incoming WhatsApp text and media messages. |
+| OpenAI | LLM responses, extraction, image/PDF interpretation, and embeddings. |
+| Vercel | Hosted Flask app and public HTTPS webhook. |
+
+Core environment variables:
+
+```bash
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.com:6543/postgres
+DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-<region>.pooler.supabase.com:5432/postgres
+NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_SECRET_KEY=sb_secret_...
+SUPABASE_STORAGE_BUCKET=receipts
+
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+CLERK_REQUIRE_AUTH=true
+CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
+
+OPENAI_API_KEY=sk-proj-...
+OPENAI_API_MODEL=gpt-5.4-mini
+
+TWILIO_ACCOUNT_SID=AC...
+TWILIO_AUTH_TOKEN=...
+TWILIO_PHONE_NUMBER=whatsapp:+1...
 ```
 
-## Natural Language Query Flow
+The two `NEXT_PUBLIC_SUPABASE_*` values are not enough for this app by themselves. The server-side webhook also needs `DATABASE_URL`, `DIRECT_URL`, and `SUPABASE_SECRET_KEY` because it writes SQL records, stores private files, runs migrations, and creates signed URLs.
 
-1. The user sends a finance question.
-2. The text workflow classifies the intent.
-3. Query intent is routed to the SQL and vector-search agent.
-4. The agent builds a scoped query for the current user.
-5. Supabase Postgres and pgvector return structured and semantic results.
-6. The response formatter turns the result into a WhatsApp-ready answer.
+Validate local env values before testing:
 
-## Generated Invoice Flow
+```bash
+python3 scripts/validate_env.py --env-file .env
+```
 
-Users can generate outgoing invoices from either channel:
-
-- WhatsApp: send a message such as "Create an invoice for Acme for $500 consulting due next month."
-- Website: use **Generate invoice** in the Receipts workspace.
-
-The flow is the same in both cases:
-
-1. Resolve the active internal `users.id` from Clerk or WhatsApp number.
-2. Load saved company, client, currency, tax, and payment defaults from `users.preferences`.
-3. Merge the current transaction details over those defaults.
-4. Generate the invoice document with `services/invoice_template_service.py`.
-5. Upload generated invoice files to the private Supabase Storage bucket.
-6. Persist invoice metadata in `generated_invoices` and line items in `generated_invoice_items`.
-7. Refresh website analytics so generated invoices are visible with uploaded receipts for the same user.
-
-When the web form is submitted with **Save defaults** enabled, those seller/client defaults are reused the next time the same user generates an invoice from WhatsApp or the website.
-
-## Identity Model
-
-Clerk owns website authentication, while the application keeps `users.id` as the internal owner for invoices, media, messages, and embeddings. A user signs in on the web UI, selects **Link WhatsApp**, and enters the WhatsApp number they use for receipt uploads. The backend stores the Clerk subject in `users.clerk_user_id` on the row with the same `users.whatsapp_number`.
-
-After linking, web uploads, WhatsApp uploads, dashboard counts, receipt lists, and semantic queries all resolve through the same internal `users.id`. If `CLERK_REQUIRE_AUTH=true`, the UI APIs reject receipt and insight access until the Clerk session is valid and linked to a WhatsApp number.
-
-## Storage and Embeddings
-
-This project uses Supabase Storage instead of S3 for receipt and generated-invoice files because the application already depends on Supabase Postgres and pgvector. Supabase keeps private file storage, signed URL generation, database records, and access policy management in one platform. The file handlers store only normalized metadata in Postgres and generate signed links when the UI or agent needs to display a file.
-
-Embeddings are generated with OpenAI `text-embedding-3-small` and stored in pgvector-enabled columns. The application should fail clearly when embedding generation is unavailable rather than silently writing fake vectors.
-
-## Quick Start
-
-For full setup details, including where to get each environment variable, read [SETUP.md](SETUP.md).
+## Local Development
 
 ```bash
 git clone https://github.com/Abby263/whatsapp-invoice-assistant.git
@@ -187,100 +169,47 @@ cd whatsapp-invoice-assistant
 cp .env.example .env
 poetry install
 PYTHONPATH=. poetry run alembic upgrade head
-PYTHONPATH=. USE_MONGODB=false poetry run python ui/app.py --port 5001
+make ui-run
 ```
 
-Open `http://localhost:5001` for the operator UI.
+Open [http://localhost:5001](http://localhost:5001).
 
-## Required Services
+For production-style webhook testing, configure Twilio to call the deployed Vercel URL:
 
-| Service | Required | Used For |
-| --- | --- | --- |
-| Supabase project | Yes | Postgres, pgvector, receipt/generated-invoice storage bucket, API keys. |
-| OpenAI API key | Yes | LLM reasoning and embeddings. |
-| Twilio WhatsApp sandbox or sender | Required for WhatsApp | Incoming WhatsApp text and media webhooks. |
-| MongoDB | Optional | Persistent memory and workflow checkpoints. |
-| Redis | Optional | Background task infrastructure. |
-| Docker | Optional | Local containerized runtime. |
+```text
+https://whatsapp-invoice-assistant.vercel.app/webhook
+```
 
-## Key Commands
+## Common Commands
 
 ```bash
-# Install dependencies
-make install
-
-# Run database migrations
-make db-migrate
-
-# Start FastAPI webhook API
-make start
-
-# Start local UI
-make ui-run
-
-# Update embeddings
-make update-embeddings
-
-# Run tests
-make test
-
-# Start Docker stack
-make docker-run
+make install              # Install Python dependencies and pre-commit hooks
+make ui-run              # Start the local Flask operator UI on port 5001
+make db-migrate          # Run Alembic migrations
+make db-status           # Check database connectivity
+make update-embeddings   # Backfill or refresh pgvector embeddings
+make test                # Run the pytest suite
 ```
 
-## Environment Summary
+## Testing Checklist
 
-The most important variables are:
-
-| Variable | Description |
-| --- | --- |
-| `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Supabase runtime Postgres connection string. Use the pooler URL for Vercel/serverless. |
-| `DIRECT_URL` or `SUPABASE_DIRECT_URL` | Supabase direct/session URL used by Alembic migrations. |
-| `NEXT_PUBLIC_SUPABASE_URL` | Browser-safe Supabase project URL. `SUPABASE_URL` is accepted as a legacy alias. |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe Supabase publishable key. `SUPABASE_PUBLISHABLE_KEY` is accepted as a legacy alias. |
-| `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
-| `SUPABASE_STORAGE_BUCKET` | Private receipt bucket name, default `receipts`. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key used to load the sign-in UI. |
-| `CLERK_SECRET_KEY` | Clerk server key kept for production auth configuration. |
-| `CLERK_REQUIRE_AUTH` | Set `true` to require sign-in and WhatsApp linking for web APIs. |
-| `CLERK_AUTHORIZED_PARTIES` | Comma-separated allowed origins for Clerk token `azp` validation. |
-| `OPENAI_API_KEY` | OpenAI API key. |
-| `OPENAI_API_MODEL` | Chat and image extraction model, for example `gpt-5.4-mini` if enabled for your OpenAI project. |
-| `TWILIO_ACCOUNT_SID` | Twilio account SID. |
-| `TWILIO_AUTH_TOKEN` | Twilio auth token. |
-| `TWILIO_PHONE_NUMBER` | Twilio WhatsApp-enabled sender. |
-| `MONGODB_URI` | Optional MongoDB connection string. |
-| `USE_MONGODB` | Set `true` for persistent memory, `false` for local UI-only testing. |
-
-The two `NEXT_PUBLIC_SUPABASE_*` values are enough only for browser-side Supabase client calls protected by RLS. This app also has a server-side Twilio webhook, SQLAlchemy/Alembic migrations, pgvector writes, and private Storage uploads, so production testing also needs database and server-only storage credentials.
-
-Run `python3 scripts/validate_env.py --env-file .env` before real testing. The validator rejects placeholder-length values and project mismatches without printing secrets. See [SETUP.md](SETUP.md) for exact source locations in Supabase, Clerk, OpenAI, and Twilio dashboards.
-
-## Production Readiness Notes
-
-- Keep Supabase service-role keys server-side only.
-- Use private Supabase Storage buckets and signed URLs for receipt access.
-- Restrict CORS in `api/main.py` before exposing the API publicly.
-- Use HTTPS for the WhatsApp webhook URL.
-- Run migrations before deploying a new app version.
-- Configure structured logging and log retention for API, agent, and storage failures.
-- Monitor failed extraction, storage upload, and embedding generation rates.
-- Back up Supabase Postgres and MongoDB if memory persistence is enabled.
-- Use queue workers for long-running extraction or embedding jobs at higher volume.
+1. Run `python3 scripts/validate_env.py --env-file .env`.
+2. Run `PYTHONPATH=. poetry run alembic upgrade head`.
+3. Confirm [https://whatsapp-invoice-assistant.vercel.app/health](https://whatsapp-invoice-assistant.vercel.app/health) reports `backend_enabled=true`.
+4. Sign in with Clerk on the website.
+5. Use **Link WhatsApp** and enter the WhatsApp number that will message the Twilio sender.
+6. Send `Hi` on WhatsApp and confirm the assistant responds.
+7. Send a receipt image or PDF and confirm it appears in the web app.
+8. Ask a question over the stored data, such as `What did I spend this month?`.
+9. Generate an outgoing invoice and confirm it appears in generated invoices and analytics.
 
 ## Documentation
 
-- [SETUP.md](SETUP.md): Full local and production setup guide.
+- [SETUP.md](SETUP.md): Production and local setup, env sourcing, Twilio webhook setup, and test plan.
 - [docs/DATABASE.md](docs/DATABASE.md): Database schema and relationships.
-- [docs/VECTOR_SEARCH.md](docs/VECTOR_SEARCH.md): pgvector search and embeddings.
-- [docs/MONGODB_MEMORY.md](docs/MONGODB_MEMORY.md): Conversation memory behavior.
-- [docs/TECH_STACK.md](docs/TECH_STACK.md): Technology stack.
-- [docs/DOCKER.md](docs/DOCKER.md): Docker setup.
-- [docs/Query_Types.md](docs/Query_Types.md): Supported query patterns.
-
-## Repository Status
-
-This repository is production-oriented but still requires real environment configuration before processing live WhatsApp traffic. The local UI can run in degraded mode without database connectivity so reviewers can inspect the workflow surface, but invoice upload, storage, semantic search, and WhatsApp responses require Supabase and OpenAI credentials.
+- [docs/VECTOR_SEARCH.md](docs/VECTOR_SEARCH.md): pgvector and embedding behavior.
+- [docs/TECH_STACK.md](docs/TECH_STACK.md): Current runtime stack and repository map.
+- [CONTRIBUTING.md](CONTRIBUTING.md): Contribution workflow.
 
 ## License
 

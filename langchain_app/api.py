@@ -1,8 +1,8 @@
 """
 API interface for the WhatsApp Invoice Assistant LangGraph workflow.
 
-This module provides functions for interfacing between the FastAPI endpoints
-and the LangGraph workflow, handling request parsing and response formatting.
+This module provides functions for interfacing between Flask routes and the
+agent workflows, handling request parsing and response formatting.
 """
 
 import logging

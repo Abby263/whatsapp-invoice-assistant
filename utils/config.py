@@ -37,9 +37,6 @@ class Settings(BaseSettings):
     TWILIO_AUTH_TOKEN: str
     TWILIO_PHONE_NUMBER: str
 
-    # Redis settings (with default value)
-    REDIS_URL: str = "redis://localhost:6379/0"
-
     # Logging settings
     LOG_LEVEL: str = "INFO"
 
@@ -179,11 +176,7 @@ def get_db_config() -> Dict[str, Any]:
 
     # Set default values if not present
     if "host" not in db_config:
-        # Check if we're running in Docker
-        if os.environ.get("PYTHONPATH") == "/app" or os.path.exists("/.dockerenv"):
-            db_config["host"] = "whatsapp-invoice-assistant-db"
-        else:
-            db_config["host"] = "localhost"
+        db_config["host"] = "localhost"
     if "port" not in db_config:
         db_config["port"] = "5432"  # Default PostgreSQL port
     if "username" not in db_config:
