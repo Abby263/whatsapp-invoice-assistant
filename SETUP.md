@@ -59,6 +59,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SECRET_KEY=<sb_secret_...>
 SUPABASE_STORAGE_BUCKET=receipts
+AUTO_CREATE_DATABASE_SCHEMA=true
 
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 CLERK_SECRET_KEY=<clerk-secret-key>
@@ -71,6 +72,10 @@ OPENAI_API_MODEL=gpt-5.4-mini
 TWILIO_ACCOUNT_SID=<twilio-account-sid>
 TWILIO_AUTH_TOKEN=<twilio-auth-token>
 TWILIO_PHONE_NUMBER=whatsapp:+1<approved-twilio-whatsapp-sender>
+TWILIO_OUTBOUND_MESSAGES_ENABLED=true
+TWILIO_PROCESSING_ACK_ENABLED=true
+TWILIO_PROCESSING_ACK_COOLDOWN_SECONDS=75
+TWILIO_MEDIA_FINAL_REPLY_ENABLED=true
 ```
 
 Notes:
@@ -81,6 +86,8 @@ Notes:
 - `SUPABASE_SECRET_KEY` is server-side only. Never expose it as a `NEXT_PUBLIC_*` variable.
 - `SUPABASE_SERVICE_ROLE_KEY` is accepted as a legacy fallback if your Supabase project does not show `SUPABASE_SECRET_KEY`.
 - `TWILIO_PHONE_NUMBER` must be the WhatsApp-enabled sender, with the `whatsapp:` prefix.
+- `TWILIO_PROCESSING_ACK_COOLDOWN_SECONDS` prevents repeated "processing" acknowledgements when WhatsApp/Twilio splits a multi-image forward into multiple one-file webhooks.
+- `TWILIO_MEDIA_FINAL_REPLY_ENABLED` sends the final media processing summary as an outbound Twilio message, which is more reliable than waiting for a long-running webhook response.
 
 Optional local-only variables:
 
@@ -258,6 +265,8 @@ Send `Hey` to your Twilio WhatsApp number. In Twilio Message Details -> Request 
 | Response body | TwiML `<Response><Message>...` |
 
 If Twilio shows `11200` and the URL is an old ngrok domain, the webhook is still configured incorrectly. Replace every inbound WhatsApp webhook URL with the Vercel webhook above.
+
+For media uploads, the app sends a short processing acknowledgement first and then sends the extraction summary as a separate outbound Twilio message. If several images are forwarded together and Twilio delivers them as separate webhooks, the acknowledgement is rate-limited per sender while each file still gets processed.
 
 ## Vercel Setup
 

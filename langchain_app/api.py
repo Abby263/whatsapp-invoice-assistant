@@ -23,8 +23,8 @@ from langchain_app.text_processing_workflow import process_text_message as proce
 from langchain_app.file_processing_workflow import process_file_message as process_file
 from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
-from services.conversation_policy import media_processing_ack
-from services.twilio_messaging import send_processing_ack
+from services.conversation_policy import compact_whatsapp_message, media_processing_ack
+from services.twilio_messaging import send_processing_ack, send_whatsapp_message
 from utils.phone_numbers import normalize_whatsapp_number
 
 logger = logging.getLogger(__name__)
@@ -366,7 +366,15 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                         result["metadata"]["media_index"] = index
                         results.append(result)
 
-                return _combine_media_results(results)
+                combined_result = _combine_media_results(results)
+                if _send_media_final_reply(
+                    result=combined_result,
+                    to_number=sender,
+                    from_number=message_data.get("To") or os.environ.get("TWILIO_PHONE_NUMBER"),
+                ):
+                    combined_result["suppress_twiml_response"] = True
+                    combined_result.setdefault("metadata", {})["twilio_final_reply_sent"] = True
+                return combined_result
             finally:
                 try:
                     shutil.rmtree(temp_dir, ignore_errors=True)
@@ -517,6 +525,27 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             "results": results,
         },
     }
+
+
+def _send_media_final_reply(
+    result: Dict[str, Any],
+    to_number: str,
+    from_number: Optional[str],
+) -> bool:
+    """Send the media processing result out-of-band when possible."""
+
+    if os.environ.get("TWILIO_MEDIA_FINAL_REPLY_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+        return False
+
+    message = result.get("message") or result.get("content") or ""
+    if not message:
+        return False
+
+    return send_whatsapp_message(
+        to_number=to_number,
+        from_number=from_number,
+        body=compact_whatsapp_message(message),
+    )
 
 
 def extract_user_id_from_sender(sender: str) -> Optional[str]:

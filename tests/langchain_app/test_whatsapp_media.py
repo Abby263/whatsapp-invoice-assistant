@@ -132,6 +132,53 @@ async def test_process_whatsapp_message_sniffs_extensionless_twilio_images(monke
 
 
 @pytest.mark.asyncio
+async def test_process_whatsapp_media_sends_final_reply_out_of_band(monkeypatch):
+    _FakeAsyncClient.payloads = {
+        "https://api.twilio.com/media/receipt": b"receipt-image",
+    }
+    outbound_messages = []
+
+    async def fake_process_file_message(*args, **kwargs):
+        return {
+            "status": "success",
+            "message": "Saved receipt from Acme for INR 100.",
+            "metadata": {"stored_in_database": True, "invoice_id": "1"},
+        }
+
+    async def fake_load_conversation_history(user_id):
+        return []
+
+    def fake_send_whatsapp_message(**kwargs):
+        outbound_messages.append(kwargs)
+        return True
+
+    monkeypatch.setattr(api.httpx, "AsyncClient", _FakeAsyncClient, raising=False)
+    monkeypatch.setattr(api, "extract_user_id_from_sender", lambda sender: "1")
+    monkeypatch.setattr(api, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(api, "process_file_message", fake_process_file_message)
+    monkeypatch.setattr(api, "send_processing_ack", lambda **kwargs: True)
+    monkeypatch.setattr(api, "send_whatsapp_message", fake_send_whatsapp_message)
+    monkeypatch.setenv("TWILIO_MEDIA_FINAL_REPLY_ENABLED", "true")
+
+    result = await api.process_whatsapp_message({
+        "From": "whatsapp:+15551234567",
+        "To": "whatsapp:+16473628073",
+        "NumMedia": "1",
+        "MessageSid": "SM123",
+        "MediaUrl0": "https://api.twilio.com/media/receipt",
+        "MediaContentType0": "image/jpeg",
+    })
+
+    assert result["suppress_twiml_response"] is True
+    assert result["metadata"]["twilio_final_reply_sent"] is True
+    assert outbound_messages == [{
+        "to_number": "whatsapp:+15551234567",
+        "from_number": "whatsapp:+16473628073",
+        "body": "Saved receipt from Acme for INR 100.",
+    }]
+
+
+@pytest.mark.asyncio
 async def test_process_file_message_short_circuits_previous_duplicate(tmp_path, monkeypatch):
     file_bytes = b"already-saved-image"
     checksum = hashlib.sha256(file_bytes).hexdigest()
