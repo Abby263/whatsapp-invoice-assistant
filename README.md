@@ -236,9 +236,9 @@ The most important variables are:
 | --- | --- |
 | `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Supabase runtime Postgres connection string. Use the pooler URL for Vercel/serverless. |
 | `DIRECT_URL` or `SUPABASE_DIRECT_URL` | Supabase direct/session URL used by Alembic migrations. |
-| `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Browser-safe Supabase project URL. `SUPABASE_URL` is accepted as a legacy alias. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe Supabase publishable key. `SUPABASE_PUBLISHABLE_KEY` is accepted as a legacy alias. |
 | `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Server-side Supabase key for private storage operations. |
-| `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase key; accepted as a fallback, but not enough for private storage in most production setups. |
 | `SUPABASE_STORAGE_BUCKET` | Private receipt bucket name, default `receipts`. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk browser key used to load the sign-in UI. |
 | `CLERK_SECRET_KEY` | Clerk server key kept for production auth configuration. |
@@ -251,6 +251,8 @@ The most important variables are:
 | `TWILIO_PHONE_NUMBER` | Twilio WhatsApp-enabled sender. |
 | `MONGODB_URI` | Optional MongoDB connection string. |
 | `USE_MONGODB` | Set `true` for persistent memory, `false` for local UI-only testing. |
+
+The two `NEXT_PUBLIC_SUPABASE_*` values are enough only for browser-side Supabase client calls protected by RLS. This app also has a server-side Twilio webhook, SQLAlchemy/Alembic migrations, pgvector writes, and private Storage uploads, so production testing also needs database and server-only storage credentials.
 
 Run `python3 scripts/validate_env.py --env-file .env` before real testing. The validator rejects placeholder-length values and project mismatches without printing secrets. See [SETUP.md](SETUP.md) for exact source locations in Supabase, Clerk, OpenAI, and Twilio dashboards.
 

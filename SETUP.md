@@ -125,7 +125,7 @@ The app resolves database configuration in this order:
 
 Alembic migrations prefer `DIRECT_URL` and fall back to `DATABASE_URL`. Supabase snippets sometimes include `?pgbouncer=true`; the Python runtime strips that flag before connecting because psycopg/libpq does not accept it as a connection option.
 
-The Supabase project URL and publishable key are API settings, not database credentials. For real testing you still need `DATABASE_URL` and `DIRECT_URL`.
+The Supabase project URL and publishable key are API settings, not database credentials. They are enough for browser-only Supabase client calls protected by Row Level Security, but this project also runs a server-side Twilio webhook, SQLAlchemy queries, Alembic migrations, pgvector writes, and private Storage uploads. For real end-to-end testing you still need `DATABASE_URL`, `DIRECT_URL`, and a server-only storage key.
 
 ### 3.3 Enable pgvector
 
@@ -162,14 +162,14 @@ Go to `Project Settings` -> `API`.
 Use:
 
 ```env
-SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SECRET_KEY=<sb_secret_...>
 ```
 
-Important: `SUPABASE_SECRET_KEY` must only be used server-side. Do not expose it in client-side code or a `NEXT_PUBLIC_*` variable. The app accepts `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for compatibility, but private bucket uploads and signed URLs should use `SUPABASE_SECRET_KEY` in production. If your Supabase dashboard only shows the legacy service-role key, the runtime also accepts `SUPABASE_SERVICE_ROLE_KEY`.
+You do not need to set both `SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_URL`, or both `SUPABASE_PUBLISHABLE_KEY` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Prefer the `NEXT_PUBLIC_*` names because the website needs those browser-safe values. The app still accepts the non-`NEXT_PUBLIC` aliases for older deployments.
+
+Important: `SUPABASE_SECRET_KEY` must only be used server-side. Do not expose it in client-side code or a `NEXT_PUBLIC_*` variable. Private bucket uploads and signed URLs should use `SUPABASE_SECRET_KEY` in production. If your Supabase dashboard only shows the legacy service-role key, the runtime also accepts `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## 4. OpenAI Setup
 
@@ -351,9 +351,7 @@ REDIS_URL=redis://localhost:6379/0
 DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:6543/postgres
 DIRECT_URL=postgresql://postgres.<project-ref>:<password>@aws-1-us-west-2.pooler.supabase.com:5432/postgres
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_URL=https://<project-ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
-SUPABASE_PUBLISHABLE_KEY=<sb_publishable_...>
 SUPABASE_SECRET_KEY=<sb_secret_...>
 SUPABASE_STORAGE_BUCKET=receipts
 
@@ -387,9 +385,9 @@ For real-time testing, these variables are mandatory in whichever runtime hosts 
 | --- | --- | --- |
 | `DATABASE_URL` or `SUPABASE_DATABASE_URL` | Runtime database | Use the Supabase pooler connection string for Vercel/serverless runtime. Required unless `SUPABASE_DB_PASSWORD` is provided with a Supabase URL/project ref. |
 | `DIRECT_URL` or `SUPABASE_DIRECT_URL` | Migrations | Use a direct or session-pooler connection string for Alembic migrations. |
-| `SUPABASE_URL` or `NEXT_PUBLIC_SUPABASE_URL` | Storage | Supabase project URL, for example `https://<project-ref>.supabase.co`. |
+| `NEXT_PUBLIC_SUPABASE_URL` | Public Supabase API and Storage URL | Browser-safe project URL, for example `https://<project-ref>.supabase.co`. `SUPABASE_URL` is accepted as a legacy alias. |
 | `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` | Storage and private server access | Server-side only. Required for private bucket uploads and signed URLs. |
-| `SUPABASE_PUBLISHABLE_KEY` or `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase API access | Accepted as a fallback, but not recommended for private server storage operations. |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Public Supabase API access | Browser-safe publishable key. `SUPABASE_PUBLISHABLE_KEY` is accepted as a legacy alias. |
 | `SUPABASE_STORAGE_BUCKET` | Storage | Use `receipts` unless you created a different bucket. |
 | `OPENAI_API_KEY` | Extraction, chat, embeddings | Required for real agent execution. |
 | `OPENAI_API_MODEL` | Chat and image extraction | Set to `gpt-5.4-mini` if your OpenAI project has access. |
@@ -429,7 +427,7 @@ The runtime accepts these aliases:
 | `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SECRET_KEY` |
 | `CLERK_PUBLISHABLE_KEY` | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` |
 
-If your Vercel project currently has only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, add at least one database credential and one server-side storage/admin key before real receipt testing:
+Most browser-only Supabase apps need only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. This repo needs more because it is not browser-only: the Twilio webhook and invoice processor run server-side, write directly to Postgres/pgvector, run migrations, and store private files. If your Vercel project currently has only the two public Supabase values, add at least one database credential and one server-side storage key before real receipt testing:
 
 ```env
 # Database, choose one:
@@ -602,10 +600,8 @@ Add required variables to production:
 ```bash
 npx vercel env add DATABASE_URL production
 npx vercel env add NEXT_PUBLIC_SUPABASE_URL production
-npx vercel env add SUPABASE_URL production
 npx vercel env add SUPABASE_SECRET_KEY production
 npx vercel env add NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY production
-npx vercel env add SUPABASE_PUBLISHABLE_KEY production
 npx vercel env add SUPABASE_STORAGE_BUCKET production
 npx vercel env add OPENAI_API_KEY production
 npx vercel env add OPENAI_API_MODEL production
