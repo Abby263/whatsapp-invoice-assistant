@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 import os
 import time
 from typing import Optional
@@ -26,6 +27,13 @@ def _recent_ack_key(to_number: str, from_number: Optional[str]) -> str:
     return f"{from_number or ''}->{to_number or ''}"
 
 
+def _persistent_ack_key(to_number: str, from_number: Optional[str], cooldown: int) -> str:
+    slot = int(time.time() // max(cooldown, 1))
+    pair = _recent_ack_key(to_number, from_number)
+    pair_hash = hashlib.sha256(pair.encode("utf-8")).hexdigest()[:24]
+    return f"processing_ack:{pair_hash}:{slot}"
+
+
 def _processing_ack_recent(to_number: str, from_number: Optional[str]) -> bool:
     cooldown = _processing_ack_cooldown_seconds()
     if cooldown <= 0:
@@ -45,6 +53,51 @@ def _mark_processing_ack_sent(to_number: str, from_number: Optional[str]) -> Non
     _RECENT_PROCESSING_ACKS[_recent_ack_key(to_number, from_number)] = time.monotonic()
 
 
+def _claim_processing_ack_in_database(to_number: str, from_number: Optional[str]) -> Optional[bool]:
+    """Return whether this request owns the shared acknowledgement slot.
+
+    Vercel can run simultaneous webhook requests on different function
+    instances, so the in-memory cooldown is only a fallback. The unique
+    whatsapp_message_id claim makes rapid media webhooks from the same sender
+    dedupe across instances without adding another table.
+    """
+
+    if not _truthy_env("TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED"):
+        return None
+
+    cooldown = _processing_ack_cooldown_seconds()
+    if cooldown <= 0:
+        return True
+
+    try:
+        from sqlalchemy import text
+
+        from database.connection import ensure_application_schema, get_db_session
+
+        ensure_application_schema()
+        session = get_db_session()
+        try:
+            result = session.execute(
+                text(
+                    """
+                    INSERT INTO whatsapp_messages
+                        (whatsapp_message_id, status, created_at, updated_at)
+                    VALUES
+                        (:dedupe_key, 'SENT', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON CONFLICT (whatsapp_message_id) DO NOTHING
+                    """
+                ),
+                {"dedupe_key": _persistent_ack_key(to_number, from_number, cooldown)},
+            )
+            session.commit()
+            return result.rowcount == 1
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.info("Falling back to in-memory Twilio ack debounce: %s", exc)
+        return None
+
+
 def send_processing_ack(to_number: str, body: str, from_number: Optional[str] = None) -> bool:
     """Send an optional out-of-band acknowledgement before long media processing."""
 
@@ -52,6 +105,11 @@ def send_processing_ack(to_number: str, body: str, from_number: Optional[str] = 
         return False
     if _processing_ack_recent(to_number, from_number):
         logger.info("Skipping duplicate Twilio processing acknowledgement during cooldown")
+        return False
+
+    database_claimed = _claim_processing_ack_in_database(to_number, from_number)
+    if database_claimed is False:
+        logger.info("Skipping duplicate Twilio processing acknowledgement from shared cooldown")
         return False
 
     sent = send_whatsapp_message(to_number=to_number, body=body, from_number=from_number)

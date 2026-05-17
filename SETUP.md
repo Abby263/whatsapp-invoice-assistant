@@ -75,6 +75,7 @@ TWILIO_PHONE_NUMBER=whatsapp:+1<approved-twilio-whatsapp-sender>
 TWILIO_OUTBOUND_MESSAGES_ENABLED=true
 TWILIO_PROCESSING_ACK_ENABLED=true
 TWILIO_PROCESSING_ACK_COOLDOWN_SECONDS=75
+TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED=true
 TWILIO_MEDIA_FINAL_REPLY_ENABLED=true
 ```
 
@@ -87,6 +88,7 @@ Notes:
 - `SUPABASE_SERVICE_ROLE_KEY` is accepted as a legacy fallback if your Supabase project does not show `SUPABASE_SECRET_KEY`.
 - `TWILIO_PHONE_NUMBER` must be the WhatsApp-enabled sender, with the `whatsapp:` prefix.
 - `TWILIO_PROCESSING_ACK_COOLDOWN_SECONDS` prevents repeated "processing" acknowledgements when WhatsApp/Twilio splits a multi-image forward into multiple one-file webhooks.
+- `TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED` stores that acknowledgement claim in Postgres so the cooldown still works when Vercel handles the rapid webhooks on different function instances.
 - `TWILIO_MEDIA_FINAL_REPLY_ENABLED` sends the final media processing summary as an outbound Twilio message, which is more reliable than waiting for a long-running webhook response.
 
 Optional local-only variables:
@@ -296,6 +298,7 @@ npx vercel env add OPENAI_API_MODEL production
 npx vercel env add TWILIO_ACCOUNT_SID production
 npx vercel env add TWILIO_AUTH_TOKEN production
 npx vercel env add TWILIO_PHONE_NUMBER production
+npx vercel env add TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED production
 ```
 
 Check values are present:
