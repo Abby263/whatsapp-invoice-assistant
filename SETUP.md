@@ -79,6 +79,8 @@ TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED=true
 TWILIO_MEDIA_FINAL_REPLY_ENABLED=true
 
 HITL_CONFIRMATION_REQUIRED=true
+CONVERSATION_MEMORY_WINDOW_MESSAGES=12
+CONVERSATION_MEMORY_MAX_STORED_MESSAGES=200
 ```
 
 Notes:
@@ -93,6 +95,8 @@ Notes:
 - `TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED` stores that acknowledgement claim in Postgres so the cooldown still works when Vercel handles the rapid webhooks on different function instances.
 - `TWILIO_MEDIA_FINAL_REPLY_ENABLED` sends the final media processing summary as an outbound Twilio message, which is more reliable than waiting for a long-running webhook response.
 - `HITL_CONFIRMATION_REQUIRED=true` keeps extracted receipt rows out of `invoices`, `items`, and embeddings until the user replies on WhatsApp with `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Delete requests require exact `CONFIRM DELETE ...` commands.
+- `CONVERSATION_MEMORY_WINDOW_MESSAGES` controls how many recent user/assistant messages are passed back into the agent for multi-turn context.
+- `CONVERSATION_MEMORY_MAX_STORED_MESSAGES` caps stored messages per active user conversation before older messages are pruned.
 
 Optional local-only variables:
 

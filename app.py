@@ -480,6 +480,7 @@ def initialize():
                 live_backend.initialize_workspace(
                     auth_context,
                     request.args.get("whatsapp_number"),
+                    reset_conversation=request.args.get("reset") == "1",
                 )
             )
         except Exception as exc:

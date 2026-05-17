@@ -21,7 +21,7 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 | Object storage | Supabase Storage | Private original receipt files and generated invoice documents. |
 | Authentication | Clerk | Web sign-in and WhatsApp number linking for user-scoped data. |
 | Messaging | Twilio WhatsApp | Incoming text/media webhook delivery and assistant replies. |
-| Memory | In-memory by default, optional MongoDB | Conversation memory and checkpoint persistence when explicitly enabled. |
+| Memory | Supabase Postgres conversations/messages | Durable user-scoped short-term context for WhatsApp and web multi-turn conversations. |
 | Testing | pytest | Agent, workflow, service, database, and UI-adjacent coverage. |
 
 ## Repository Map
@@ -33,7 +33,7 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 ├── database/               # SQLAlchemy models, CRUD helpers, connection setup, and Alembic migrations
 ├── docs/                   # Architecture and operational documentation
 ├── langchain_app/          # Active workflow routing and orchestration
-├── memory/                 # In-memory and optional MongoDB-backed conversation memory
+├── memory/                 # Legacy in-memory and optional MongoDB checkpoint helpers
 ├── prompts/                # Prompt templates used by agents and LLM services
 ├── scripts/                # Env validation, embeddings, categories, memory, and DB cleanup scripts
 ├── services/               # Live backend, LLM, generated invoice, user profile, and template services
@@ -54,8 +54,8 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 2. Clerk identity and linked WhatsApp number resolve to the same internal `users.id`.
 3. `services/live_backend.py` calls the text, file, query, or generated-invoice workflow.
 4. File workflows validate the upload, store the original file in Supabase Storage, extract structured invoice data, persist database rows, and create embeddings.
-5. Text workflows classify intent, answer analytics questions from stored invoice data, or create generated invoice records and documents.
-6. Responses are returned to WhatsApp as TwiML or to the browser as JSON.
+5. Text workflows load recent user-scoped conversation memory, classify intent, answer analytics questions from stored invoice data, or create generated invoice records and documents.
+6. The user and assistant turn is saved to `conversations` and `messages`, then responses are returned to WhatsApp as TwiML or to the browser as JSON.
 
 ## Production Notes
 

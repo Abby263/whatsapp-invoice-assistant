@@ -1239,7 +1239,7 @@ function hideLoading() {
 
 function startNewConversation() {
     // Call the init endpoint to reset conversation ID on the server
-    fetch('/api/init')
+    fetch('/api/init?reset=1')
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {

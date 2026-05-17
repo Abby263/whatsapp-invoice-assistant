@@ -24,6 +24,7 @@ from langchain_app.file_processing_workflow import process_file_message as proce
 from langchain_app.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
 from services.conversation_policy import compact_whatsapp_message, media_processing_ack
+from services.conversation_memory import load_user_conversation_history, save_conversation_turn
 from services.twilio_messaging import send_processing_ack, send_whatsapp_message
 from schemas.llm_outputs import is_ledger_document
 from utils.phone_numbers import normalize_whatsapp_number
@@ -60,6 +61,7 @@ async def process_text_message(
     user_id: Optional[Union[str, UUID]] = None,
     conversation_id: Optional[str] = None,
     db_session: Optional[Session] = None,
+    whatsapp_message_sid: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Process a text message through the text processing workflow.
@@ -85,11 +87,15 @@ async def process_text_message(
             else:
                 logger.warning("Could not resolve text-message user_id from sender %s", sender)
 
+        active_history = conversation_history
+        if active_history is None and user_id is not None:
+            active_history = await load_conversation_history(user_id)
+
         # Process the text message through the specialized workflow
         result = await process_text(
             text_content=message,
             user_id=user_id,
-            conversation_history=conversation_history or []
+            conversation_history=active_history or []
         )
         
         # Update the result processing to handle cases where content is missing.
@@ -118,7 +124,7 @@ async def process_text_message(
                     "total_tokens": int(input_tokens + output_tokens)
                 }
             
-            return {
+            response_payload = {
                 "message": result["content"],
                 "metadata": metadata,
                 "status": "success", 
@@ -126,6 +132,15 @@ async def process_text_message(
                 "user_id": user_id,
                 "whatsapp_number": sender
             }
+            saved_conversation_id = save_conversation_turn(
+                user_id,
+                user_message=message,
+                assistant_message=result["content"],
+                whatsapp_message_sid=whatsapp_message_sid,
+            )
+            if saved_conversation_id is not None:
+                response_payload["conversation_id"] = str(saved_conversation_id)
+            return response_payload
         else:
             # Handle the case where content is missing
             error_msg = "An unexpected error occurred while processing your request."
@@ -158,6 +173,7 @@ async def process_file_message(
     conversation_id: Optional[str] = None,
     db_session: Optional[Session] = None,
     file_metadata: Optional[Dict[str, Any]] = None,
+    persist_conversation: bool = True,
 ) -> Dict[str, Any]:
     """
     Process a file message through the file processing workflow.
@@ -216,11 +232,21 @@ async def process_file_message(
                 }
         
         # Return the result
-        return {
+        response_payload = {
             "message": result["content"],
             "metadata": result.get("metadata", {}),
             "conversation_id": conversation_id
         }
+        if persist_conversation:
+            saved_conversation_id = save_conversation_turn(
+                user_id,
+                user_message=f"Uploaded file: {file_name}",
+                assistant_message=result.get("content"),
+                whatsapp_message_sid=(file_metadata or {}).get("twilio_message_sid"),
+            )
+            if saved_conversation_id is not None:
+                response_payload["conversation_id"] = str(saved_conversation_id)
+        return response_payload
     
     except Exception as e:
         logger.exception(f"Error processing file message: {str(e)}")
@@ -260,7 +286,8 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 message_text, 
                 sender, 
                 conversation_history,
-                user_id
+                user_id,
+                whatsapp_message_sid=_message_sid_from_payload(message_data),
             )
             
         elif message_data.get("NumMedia", "0") != "0":
@@ -364,6 +391,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                                 "twilio_media_url": media_url,
                                 "checksum_sha256": checksum,
                             },
+                            persist_conversation=False,
                         )
                         result.setdefault("metadata", {})
                         result["metadata"]["media_index"] = index
@@ -372,6 +400,14 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                         results.append(result)
 
                 combined_result = _combine_media_results(results)
+                saved_conversation_id = save_conversation_turn(
+                    user_id,
+                    user_message=_media_memory_user_message(message_data, media_count),
+                    assistant_message=combined_result.get("message") or combined_result.get("content"),
+                    whatsapp_message_sid=_message_sid_from_payload(message_data),
+                )
+                if saved_conversation_id is not None:
+                    combined_result["conversation_id"] = str(saved_conversation_id)
                 if _send_media_final_reply(
                     result=combined_result,
                     to_number=sender,
@@ -418,6 +454,20 @@ def _parse_num_media(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _message_sid_from_payload(message_data: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(message_data, dict):
+        return None
+    return message_data.get("MessageSid") or message_data.get("SmsMessageSid")
+
+
+def _media_memory_user_message(message_data: Dict[str, Any], media_count: int) -> str:
+    body = str(message_data.get("Body") or "").strip()
+    if body:
+        return body
+    attachment_label = "attachment" if media_count == 1 else "attachments"
+    return f"Uploaded {media_count} WhatsApp {attachment_label}."
 
 
 def _twilio_media_filename(media_url: str, media_content_type: str, index: int) -> str:
@@ -656,6 +706,4 @@ async def load_conversation_history(user_id: Optional[str]) -> List[Dict[str, An
     Returns:
         List of conversation history items
     """
-    # In a real implementation, this would load from the database
-    # For now, return an empty list
-    return []
+    return load_user_conversation_history(user_id)
