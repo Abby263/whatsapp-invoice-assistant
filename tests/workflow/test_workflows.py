@@ -18,7 +18,12 @@ from langchain_app.text_processing_workflow import process_text_message, classif
 from langchain_app.general_response_workflow import process_general_response, process_greeting
 from langchain_app.invoice_query_workflow import process_invoice_query, convert_to_sql, execute_query
 from langchain_app.invoice_creator_workflow import process_invoice_creation, extract_invoice_entities
-from langchain_app.file_processing_workflow import process_file_message, validate_file, detect_file_type
+from langchain_app.file_processing_workflow import (
+    _has_storable_extraction_data,
+    detect_file_type,
+    process_file_message,
+    validate_file,
+)
 from langchain_app.state import IntentType, FileType
 
 # Configure logging for tests
@@ -327,4 +332,25 @@ async def test_file_type_detection():
     assert detect_file_type("/path/to/file.csv", "text/csv") == FileType.CSV.value
     
     # Test fallback to binary
-    assert detect_file_type("/path/to/file.unknown", "application/octet-stream") == FileType.BINARY.value 
+    assert detect_file_type("/path/to/file.unknown", "application/octet-stream") == FileType.BINARY.value
+
+
+def test_storable_extraction_detection():
+    """Partial handwritten-style extraction should still be eligible for storage."""
+    assert _has_storable_extraction_data({
+        "vendor": "Corner Cafe",
+        "date": "2026-05-16",
+        "total_amount": 18.75,
+        "items": [],
+    })
+    assert _has_storable_extraction_data({
+        "vendor": {"name": "Acme Supplies"},
+        "transaction": {"receipt_no": "R-22"},
+        "items": [{"description": "Pens", "amount": 4.50}],
+    })
+    assert not _has_storable_extraction_data({
+        "vendor": "Unknown",
+        "total_amount": 0,
+        "items": [],
+        "error": "Could not extract data",
+    })

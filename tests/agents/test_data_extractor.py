@@ -117,6 +117,8 @@ async def test_extract_data_from_unsupported_file(data_extractor_agent, monkeypa
     assert "error" in result.content
     assert "Could not extract data" in result.content["error"]
     assert result.status == "error"
+    assert result.metadata["extraction_status"] == "error"
+    assert result.metadata["extraction_error"] == "Could not extract data from this file"
     
     logger.info(f"Error extracting from unsupported file: {result.error}")
 
@@ -327,4 +329,4 @@ async def test_extract_specific_fields(data_extractor_agent, monkeypatch):
     assert result.status == "success"
     assert result.confidence == 0.9
     
-    logger.info(f"Specific fields extraction result: {result.content}") 
+    logger.info(f"Specific fields extraction result: {result.content}")

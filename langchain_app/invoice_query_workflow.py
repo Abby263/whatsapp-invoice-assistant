@@ -22,7 +22,6 @@ from agents.text_to_sql_conversion_agent import TextToSQLConversionAgent
 from agents.response_formatter import ResponseFormatterAgent
 from agents.invoice_rag_agent import InvoiceRAGAgent
 from services.llm_factory import LLMFactory
-from database.connection import get_db, db_session
 from langchain_app.state import IntentType
 from utils.vector_utils import generate_embedding_for_text
 from constants.fallback_messages import QUERY_FALLBACKS
@@ -31,6 +30,12 @@ from sqlalchemy import text
 from constants.db_schema import DB_SCHEMA_INFO
 
 logger = logging.getLogger(__name__)
+
+
+def _get_db_session_iterator():
+    from database.connection import get_db
+
+    return get_db()
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -103,7 +108,7 @@ async def process_invoice_query(
             if db_session is None:
                 logger.info("No database session provided, creating a new one")
                 try:
-                    db_session = next(get_db())
+                    db_session = next(_get_db_session_iterator())
                     should_close_db = True
                     logger.info("Database session created successfully")
                 except Exception as e:
@@ -546,7 +551,7 @@ async def execute_query(
         should_close = False
         if session is None:
             should_close = True
-            session = next(get_db())
+            session = next(_get_db_session_iterator())
 
         try:
             # Execute the query - use native SQLAlchemy parameter binding

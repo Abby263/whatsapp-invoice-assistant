@@ -192,8 +192,12 @@ class DataExtractorAgent(BaseAgent):
             metadata = {
                 "file_path": file_path,
                 "file_type": file_type,
-                "raw_extraction_result": parsed_result
+                "raw_extraction_result": parsed_result,
+                "extraction_status": status,
+                "extraction_confidence": confidence,
             }
+            if error:
+                metadata["extraction_error"] = error
 
             if storage_metadata:
                 metadata["file_storage"] = storage_metadata

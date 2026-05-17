@@ -22,12 +22,9 @@ from sqlalchemy.orm import Session
 from agents.file_validator import FileValidatorAgent
 from agents.data_extractor import DataExtractorAgent
 from agents.response_formatter import ResponseFormatterAgent
-from agents.database_storage_agent import DatabaseStorageAgent
 from services.llm_factory import LLMFactory
 from langchain_app.state import IntentType, FileType
 from utils.base_agent import AgentInput, AgentContext
-from database.connection import get_db, SessionLocal
-from database import crud, models, schemas
 from constants.fallback_messages import FILE_PROCESSING_FALLBACKS
 from storage import StorageConfigurationError, SupabaseStorageHandler
 
@@ -68,10 +65,39 @@ async def process_file_message(
 
     # Extract data if it's a valid invoice
     if validation_result.get("is_invoice", False):
-        return await process_invoice_file(file_path, normalized_file_type, file_name, user_id, conversation_history)
-    else:
-        # Handle non-invoice but valid files
-        return await format_unsupported_format_response(file_name or file_path, normalized_file_type)
+        return await process_invoice_file(
+            file_path,
+            normalized_file_type,
+            file_name,
+            user_id,
+            conversation_history,
+            validation_result=validation_result,
+        )
+
+    # Handwritten or low-quality receipts are sometimes rejected by validation
+    # even though the vision model can still extract useful structured fields.
+    # Try one best-effort extraction for supported visual documents, then only
+    # keep it when meaningful fields are present.
+    if _supports_best_effort_extraction(normalized_file_type):
+        best_effort_result = await process_invoice_file(
+            file_path,
+            normalized_file_type,
+            file_name,
+            user_id,
+            conversation_history,
+            validation_result=validation_result,
+            best_effort=True,
+        )
+        extraction_data = (
+            best_effort_result.get("metadata", {})
+            .get("extraction_results", {})
+            .get("data", {})
+        )
+        if _has_storable_extraction_data(extraction_data):
+            return best_effort_result
+
+    # Handle non-invoice but valid files
+    return await format_unsupported_format_response(file_name or file_path, normalized_file_type)
 
 
 async def validate_file(
@@ -206,7 +232,9 @@ async def process_invoice_file(
     file_type: str,
     file_name: Optional[str] = None,
     user_id: Optional[Union[str, UUID]] = None,
-    conversation_history: Optional[List[Dict[str, Any]]] = None
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
+    validation_result: Optional[Dict[str, Any]] = None,
+    best_effort: bool = False,
 ) -> Dict[str, Any]:
     """
     Process a valid invoice file by extracting data.
@@ -239,8 +267,12 @@ async def process_invoice_file(
 
     # Store invoice data in database
     invoice_id = None
+    item_ids = []
+    storage_error = None
     if user_id is not None:
         # Use the DatabaseStorageAgent to store the invoice data
+        from agents.database_storage_agent import DatabaseStorageAgent
+
         storage_agent = DatabaseStorageAgent()
 
         # Convert extraction_result to JSON string to satisfy AgentInput requirements
@@ -274,12 +306,14 @@ async def process_invoice_file(
                 extraction_result["metadata"]["item_ids"] = item_ids
             else:
                 error_message = storage_result.error if storage_result else "No result returned from storage agent"
+                storage_error = error_message
                 logger.error(f"❌ Error storing invoice data: {error_message}")
                 if storage_result:
                     logger.error(f"Storage result status: {storage_result.status}, content type: {type(storage_result.content)}")
                     if isinstance(storage_result.content, dict) and "error" in storage_result.content:
                         logger.error(f"Storage error details: {storage_result.content['error']}")
         except Exception as e:
+            storage_error = str(e)
             logger.exception(f"❌ Exception in database storage: {str(e)}")
 
     # Format successful extraction response
@@ -295,16 +329,27 @@ async def process_invoice_file(
         "intent": IntentType.FILE_PROCESSING.value,
         "file_type": file_type,
         "extraction_results": extraction_result,
-        "invoice_data": extraction_result.get("data", {})
+        "invoice_data": extraction_result.get("data", {}),
+        "stored_in_database": bool(invoice_id),
+        "storage_status": (
+            "success" if invoice_id else "error" if user_id is not None else "not_attempted"
+        ),
+        "best_effort_extraction": best_effort,
     }
+    if validation_result:
+        response_metadata["validation_result"] = validation_result
 
     if file_storage:
         response_metadata["file_storage"] = file_storage
         response_metadata["s3_storage"] = file_storage  # Backward-compatible UI key.
+    if storage_error:
+        response_metadata["storage_error"] = storage_error
 
     # Add invoice ID to response metadata if available
     if invoice_id:
         response_metadata["invoice_id"] = str(invoice_id)
+    if item_ids:
+        response_metadata["item_ids"] = item_ids
 
     return {
         "content": response.get("content", ""),
@@ -410,14 +455,19 @@ async def extract_invoice_data(
         if not result:
             return {"error": "Could not extract data from the invoice"}
 
+        extracted_data = result.content if isinstance(result.content, dict) else {}
+        metadata = result.metadata or {}
+        metadata["extraction_status"] = result.status
+        metadata["extraction_confidence"] = result.confidence
         if result.error:
+            metadata["extraction_error"] = result.error
+
+        if result.error and not _has_storable_extraction_data(extracted_data):
             return {"error": result.error}
 
         # The content field contains the extracted data
-        extracted_data = result.content
         logger.info(f"Successfully extracted invoice data: {extracted_data.keys() if isinstance(extracted_data, dict) else 'not a dict'}")
 
-        metadata = result.metadata or {}
         if file_storage:
             metadata["file_storage"] = file_storage
             logger.info("Added file storage metadata to extraction result")
@@ -435,6 +485,70 @@ async def extract_invoice_data(
     except Exception as e:
         logger.exception(f"Error extracting invoice data: {str(e)}")
         return {"error": f"Error extracting data: {str(e)}"}
+
+
+def _supports_best_effort_extraction(file_type: str) -> bool:
+    return file_type in {FileType.IMAGE.value, FileType.PDF.value}
+
+
+def _has_storable_extraction_data(data: Any) -> bool:
+    """Return whether extracted data has enough signal to persist for queries."""
+
+    if not isinstance(data, dict):
+        return False
+
+    vendor = data.get("vendor", {})
+    if isinstance(vendor, dict):
+        vendor_name = vendor.get("name") or vendor.get("vendor_name")
+    else:
+        vendor_name = vendor
+    vendor_text = str(vendor_name or "").strip().lower()
+    has_vendor = bool(vendor_text and vendor_text not in {"unknown", "unknown vendor", "n/a", "none"})
+
+    transaction = data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
+    has_reference = bool(
+        transaction.get("invoice_number")
+        or transaction.get("receipt_no")
+        or transaction.get("date")
+        or data.get("invoice_number")
+        or data.get("receipt_no")
+        or data.get("date")
+        or data.get("invoice_date")
+    )
+
+    financial = data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
+    total = _first_number(
+        financial.get("total"),
+        financial.get("total_amount"),
+        data.get("total_amount"),
+        data.get("total"),
+    )
+    has_total = total is not None and total > 0
+
+    items = data.get("items") or []
+    if not isinstance(items, list):
+        items = []
+    has_items = any(
+        isinstance(item, dict)
+        and (
+            str(item.get("description") or item.get("name") or "").strip()
+            or _first_number(item.get("total_price"), item.get("amount"), item.get("unit_price")) is not None
+        )
+        for item in items
+    )
+
+    return has_items or has_total or (has_vendor and has_reference)
+
+
+def _first_number(*values: Any) -> Optional[float]:
+    for value in values:
+        if value in (None, ""):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 async def format_extraction_response(
