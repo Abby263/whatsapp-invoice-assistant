@@ -1,15 +1,14 @@
 import logging
 import json
 import base64
-import os
 import re
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Union, Tuple
+from typing import Optional
 
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
+from constants.llm_configs import Models, TemperatureSettings, TokenLimits
 from constants.fallback_messages import FILE_VALIDATION_PROMPTS, FILE_VALIDATION_MESSAGES
-from constants.prompt_mappings import AgentType, get_prompt_for_agent
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -113,14 +112,12 @@ class FileValidatorAgent(BaseAgent):
                         # Convert image to base64 for analysis
                         base64_image = base64.b64encode(file_content).decode('utf-8')
 
-                        # Use GPT-4o-mini to analyze if the image is an invoice
-                        from openai import OpenAI
-                        client = OpenAI()
+                        validation_config = self.llm_factory.get_task_config("validation")
+                        client = self.llm_factory._create_openai_instance(validation_config)
 
                         # Define a prompt for invoice validation
                         try:
                             # Try to load prompt using LLMFactory
-                            agent_type = AgentType.FILE_VALIDATION
                             image_prompt_name = "file_validator_image_prompt"
 
                             # First try to load through the factory
@@ -174,8 +171,9 @@ class FileValidatorAgent(BaseAgent):
                             logger.warning(f"Could not determine image format: {str(e)}. Using default: {mime_type}")
 
                         # Call OpenAI with the image
-                        response = client.chat.completions.create(
-                            model=os.environ.get("OPENAI_API_MODEL", "gpt-5.4-mini"),
+                        response = self.llm_factory._create_openai_chat_completion(
+                            client,
+                            model_name=validation_config.get("model", Models.DEFAULT),
                             messages=[
                                 {
                                     "role": "system",
@@ -197,7 +195,14 @@ class FileValidatorAgent(BaseAgent):
                                     ]
                                 }
                             ],
-                            max_tokens=500
+                            temperature=validation_config.get(
+                                "temperature",
+                                TemperatureSettings.VALIDATION,
+                            ),
+                            max_tokens=validation_config.get(
+                                "max_output_tokens",
+                                TokenLimits.MAX_OUTPUT_TOKENS_SHORT,
+                            ),
                         )
 
                         # Extract the validation result

@@ -280,10 +280,22 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
     try:
         # Extract message information
         sender = message_data.get("From", "unknown")
+        media_count = _parse_num_media(message_data.get("NumMedia"))
+        has_media = media_count > 0
+
+        if has_media:
+            send_processing_ack(
+                to_number=sender,
+                from_number=(
+                    message_data.get("To") or os.environ.get("TWILIO_PHONE_NUMBER")
+                ),
+                body=media_processing_ack(media_count),
+            )
+
         user_id = extract_user_id_from_sender(sender)
         
         # Check if this is a text or media message
-        if "Body" in message_data and message_data.get("NumMedia", "0") == "0":
+        if "Body" in message_data and not has_media:
             # This is a text message
             message_text = message_data.get("Body", "")
             
@@ -300,7 +312,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 conversation_history_trusted=True,
             )
             
-        elif message_data.get("NumMedia", "0") != "0":
+        elif has_media:
             # This is a media message. Twilio indexes media fields as
             # MediaUrl0, MediaContentType0, MediaUrl1, ... up to NumMedia.
             temp_dir = Path(tempfile.mkdtemp())
@@ -308,13 +320,6 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 conversation_history = await load_conversation_history(user_id)
                 results = []
                 seen_checksums: set[str] = set()
-                media_count = _parse_num_media(message_data.get("NumMedia"))
-                if media_count > 0:
-                    send_processing_ack(
-                        to_number=sender,
-                        from_number=message_data.get("To") or os.environ.get("TWILIO_PHONE_NUMBER"),
-                        body=media_processing_ack(media_count),
-                    )
 
                 async with httpx.AsyncClient() as client:
                     for index in range(media_count):
