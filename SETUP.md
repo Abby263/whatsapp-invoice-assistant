@@ -330,7 +330,33 @@ python3 scripts/validate_env.py --env-file .env
 
 The validator redacts secret values and rejects common placeholders such as `sb`, `sk-pro`, `AC2`, and `cf3`.
 
-### 3. Deploy
+### 3. Verify Runtime Packaging
+
+Vercel must receive every Python package used by `app.py` and the Twilio webhook. Do not add these runtime paths to `.vercelignore`:
+
+```text
+agents/
+config/
+constants/
+database/
+prompts/
+schemas/
+services/
+storage/
+ui/
+utils/
+workflows/
+```
+
+The `workflows/` package is required in production because `services/live_backend.py` imports `workflows.api.process_whatsapp_message` for WhatsApp text and media handling.
+
+Before deploying a packaging change, run:
+
+```bash
+python -c "from workflows.api import process_whatsapp_message; print(process_whatsapp_message.__name__)"
+```
+
+### 4. Deploy
 
 ```bash
 npx vercel deploy --prod
