@@ -49,6 +49,8 @@ Example WhatsApp prompts:
 WhatsApp media behavior:
 
 - Each uploaded image/PDF gets a final `Document extraction result` or `Document not processed` status.
+- Pending uploads must show an `APPROVE <upload_id>` / `REJECT <upload_id>` command in WhatsApp and Approve / Reject actions in Saved history on the website.
+- If a pending upload cannot get an upload id, the assistant asks the user to resend the file instead of pointing them to an approval flow that cannot work.
 - If WhatsApp/Twilio splits a multi-image forward into separate webhooks, the summaries arrive one per image. Six forwarded images should produce six final file-status messages.
 - If Twilio sends several media attachments in one webhook, the bot returns a `Batch processing result` with saved, duplicate, and failed counts.
 - Random images, blank pages, tickets, bank-transfer confirmations, and non-financial notes are rejected instead of being stored as expenses.

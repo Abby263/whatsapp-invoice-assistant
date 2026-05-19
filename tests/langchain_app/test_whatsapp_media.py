@@ -371,6 +371,41 @@ async def test_format_extraction_response_does_not_call_pending_entries_saved():
     assert "... 1 more entries saved" not in content
 
 
+def test_mark_media_awaiting_approval_backfills_late_media_id(monkeypatch):
+    calls = []
+
+    def fake_record_media_upload(**kwargs):
+        calls.append(kwargs)
+        return {"media_id": "123", "status": kwargs["status"]}
+
+    monkeypatch.setattr(file_processing_workflow, "record_media_upload", fake_record_media_upload)
+
+    file_metadata = {
+        "file_storage": {
+            "file_key": "users/1/invoices/aa/checksum",
+            "content_type": "image/jpeg",
+        }
+    }
+    pending_metadata = file_processing_workflow._mark_media_awaiting_approval(
+        user_id="1",
+        file_metadata=file_metadata,
+        extraction_result={
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "financial": {"total": 100, "currency": "INR"},
+                "items": [{"description": "Printing", "total_price": 100}],
+            },
+            "metadata": {},
+        },
+    )
+
+    assert pending_metadata["media_id"] == "123"
+    assert pending_metadata["hitl_approval_command"] == "APPROVE 123"
+    assert pending_metadata["hitl_rejection_command"] == "REJECT 123"
+    assert file_metadata["file_storage"]["media_id"] == "123"
+    assert calls[-1]["processing_metadata"]["hitl_approval_command"] == "APPROVE 123"
+
+
 @pytest.mark.asyncio
 async def test_process_file_message_stores_original_before_validation(tmp_path, monkeypatch):
     file_path = tmp_path / "receipt.jpg"

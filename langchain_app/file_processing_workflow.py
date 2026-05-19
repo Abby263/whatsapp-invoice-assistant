@@ -678,6 +678,8 @@ def _mark_media_awaiting_approval(
 
     metadata = extraction_result.get("metadata") if isinstance(extraction_result.get("metadata"), dict) else {}
     file_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
+    if file_storage and not isinstance(file_metadata.get("file_storage"), dict):
+        file_metadata["file_storage"] = file_storage
     media_id = (
         file_storage.get("media_id")
         or (file_metadata.get("media_record") or {}).get("media_id")
@@ -697,21 +699,43 @@ def _mark_media_awaiting_approval(
     if validation_result:
         hitl_metadata["validation_result"] = validation_result
 
-    _update_media_status(
+    processing_metadata = {
+        **hitl_metadata,
+        "processing_status": "awaiting_human_confirmation",
+        "pending_extraction_summary": _pending_extraction_summary(extraction_result),
+        "extraction_quality": (
+            extraction_result.get("data", {}).get("extraction_quality")
+            if isinstance(extraction_result.get("data"), dict)
+            else None
+        ),
+    }
+    media_record = _update_media_status(
         user_id=user_id,
         file_metadata=file_metadata,
         status="uploaded",
-        processing_metadata={
-            **hitl_metadata,
-            "processing_status": "awaiting_human_confirmation",
-            "pending_extraction_summary": _pending_extraction_summary(extraction_result),
-            "extraction_quality": (
-                extraction_result.get("data", {}).get("extraction_quality")
-                if isinstance(extraction_result.get("data"), dict)
-                else None
-            ),
-        },
+        processing_metadata=processing_metadata,
     )
+
+    media_id = (
+        media_id
+        or (media_record or {}).get("media_id")
+        or (file_metadata.get("media_record") or {}).get("media_id")
+    )
+    if media_id and not hitl_metadata.get("hitl_approval_command"):
+        hitl_metadata["media_id"] = str(media_id)
+        hitl_metadata["hitl_approval_command"] = f"APPROVE {media_id}"
+        hitl_metadata["hitl_rejection_command"] = f"REJECT {media_id}"
+        if isinstance(file_metadata.get("file_storage"), dict):
+            file_metadata["file_storage"]["media_id"] = str(media_id)
+        _update_media_status(
+            user_id=user_id,
+            file_metadata=file_metadata,
+            status="uploaded",
+            processing_metadata={
+                **processing_metadata,
+                **hitl_metadata,
+            },
+        )
     return hitl_metadata
 
 
@@ -809,10 +833,10 @@ def _update_media_status(
     file_metadata: Dict[str, Any],
     status: str,
     processing_metadata: Optional[Dict[str, Any]] = None,
-) -> None:
+) -> Optional[Dict[str, Any]]:
     file_storage = file_metadata.get("file_storage")
     if not user_id or not isinstance(file_storage, dict):
-        return
+        return None
     media_record = record_media_upload(
         user_id=user_id,
         file_storage=file_storage,
@@ -824,6 +848,9 @@ def _update_media_status(
     )
     if media_record:
         file_metadata["media_record"] = media_record
+        if media_record.get("media_id"):
+            file_storage["media_id"] = str(media_record["media_id"])
+    return media_record
 
 
 def _calculate_file_checksum(file_path: str, file_content: Optional[bytes] = None) -> str:
@@ -1192,7 +1219,9 @@ async def format_extraction_response(
         lines.append("No invoice or line-item rows have been added to analytics yet.")
         if approval_command and rejection_command:
             lines.append(f"Reply {approval_command} to save, or {rejection_command} to discard.")
-        lines.append("You can also review this pending upload from Saved history on the website.")
+            lines.append("You can also review this pending upload from Saved history on the website.")
+        else:
+            lines.append("I could not create an upload id for approval. Please resend this file.")
     else:
         lines.append("Next: ask \"What did I spend on printing?\"")
     response = compact_whatsapp_message("\n".join(lines), max_chars=1000)
