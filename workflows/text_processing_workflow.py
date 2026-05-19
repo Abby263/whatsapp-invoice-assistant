@@ -41,6 +41,7 @@ async def process_text_message(
     text_content: str,
     user_id: Optional[Union[str, UUID]] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
+    preclassified_intent: Optional[Union[str, IntentType]] = None,
 ) -> Dict[str, Any]:
     """
     Process a text message by classifying intent and routing to the appropriate workflow.
@@ -114,9 +115,17 @@ async def process_text_message(
             content = msg.get("content", "")
             logger.debug(f"  [{i}] {role}: {content[:50]}...")
 
-    # Step 1: Classify the user's intent
+    # Step 1: Classify the user's intent, unless the webhook router already did it.
     logger.info("=== STEP 1: INTENT CLASSIFICATION ===")
-    intent = await classify_intent(text_content, conversation_history)
+    if preclassified_intent:
+        intent = (
+            preclassified_intent.value
+            if isinstance(preclassified_intent, IntentType)
+            else str(preclassified_intent)
+        )
+        logger.info("Using preclassified router intent: %s", intent)
+    else:
+        intent = await classify_intent(text_content, conversation_history)
     logger.info(f"Classified intent: {intent}")
 
     # Step 2: Route to the appropriate workflow based on intent
