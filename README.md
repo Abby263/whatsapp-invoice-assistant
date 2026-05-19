@@ -178,9 +178,18 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [storage/supabase_storage_handler.py](storage/supabase_storage_handler.py) | Private Supabase Storage uploads and signed URL generation. |
 | [storage/user_uploads.py](storage/user_uploads.py) | User-scoped upload paths, media registry writes, and duplicate lookup metadata. |
 | [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
+| [services/hitl_service.py](services/hitl_service.py) | WhatsApp approval, rejection, and destructive-action confirmation handling. |
 | [services/history_service.py](services/history_service.py) | User-scoped listing and deletion of receipt history, generated invoices, messages, usage rows, and stored files. |
 | [services/conversation_memory.py](services/conversation_memory.py) | Supabase Postgres-backed conversation memory for WhatsApp and web multi-turn context. |
 | [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
+
+### Repository Boundaries
+
+- `workflows/` is the only active orchestration package. Legacy `langchain_app/`, LangGraph node wrappers, and compatibility patches have been removed.
+- `agents/` contains bounded LLM workers used by workflows. Agents classify intent, validate files, extract fields, generate SQL, retrieve RAG evidence, or format responses; they do not own HTTP routing.
+- `services/` owns durable business operations and integrations such as Clerk identity, Twilio messaging, HITL approval, history deletion, generated invoices, and conversation memory.
+- Conversation context is stored in Supabase Postgres through [services/conversation_memory.py](services/conversation_memory.py). The old MongoDB/LangGraph memory package is no longer part of the runtime.
+- `scripts/` contains maintained operational scripts only: environment validation, database cleanup, category seeding, and embedding refresh.
 
 ## Data Model
 
@@ -199,6 +208,17 @@ Uploaded receipt files and generated invoice documents are stored in the private
 Conversation memory is user scoped. For production WhatsApp and web requests, the agent loads memory from `conversations` and `messages` by the resolved internal `users.id`; caller-supplied history is ignored unless it comes from an internal trusted workflow path.
 
 Receipt extraction uses a human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web Saved history view, but invoice rows, line items, embeddings, and analytics are created only after WhatsApp approval. The same linked user must reply on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
+
+### Authentication Model
+
+The website uses Clerk phone-number OTP sign-in. The verified Clerk phone number becomes the account's WhatsApp identity, so users do not need a separate connection workflow after login. If Clerk cannot provide a verified phone number, the backend does not create or link an operational user record for WhatsApp data.
+
+### RAG And Finalization Rules
+
+- WhatsApp uploads are not retrieval data when first received. They start as pending media records with validation, extraction, duplicate, and quality metadata.
+- Approval is the finalization step. After `APPROVE <upload_id>`, the app reprocesses the private upload and writes user-scoped invoice rows, item rows, embeddings, and analytics metadata.
+- Rejected, unsupported, duplicate, blank, non-financial, or still-pending uploads are excluded from SQL analytics and agentic RAG.
+- RAG retrieval only reads approved data for the resolved `users.id`, combining invoice embeddings, line-item embeddings, finalized receipt keywords, and keyword fallback when embeddings are unavailable.
 
 ## Why Supabase Storage Instead Of S3
 
