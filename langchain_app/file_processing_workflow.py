@@ -1048,19 +1048,32 @@ async def format_duplicate_file_response(
         rejection_command = media_metadata.get("hitl_rejection_command") or (
             f"REJECT {media_id}" if media_id else None
         )
-        content = (
-            f"{file_name} is already waiting for WhatsApp approval."
-            + (
-                f" Reply {approval_command} to save, or {rejection_command} to discard."
-                if approval_command and rejection_command
-                else ""
+        lines = [
+            "📄 *Document Already Pending*",
+            "",
+            f"*File:* {file_name}",
+            "*Status:* Pending WhatsApp approval",
+        ]
+        if approval_command and rejection_command:
+            lines.extend(
+                [
+                    "",
+                    "🔐 *Action Needed*",
+                    f"Reply *{approval_command}* to save this document.",
+                    f"Reply *{rejection_command}* to discard it.",
+                ]
             )
-        )
+        content = compact_whatsapp_message("\n".join(lines), max_chars=700)
     else:
-        content = (
-            f"I already processed {file_name} earlier."
-            + (f" It is linked to receipt #{invoice_id}." if invoice_id else "")
-        )
+        lines = [
+            "✅ *Document Already Processed*",
+            "",
+            f"*File:* {file_name}",
+        ]
+        if invoice_id:
+            lines.append(f"*Receipt:* #{invoice_id}")
+        lines.append("*Status:* No duplicate rows were created.")
+        content = compact_whatsapp_message("\n".join(lines), max_chars=700)
     return {
         "content": content,
         "metadata": {
@@ -1205,22 +1218,43 @@ def _document_response_fields(data: Dict[str, Any]) -> Dict[str, Any]:
 def _format_money(value: Optional[float], currency: str) -> str:
     if value is None:
         return "Not visible"
-    return f"{round(float(value), 2)} {currency}"
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        amount_text = str(value).strip()
+        return f"{amount_text} {currency}".strip()
+    return f"{amount:,.2f} {currency}".strip()
+
+
+def _business_label(value: Any, fallback: str = "Not visible") -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    return text.replace("_", " ").replace("-", " ").title()
+
+
+def _format_row_count(extraction_quality: Dict[str, Any]) -> Optional[str]:
+    visible_rows = extraction_quality.get("visible_financial_rows")
+    extracted_rows = extraction_quality.get("extracted_financial_rows")
+    visible_count = _first_number(visible_rows)
+    extracted_count = _first_number(extracted_rows)
+    if visible_count is None or extracted_count is None:
+        return None
+    return f"{extracted_count:g} of {visible_count:g} rows extracted"
 
 
 def _format_item_line(item: Dict[str, Any], currency: str, is_ledger: bool) -> str:
     description = str(item.get("description") or "Entry").strip()
     amount = _first_number(item.get("total_price"), item.get("amount"), item.get("unit_price"))
     if is_ledger:
-        row_date = item.get("transaction_date") or item.get("raw_date") or "no date"
-        return f"{row_date} | {description} | {_format_money(amount, currency)}"
+        row_date = str(item.get("transaction_date") or item.get("raw_date") or "").strip()
+        amount_text = _format_money(amount, currency)
+        if row_date:
+            return f"{row_date}: {description} - {amount_text}"
+        return f"{description} - {amount_text}"
 
     quantity = coerce_number(item.get("quantity"), 1.0) or 1.0
-    unit_price = _first_number(item.get("unit_price"), item.get("price"))
-    return (
-        f"{description} | qty {quantity:g} | unit {_format_money(unit_price, currency)} "
-        f"| total {_format_money(amount, currency)}"
-    )
+    return f"{description} - Qty {quantity:g}, Total {_format_money(amount, currency)}"
 
 
 async def format_extraction_response(
@@ -1259,58 +1293,77 @@ async def format_extraction_response(
     item_label = "entries" if fields["is_ledger"] else "items"
     extraction_quality = fields.get("extraction_quality") or {}
     needs_review = bool(extraction_quality.get("needs_review"))
+    status_label = (
+        "Pending WhatsApp approval"
+        if hitl_pending
+        else "Saved to analytics"
+        if status == "saved"
+        else "Processed"
+    )
+    if needs_review:
+        status_label = f"{status_label} - needs review"
+    title = (
+        "📄 *Document Review*"
+        if hitl_pending
+        else "✅ *Document Saved*"
+        if status == "saved"
+        else "📄 *Document Processed*"
+    )
+    item_label_title = "Entries" if fields["is_ledger"] else "Items"
 
     lines = [
-        "Document extraction result",
-        f"status: {status}{' - needs review' if needs_review else ''}",
-        "scope: this file only",
-        f"file: {file_name}",
-        f"document_type: {fields['document_type']}",
-        f"vendor.name: {fields['vendor_name']}",
-        f"transaction.date: {fields['transaction_date']}",
-        f"financial.total: {_format_money(fields['total_amount'], fields['currency'])}",
-        f"items.count: {len(items)}",
+        title,
+        "",
+        f"*Status:* {status_label}",
+        f"*File:* {file_name}",
+        f"*Type:* {_business_label(fields['document_type'], 'Document')}",
+        f"*Vendor:* {fields['vendor_name']}",
+        f"*Date:* {fields['transaction_date']}",
+        f"*Total:* {_format_money(fields['total_amount'], fields['currency'])}",
+        f"*{item_label_title}:* {len(items)} extracted",
     ]
+    if fields["invoice_number"]:
+        lines.append(f"*Invoice #:* {fields['invoice_number']}")
+    if fields["receipt_no"]:
+        lines.append(f"*Receipt #:* {fields['receipt_no']}")
+
     if extraction_quality:
-        visible_rows = extraction_quality.get("visible_financial_rows")
-        extracted_rows = extraction_quality.get("extracted_financial_rows")
-        visible_count = _first_number(visible_rows)
-        extracted_count = _first_number(extracted_rows)
-        if visible_count is not None and extracted_count is not None:
-            lines.append(f"quality.rows: {extracted_count:g}/{visible_count:g} extracted")
+        quality_lines = []
+        row_count = _format_row_count(extraction_quality)
+        if row_count:
+            quality_lines.append(row_count)
         warnings = extraction_quality.get("warnings")
         if isinstance(warnings, list) and warnings:
-            lines.append(f"quality.warning: {str(warnings[0])[:140]}")
-    if fields["invoice_number"]:
-        lines.append(f"transaction.invoice_number: {fields['invoice_number']}")
-    if fields["receipt_no"]:
-        lines.append(f"transaction.receipt_no: {fields['receipt_no']}")
+            quality_lines.append(str(warnings[0]).strip()[:140])
+        if quality_lines:
+            lines.append("")
+            lines.append("*Quality:*")
+            for quality_line in quality_lines[:2]:
+                lines.append(f"• {quality_line}")
 
     if items:
         lines.append("")
-        lines.append(f"sample_{item_label}:")
+        lines.append(f"*Sample {item_label}:*")
         for index, item in enumerate(items[:4], start=1):
             lines.append(f"{index}. {_format_item_line(item, fields['currency'], fields['is_ledger'])}")
         remaining = len(items) - 4
         if remaining > 0:
             item_state = "extracted" if hitl_pending else "saved"
-            lines.append(f"... {remaining} more {item_label} {item_state}")
-
-    if private_file_saved:
-        lines.append("")
-        lines.append("storage: original file saved privately")
+            lines.append(f"+ {remaining} more {item_label} {item_state}")
 
     lines.append("")
     if hitl_pending:
         approval_command = metadata.get("hitl_approval_command")
         rejection_command = metadata.get("hitl_rejection_command")
-        lines.append("No invoice or line-item rows have been added to analytics yet.")
+        lines.append("🔐 *Action Needed*")
+        lines.append("Analytics have not been updated yet.")
         if approval_command and rejection_command:
-            lines.append(f"Reply {approval_command} to save, or {rejection_command} to discard.")
+            lines.append(f"Reply *{approval_command}* to save this document.")
+            lines.append(f"Reply *{rejection_command}* to discard it.")
         else:
-            lines.append("I could not create an upload id for approval. Please resend this file.")
+            lines.append("Approval id could not be created. Please resend this file.")
     else:
-        lines.append("Next: ask \"What did I spend on printing?\"")
+        lines.append("*Next:* Ask \"What did I spend on printing?\"")
     response = compact_whatsapp_message("\n".join(lines), max_chars=1000)
     return {
         "content": response,
@@ -1339,12 +1392,12 @@ async def format_invalid_file_response(
     reason = str(validation_result.get("reason") or "").strip() or "This does not look like a receipt, invoice, or expense ledger."
     response = "\n".join(
         [
-            "Document not processed",
-            "status: rejected",
-            f"file: {file_name}",
-            f"reason: {reason}",
+            "⚠️ *Document Not Processed*",
             "",
-            "Send: receipt, invoice, bill, PDF, or handwritten expense ledger.",
+            f"*File:* {file_name}",
+            f"*Reason:* {reason}",
+            "",
+            "Please send a receipt, invoice, bill, PDF, or handwritten expense ledger.",
         ]
     )
     return {

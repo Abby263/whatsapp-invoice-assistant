@@ -134,10 +134,11 @@ async def test_process_whatsapp_message_handles_multiple_media_and_batch_duplica
     assert result["metadata"]["media_count"] == 3
     assert result["metadata"]["saved_count"] == 2
     assert result["metadata"]["duplicate_count"] == 1
-    assert "Batch processing result" in result["message"]
-    assert "attachments.received: 3" in result["message"]
-    assert "status: saved" in result["message"]
-    assert "status: duplicate" in result["message"]
+    assert "*Batch Processing Result*" in result["message"]
+    assert "*Attachments received:* 3" in result["message"]
+    assert "*Saved:* 2" in result["message"]
+    assert "*Duplicate*" in result["message"]
+    assert "forwarded more images" not in result["message"]
     assert len(processed) == 2
     assert processed[0]["file_metadata"]["twilio_media_index"] == 0
     assert processed[1]["file_metadata"]["twilio_media_index"] == 2
@@ -280,7 +281,7 @@ async def test_process_file_message_short_circuits_previous_duplicate(tmp_path, 
 
 
 @pytest.mark.asyncio
-async def test_format_extraction_response_uses_fixed_document_schema():
+async def test_format_extraction_response_uses_business_document_summary():
     result = await file_processing_workflow.format_extraction_response(
         {
             "data": {
@@ -303,12 +304,15 @@ async def test_format_extraction_response_uses_fixed_document_schema():
     )
 
     content = result["content"]
-    assert "Document extraction result" in content
-    assert "scope: this file only" in content
-    assert "document_type: handwritten_ledger" in content
-    assert "transaction.date: 2026-02-15" in content
-    assert "financial.total: 7825.0 INR" in content
-    assert "items.count: 1" in content
+    assert "*Document Saved*" in content
+    assert "*File:* ledger.jpg" in content
+    assert "*Type:* Handwritten Ledger" in content
+    assert "*Date:* 2026-02-15" in content
+    assert "*Total:* 7,825.00 INR" in content
+    assert "*Entries:* 1 extracted" in content
+    assert "document_type:" not in content
+    assert "vendor.name:" not in content
+    assert "financial.total:" not in content
 
 
 @pytest.mark.asyncio
@@ -333,10 +337,11 @@ async def test_format_extraction_response_requests_whatsapp_approval():
     )
 
     content = result["content"]
-    assert "status: awaiting WhatsApp approval" in content
-    assert "No invoice or line-item rows have been added to analytics yet." in content
-    assert "APPROVE 99" in content
-    assert "REJECT 99" in content
+    assert "*Document Review*" in content
+    assert "*Status:* Pending WhatsApp approval" in content
+    assert "Analytics have not been updated yet." in content
+    assert "Reply *APPROVE 99* to save this document." in content
+    assert "Reply *REJECT 99* to discard it." in content
     assert "Saved history" not in content
 
 
@@ -367,7 +372,7 @@ async def test_format_extraction_response_does_not_claim_metadata_only_storage_i
 
     content = result["content"]
     assert "APPROVE 321" in content
-    assert "storage: original file saved privately" not in content
+    assert "storage:" not in content
 
 
 @pytest.mark.asyncio
@@ -397,8 +402,8 @@ async def test_format_extraction_response_does_not_call_pending_entries_saved():
     )
 
     content = result["content"]
-    assert "... 1 more entries extracted" in content
-    assert "... 1 more entries saved" not in content
+    assert "+ 1 more entries extracted" in content
+    assert "+ 1 more entries saved" not in content
 
 
 def test_mark_media_awaiting_approval_backfills_late_media_id(monkeypatch):
@@ -555,8 +560,8 @@ async def test_process_file_message_stores_original_before_validation(tmp_path, 
     )
 
     assert calls == {"uploads": 1, "media": 2}
-    assert "Document not processed" in result["content"]
-    assert "status: rejected" in result["content"]
+    assert "Document Not Processed" in result["content"]
+    assert "*Reason:* not a financial document" in result["content"]
 
 
 def test_supabase_upload_is_idempotent_for_existing_content_addressed_object(monkeypatch):

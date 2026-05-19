@@ -280,11 +280,11 @@ For media uploads, the app sends a short processing acknowledgement first and th
 
 How to read multi-image results:
 
-- A `Document extraction result` message is for one file only.
-- A `Batch processing result` message is only for attachments Twilio delivered inside the same webhook.
+- A `Document Review`, `Document Saved`, or `Document Not Processed` message is for one file only.
+- A `Batch Processing Result` message is only for attachments Twilio delivered inside the same webhook.
 - If six images are forwarded and Twilio splits them, expect six final file-status messages.
-- Every processed financial document reply follows fixed keys such as `document_type`, `vendor.name`, `transaction.date`, `financial.total`, and `items.count`.
-- Non-financial images receive `Document not processed` with `status: rejected` and are not stored as expenses.
+- Every processed financial document reply uses business labels such as `File`, `Type`, `Vendor`, `Date`, `Total`, `Entries`, and `Action Needed`.
+- Non-financial images receive `Document Not Processed` with a clear reason and are not stored as expenses.
 
 ## Vercel Setup
 

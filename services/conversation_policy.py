@@ -73,9 +73,10 @@ def is_off_topic_message(text: str) -> bool:
 
 def off_topic_response() -> str:
     return (
+        "📌 *Business Assistant*\n\n"
         "I can help with receipts, invoices, handwritten expense ledgers, "
-        "invoice generation, and questions over your saved spending data.\n\n"
-        "Send a receipt photo/PDF, or ask something like: "
+        "invoice generation, and questions over saved spending data.\n\n"
+        "Send a receipt photo/PDF, or ask: "
         "\"What did I spend on transport in March?\""
     )
 
@@ -88,10 +89,9 @@ def media_processing_ack(media_count: int) -> str:
     noun = "file" if media_count == 1 else "files"
     pronoun = "it" if media_count == 1 else "them"
     article_or_count = "a" if media_count == 1 else str(media_count)
-    final_status = "for this file" if media_count == 1 else "when all files are done"
     return (
-        f"Received {article_or_count} {noun}. I am processing {pronoun} now "
-        f"and will send a final status {final_status}."
+        "📎 *File Received*\n\n"
+        f"Received {article_or_count} {noun}. I am processing {pronoun} now and will send the result here."
     )
 
 
