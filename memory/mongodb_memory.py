@@ -18,7 +18,7 @@ from pymongo import MongoClient
 from pymongo.database import Database
 from pymongo.collection import Collection
 
-from langchain_app.state import ConversationHistory, WorkflowState
+from workflows.state import ConversationHistory, WorkflowState
 from utils.config import config
 
 logger = logging.getLogger(__name__)

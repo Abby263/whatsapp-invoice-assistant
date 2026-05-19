@@ -16,7 +16,7 @@ from uuid import uuid4
 # Add the root directory to the path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from langchain_app.workflow import process_input
+from workflows.workflow import process_input
 from memory.langgraph_memory import memory_manager
 
 # Configure logging

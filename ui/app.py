@@ -70,12 +70,13 @@ logging.basicConfig(
 
 logger = logging.getLogger("ui_test")
 
-# Apply patches before importing LangGraph
+# Apply compatibility patches before importing local LangGraph workflows
 try:
-    import patches
-    logging.info("Applied compatibility patches")
+    from compat.langgraph import apply_langgraph_compatibility_patches
+
+    apply_langgraph_compatibility_patches()
 except Exception as e:
-    logging.error(f"Error applying patches: {e}")
+    logging.error(f"Error applying LangGraph compatibility patches: {e}")
 
 # Import the interactive test module
 from tests.interactive_test import handle_message, handle_command, ensure_test_user_exists
@@ -84,7 +85,7 @@ from tests.interactive_test import handle_message, handle_command, ensure_test_u
 from constants.ui_config import DEFAULT_WHATSAPP_NUMBER, DEFAULT_CONVERSATION_ID, MAX_CHAT_HISTORY, MAX_CONTENT_LENGTH, UPLOAD_FOLDER, VECTOR_EXTENSION_NAME, DEFAULT_VECTOR_DIMENSION
 
 # Import application modules
-from langchain_app.api import process_text_message, process_file_message
+from workflows.api import process_text_message, process_file_message
 from memory.memory_manager import get_memory, set_memory_config
 from database import database_utils
 from scripts.update_embeddings import run_embeddings_update

@@ -17,7 +17,7 @@ from database import crud
 from database.schemas import Conversation, Message, User
 from database import models
 from memory.langgraph_memory import memory_manager, MemoryEntry
-from langchain_app.state import ConversationHistory, WorkflowState
+from workflows.state import ConversationHistory, WorkflowState
 
 logger = logging.getLogger(__name__)
 

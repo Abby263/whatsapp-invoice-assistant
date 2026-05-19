@@ -11,10 +11,10 @@ from uuid import UUID
 
 from agents.text_intent_classifier import TextIntentClassifierAgent
 from services.llm_factory import LLMFactory
-from langchain_app.state import IntentType, UserInput
-from langchain_app.general_response_workflow import process_general_response, process_greeting
-from langchain_app.invoice_query_workflow import process_invoice_query
-from langchain_app.invoice_creator_workflow import process_invoice_creation
+from workflows.state import IntentType, UserInput
+from workflows.general_response_workflow import process_general_response, process_greeting
+from workflows.invoice_query_workflow import process_invoice_query
+from workflows.invoice_creator_workflow import process_invoice_creation
 from services.hitl_service import handle_human_confirmation_message
 from services.conversation_policy import (
     is_off_topic_message,

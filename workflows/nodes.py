@@ -19,7 +19,7 @@ from agents.response_formatter import ResponseFormatterAgent
 from utils.input_type_router import InputTypeRouter
 from utils.base_agent import AgentInput, AgentContext
 from services.llm_factory import LLMFactory
-from langchain_app.state import (
+from workflows.state import (
     WorkflowState,
     InputType,
     IntentType,

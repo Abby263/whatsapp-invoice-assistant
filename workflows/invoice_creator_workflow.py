@@ -21,7 +21,7 @@ from utils.base_agent import BaseAgent, AgentInput
 from agents.invoice_entity_extraction_agent import InvoiceEntityExtractionAgent
 from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
-from langchain_app.state import IntentType
+from workflows.state import IntentType
 from constants.fallback_messages import CREATION_FALLBACKS
 from services.invoice_template_service import generate_invoice, check_missing_fields, TEMPLATE_TYPES
 

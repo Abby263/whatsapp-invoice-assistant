@@ -54,10 +54,10 @@ logging.basicConfig(
 logger = logging.getLogger("interactive_test")
 
 # Import required modules
-from langchain_app.api import process_text_message, process_file_message
+from workflows.api import process_text_message, process_file_message
 # Load workflow module conditionally to handle import errors
 try:
-    from langchain_app.workflow import process_input, get_workflow_graph
+    from workflows.workflow import process_input, get_workflow_graph
 except ImportError as e:
     logging.warning(f"Could not import from workflow module: {e}")
     # Create dummy functions for type checking
@@ -66,12 +66,12 @@ except ImportError as e:
 
     def get_workflow_graph():
         return None
-from langchain_app.state import IntentType, FileType, WorkflowState
+from workflows.state import IntentType, FileType, WorkflowState
 from database.connection import get_db, ensure_test_user_exists
 from services.llm_factory import LLMFactory
 
 # Set specific module log levels for detailed debugging
-logging.getLogger('langchain_app.invoice_query_workflow').setLevel(logging.DEBUG)
+logging.getLogger('workflows.invoice_query_workflow').setLevel(logging.DEBUG)
 logging.getLogger('agents.text_to_sql_conversion_agent').setLevel(logging.INFO)
 logging.getLogger('agents.response_formatter').setLevel(logging.INFO)
 logging.getLogger('database.connection').setLevel(logging.INFO)
@@ -137,7 +137,7 @@ async def handle_message(
 
             # Set logging levels for better debugging
             logging.getLogger('agents.database_storage_agent').setLevel(logging.DEBUG)
-            logging.getLogger('langchain_app.file_processing_workflow').setLevel(logging.DEBUG)
+            logging.getLogger('workflows.file_processing_workflow').setLevel(logging.DEBUG)
 
             # Log key information before processing
             logger.info(f"Sending file for processing: {filename}, type: {mime_type}, user_id: {user_id}")
@@ -471,8 +471,8 @@ async def test_specific_query(query: str, user_id: int = 0):
     # Ensure test user exists
     ensure_test_user_exists()
 
-    from langchain_app.text_processing_workflow import process_text_message
-    from langchain_app.api import process_text_message as api_process_text_message
+    from workflows.text_processing_workflow import process_text_message
+    from workflows.api import process_text_message as api_process_text_message
 
     # Process the query
     try:

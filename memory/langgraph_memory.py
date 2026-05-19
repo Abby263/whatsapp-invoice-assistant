@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from database import crud
 from database.schemas import Conversation, Message
-from langchain_app.state import ConversationHistory, WorkflowState
+from workflows.state import ConversationHistory, WorkflowState
 from utils.config import config
 
 logger = logging.getLogger(__name__)

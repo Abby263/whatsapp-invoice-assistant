@@ -35,8 +35,8 @@ except ImportError:
         """Stub class for CheckpointAt."""
         pass
 
-from langchain_app.state import WorkflowState, InputType, IntentType, UserInput, ConversationHistory
-from langchain_app.nodes import (
+from workflows.state import WorkflowState, InputType, IntentType, UserInput, ConversationHistory
+from workflows.nodes import (
     input_classifier,
     text_intent_classifier,
     file_validator,

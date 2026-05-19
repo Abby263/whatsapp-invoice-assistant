@@ -23,7 +23,7 @@ from agents.text_to_sql_conversion_agent import TextToSQLConversionAgent
 from agents.response_formatter import ResponseFormatterAgent
 from agents.invoice_rag_agent import InvoiceRAGAgent
 from services.llm_factory import LLMFactory
-from langchain_app.state import IntentType
+from workflows.state import IntentType
 from utils.vector_utils import generate_embedding_for_text
 from constants.fallback_messages import QUERY_FALLBACKS
 from sqlalchemy.exc import SQLAlchemyError

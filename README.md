@@ -170,7 +170,7 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [app.py](app.py) | Vercel Flask entrypoint for the hosted UI, `/webhook`, auth APIs, upload/chat routes, generated invoices, and health checks. |
 | [ui/app.py](ui/app.py) | Local operator UI for development and workflow inspection. |
 | [services/live_backend.py](services/live_backend.py) | Production bridge from Flask routes to Supabase, Clerk identity, Twilio media, receipt processing, and invoice generation. |
-| [langchain_app/](langchain_app) | Text, file, query, and invoice-generation workflow routing. |
+| [workflows/](workflows) | Text, file, query, approval, RAG, and invoice-generation workflow routing. |
 | [agents/](agents) | LLM-backed intent classification, validation, extraction, SQL generation, RAG, and response formatting. |
 | [prompts/](prompts) | Prompt templates grouped by conversation, document processing, SQL, and storage tasks. |
 | [schemas/llm_outputs/](schemas/llm_outputs) | Canonical structured-output contracts for LLM parsing. |

@@ -3,7 +3,7 @@
 This repository is centered on a Vercel-hosted Flask app that serves the web UI and Twilio WhatsApp webhook. The current production path is:
 
 ```text
-Twilio WhatsApp -> Vercel Flask app.py -> langchain_app workflows -> Supabase Postgres/Storage + OpenAI
+Twilio WhatsApp -> Vercel Flask app.py -> workflows/ -> Supabase Postgres/Storage + OpenAI
 Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped data
 ```
 
@@ -13,7 +13,7 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 | --- | --- | --- |
 | Hosted app and webhook | Flask on Vercel (`app.py`) | Public UI, Twilio `/webhook`, Clerk-authenticated APIs, health checks, uploads, chat, and generated invoices. |
 | Local development UI | Flask (`ui/app.py`) | Operator workspace for uploads, chat simulation, generated invoices, settings, and workflow inspection. |
-| Agent workflows | `langchain_app/` modules | Routes text, file, query, and invoice-generation workflows. |
+| Workflows | `workflows/` modules | Routes text, file, query, approval, RAG, and invoice-generation workflows. |
 | LLM provider | OpenAI | Intent routing, extraction, natural language responses, and embeddings. |
 | Database | Supabase Postgres | Users, linked WhatsApp identities, receipts, line items, generated invoices, media, conversations, usage, and embeddings. |
 | Migrations | Alembic | Schema evolution under `database/migrations/`. |
@@ -29,10 +29,11 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 ```text
 .
 ├── agents/                 # Intent, validation, extraction, RAG, SQL, and response agents
+├── compat/                 # Narrow compatibility shims for third-party package differences
 ├── constants/              # Prompt, intent, UI, LLM, vector, and invoice-template constants
 ├── database/               # SQLAlchemy models, CRUD helpers, connection setup, and Alembic migrations
 ├── docs/                   # Architecture and operational documentation
-├── langchain_app/          # Active workflow routing and orchestration
+├── workflows/              # Active workflow routing and orchestration
 ├── memory/                 # Legacy in-memory and optional MongoDB checkpoint helpers
 ├── prompts/                # Prompt templates used by agents and LLM services
 ├── scripts/                # Env validation, embeddings, categories, memory, and DB cleanup scripts
@@ -65,5 +66,5 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 - `DATABASE_URL` should use the Supabase pooler for Vercel runtime.
 - `DIRECT_URL` should be available for Alembic migrations.
 - `SUPABASE_SECRET_KEY` or `SUPABASE_SERVICE_ROLE_KEY` must remain server-side.
-- `CLERK_REQUIRE_AUTH=true` should be used for production testing.
+- `CLERK_REQUIRE_AUTH=true` and `CLERK_REQUIRE_VERIFIED_PHONE=true` should be used for production testing.
 - Twilio should call `https://whatsapp-invoice-assistant.vercel.app/webhook`, not a temporary ngrok URL, for production traffic.

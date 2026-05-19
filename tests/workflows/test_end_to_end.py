@@ -10,22 +10,9 @@ import asyncio
 import logging
 import tempfile
 import os
-import sys
-from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, AsyncMock
 
-# Mock database modules before importing workflow modules
-sys.modules['database.connection'] = MagicMock()
-sys.modules['database.schemas'] = MagicMock()
-sys.modules['database.crud'] = MagicMock()
-sys.modules['database.models'] = MagicMock()
-
-# Mock the memory modules
-sys.modules['memory.langgraph_memory'] = MagicMock()
-sys.modules['memory.context_manager'] = MagicMock()
-
-# Now we can import the modules that depend on these mocked modules
-from langchain_app.state import IntentType, FileType
+from workflows.state import IntentType, FileType
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO)
@@ -34,14 +21,17 @@ logger = logging.getLogger(__name__)
 
 # Patch the API module's imports for database-related functions
 @pytest.mark.asyncio
-@patch('langchain_app.api.process_text', AsyncMock(return_value={
+@patch("workflows.api.load_conversation_history", AsyncMock(return_value=[]))
+@patch("workflows.api.save_conversation_turn", lambda *args, **kwargs: None)
+@patch("workflows.api.extract_user_id_from_sender", lambda sender: "1")
+@patch('workflows.api.process_text', AsyncMock(return_value={
     'content': 'Hello, I am the WhatsApp Invoice Assistant!',
     'metadata': {'intent': IntentType.GREETING.value}
 }))
 async def test_text_greeting_workflow():
     """Test the end-to-end greeting workflow."""
     # Dynamically import after mocking
-    from langchain_app.api import process_text_message
+    from workflows.api import process_text_message
     
     # Process a greeting message
     result = await process_text_message(
@@ -57,14 +47,17 @@ async def test_text_greeting_workflow():
 
 
 @pytest.mark.asyncio
-@patch('langchain_app.api.process_text', AsyncMock(return_value={
+@patch("workflows.api.load_conversation_history", AsyncMock(return_value=[]))
+@patch("workflows.api.save_conversation_turn", lambda *args, **kwargs: None)
+@patch("workflows.api.extract_user_id_from_sender", lambda sender: "1")
+@patch('workflows.api.process_text', AsyncMock(return_value={
     'content': 'You have 3 invoices from Amazon.',
     'metadata': {'intent': IntentType.INVOICE_QUERY.value, 'query': 'Amazon invoices'}
 }))
 async def test_invoice_query_workflow():
     """Test the end-to-end invoice query workflow."""
     # Dynamically import after mocking
-    from langchain_app.api import process_text_message
+    from workflows.api import process_text_message
     
     # Process an invoice query
     result = await process_text_message(
@@ -81,7 +74,10 @@ async def test_invoice_query_workflow():
 
 
 @pytest.mark.asyncio
-@patch('langchain_app.api.process_text', AsyncMock(return_value={
+@patch("workflows.api.load_conversation_history", AsyncMock(return_value=[]))
+@patch("workflows.api.save_conversation_turn", lambda *args, **kwargs: None)
+@patch("workflows.api.extract_user_id_from_sender", lambda sender: "1")
+@patch('workflows.api.process_text', AsyncMock(return_value={
     'content': 'I have created an invoice for Office Depot for $120.',
     'metadata': {
         'intent': IntentType.INVOICE_CREATOR.value,
@@ -91,7 +87,7 @@ async def test_invoice_query_workflow():
 async def test_invoice_creation_workflow():
     """Test the end-to-end invoice creation workflow."""
     # Dynamically import after mocking
-    from langchain_app.api import process_text_message
+    from workflows.api import process_text_message
     
     # Process an invoice creation request
     result = await process_text_message(
@@ -108,14 +104,15 @@ async def test_invoice_creation_workflow():
 
 
 @pytest.mark.asyncio
-@patch('langchain_app.api.process_file', AsyncMock(return_value={
+@patch("workflows.api.save_conversation_turn", lambda *args, **kwargs: None)
+@patch('workflows.api.process_file', AsyncMock(return_value={
     'content': 'I have processed your invoice file.',
     'metadata': {'file_type': FileType.PDF.value}
 }))
 async def test_file_processing_workflow():
     """Test the end-to-end file processing workflow."""
     # Dynamically import after mocking
-    from langchain_app.api import process_file_message
+    from workflows.api import process_file_message
     
     # Create a temporary PDF file
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:

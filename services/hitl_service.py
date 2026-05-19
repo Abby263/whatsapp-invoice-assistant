@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from uuid import UUID
 
-from langchain_app.state import IntentType
+from workflows.state import IntentType
 from services.conversation_policy import compact_whatsapp_message
 from services.history_service import delete_user_history
 from services.llm_factory import LLMFactory
@@ -175,7 +175,7 @@ async def approve_pending_extraction(
             handle.write(file_bytes)
             temp_path = handle.name
 
-        from langchain_app.file_processing_workflow import detect_file_type, process_invoice_file
+        from workflows.file_processing_workflow import detect_file_type, process_invoice_file
 
         file_type = detect_file_type(temp_path, media_info.get("content_type") or "")
         file_metadata = {

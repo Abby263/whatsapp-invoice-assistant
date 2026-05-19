@@ -22,7 +22,7 @@ To run specific test categories:
 
 ```bash
 python -m pytest tests/agents/      # Test agent components
-python -m pytest tests/workflow/    # Test workflow components
+python -m pytest tests/workflows/   # Test workflow components
 python -m pytest tests/memory/      # Test memory components
 ```
 
@@ -62,4 +62,4 @@ Type your message or command below:
 
 You: Hello
 
-Processing your message... 
+Processing your message...

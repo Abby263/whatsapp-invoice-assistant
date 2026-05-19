@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from memory.langgraph_memory import memory_manager, MemoryEntry
 from memory.context_manager import context_manager
-from langchain_app.state import ConversationHistory
+from workflows.state import ConversationHistory
 
 logger = logging.getLogger(__name__)
 

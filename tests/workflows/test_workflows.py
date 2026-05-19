@@ -14,21 +14,21 @@ import logging
 from pathlib import Path
 from PIL import Image
 
-from langchain_app.text_processing_workflow import process_text_message, classify_intent
-from langchain_app.general_response_workflow import process_general_response, process_greeting
-from langchain_app.invoice_query_workflow import (
+from workflows.text_processing_workflow import process_text_message, classify_intent
+from workflows.general_response_workflow import process_general_response, process_greeting
+from workflows.invoice_query_workflow import (
     process_invoice_query,
     convert_to_sql,
     post_process_sql_for_vector,
 )
-from langchain_app.invoice_creator_workflow import process_invoice_creation
-from langchain_app.file_processing_workflow import (
+from workflows.invoice_creator_workflow import process_invoice_creation
+from workflows.file_processing_workflow import (
     _has_storable_extraction_data,
     _should_try_best_effort_extraction,
     detect_file_type,
     process_file_message,
 )
-from langchain_app.state import IntentType, FileType
+from workflows.state import IntentType, FileType
 
 # Configure logging for tests
 logging.basicConfig(level=logging.INFO)
@@ -117,7 +117,7 @@ async def test_intent_classification(sample_text_input, sample_query_input,
 async def test_text_processing_workflow(sample_greeting_input):
     """Test the text processing workflow for greeting messages."""
     # Patch the dependent functions to avoid actual API calls, including the entire general_response_workflow module
-    with patch("langchain_app.text_processing_workflow.classify_intent") as mock_classify, \
+    with patch("workflows.text_processing_workflow.classify_intent") as mock_classify, \
          patch("agents.response_formatter.ResponseFormatterAgent.process") as mock_process:
         # Set up mock returns
         mock_classify.return_value = IntentType.GREETING.value
@@ -170,9 +170,9 @@ async def test_general_response_workflow():
 async def test_invoice_query_workflow():
     """Test the invoice query workflow."""
     # Patch the necessary functions and agents
-    with patch("langchain_app.invoice_query_workflow.convert_to_sql") as mock_convert, \
-         patch("langchain_app.invoice_query_workflow.execute_query") as mock_execute, \
-         patch("langchain_app.invoice_query_workflow.format_query_response") as mock_format:
+    with patch("workflows.invoice_query_workflow.convert_to_sql") as mock_convert, \
+         patch("workflows.invoice_query_workflow.execute_query") as mock_execute, \
+         patch("workflows.invoice_query_workflow.format_query_response") as mock_format:
         
         # Set up mock returns
         mock_convert.return_value = {
@@ -248,10 +248,10 @@ async def test_invoice_query_uses_agentic_rag_after_empty_sql():
         }
     )
 
-    with patch("langchain_app.invoice_query_workflow.convert_to_sql") as mock_convert, \
-         patch("langchain_app.invoice_query_workflow.execute_query") as mock_execute, \
-         patch("langchain_app.invoice_query_workflow.InvoiceRAGAgent", return_value=rag_agent), \
-         patch("langchain_app.invoice_query_workflow.format_query_response", side_effect=fake_format):
+    with patch("workflows.invoice_query_workflow.convert_to_sql") as mock_convert, \
+         patch("workflows.invoice_query_workflow.execute_query") as mock_execute, \
+         patch("workflows.invoice_query_workflow.InvoiceRAGAgent", return_value=rag_agent), \
+         patch("workflows.invoice_query_workflow.format_query_response", side_effect=fake_format):
         mock_convert.side_effect = [
             {"sql_query": "SELECT * FROM invoices WHERE user_id = :user_id"},
             {"sql_query": "SELECT * FROM items WHERE user_id = :user_id"},
@@ -284,8 +284,8 @@ async def test_convert_to_sql_ignores_readonly_debug_log():
         )
     )
 
-    with patch("langchain_app.invoice_query_workflow.TextToSQLConversionAgent", return_value=agent), \
-         patch("langchain_app.invoice_query_workflow._last_sql_query_log_path", return_value=Path("/readonly/last_sql_query.log")), \
+    with patch("workflows.invoice_query_workflow.TextToSQLConversionAgent", return_value=agent), \
+         patch("workflows.invoice_query_workflow._last_sql_query_log_path", return_value=Path("/readonly/last_sql_query.log")), \
          patch.object(Path, "open", side_effect=OSError(30, "Read-only file system")):
         result = await convert_to_sql("Show my expense summary", user_id=1)
 
@@ -312,10 +312,10 @@ def test_post_process_sql_casts_float_aggregates_before_rounding():
 async def test_invoice_creation_workflow():
     """Test the invoice creation workflow."""
     # Patch the necessary functions and agents
-    with patch("langchain_app.invoice_creator_workflow.extract_invoice_entities") as mock_extract, \
-         patch("langchain_app.invoice_creator_workflow.validate_invoice_entities") as mock_validate, \
-         patch("langchain_app.invoice_creator_workflow.generate_invoice_pdf") as mock_generate, \
-         patch("langchain_app.invoice_creator_workflow.format_invoice_creation_response") as mock_format:
+    with patch("workflows.invoice_creator_workflow.extract_invoice_entities") as mock_extract, \
+         patch("workflows.invoice_creator_workflow.validate_invoice_entities") as mock_validate, \
+         patch("workflows.invoice_creator_workflow.generate_invoice_pdf") as mock_generate, \
+         patch("workflows.invoice_creator_workflow.format_invoice_creation_response") as mock_format:
         
         # Set up mock returns
         mock_extract.return_value = {
@@ -351,9 +351,9 @@ async def test_invoice_creation_workflow():
 async def test_file_processing_workflow(sample_file_path):
     """Test the file processing workflow."""
     # Patch the necessary functions and agents
-    with patch("langchain_app.file_processing_workflow.validate_file") as mock_validate, \
-         patch("langchain_app.file_processing_workflow.extract_invoice_data") as mock_extract, \
-         patch("langchain_app.file_processing_workflow.format_extraction_response") as mock_format:
+    with patch("workflows.file_processing_workflow.validate_file") as mock_validate, \
+         patch("workflows.file_processing_workflow.extract_invoice_data") as mock_extract, \
+         patch("workflows.file_processing_workflow.format_extraction_response") as mock_format:
         
         # Set up mock returns for a valid invoice file
         mock_validate.return_value = {
@@ -402,7 +402,7 @@ async def test_file_processing_workflow(sample_file_path):
             "file_type": FileType.BINARY.value
         }
         
-        with patch("langchain_app.file_processing_workflow.format_invalid_file_response") as mock_invalid_format:
+        with patch("workflows.file_processing_workflow.format_invalid_file_response") as mock_invalid_format:
             mock_invalid_format.return_value = {
                 "content": "I couldn't process your file. Not a valid PDF file.",
                 "metadata": {"intent": IntentType.FILE_PROCESSING.value, "success": False},
@@ -505,8 +505,8 @@ async def test_non_financial_supported_image_is_rejected_without_extraction(tmp_
     async def fail_process_invoice_file(*args, **kwargs):
         raise AssertionError("high-confidence non-financial images should not be extracted")
 
-    monkeypatch.setattr("langchain_app.file_processing_workflow.validate_file", fake_validate_file)
-    monkeypatch.setattr("langchain_app.file_processing_workflow.process_invoice_file", fail_process_invoice_file)
+    monkeypatch.setattr("workflows.file_processing_workflow.validate_file", fake_validate_file)
+    monkeypatch.setattr("workflows.file_processing_workflow.process_invoice_file", fail_process_invoice_file)
 
     result = await process_file_message(
         str(image_path),

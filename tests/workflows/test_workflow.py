@@ -8,9 +8,9 @@ import json
 from unittest.mock import MagicMock, patch
 from pathlib import Path
 
-from langchain_app.workflow import process_input, create_workflow_graph, create_workflow
-from langchain_app.state import WorkflowState, InputType, IntentType, UserInput
-from langchain_app.nodes import (
+from workflows.workflow import process_input, create_workflow_graph, create_workflow
+from workflows.state import WorkflowState, InputType, IntentType, UserInput
+from workflows.nodes import (
     input_classifier,
     text_intent_classifier,
     file_validator,
@@ -70,7 +70,7 @@ def test_create_workflow_graph():
     for node in expected_nodes:
         assert node in nodes
 
-@patch("langchain_app.workflow.create_workflow")
+@patch("workflows.workflow.create_workflow")
 def test_process_text_input(mock_create_workflow):
     """Test processing text input."""
     # Create a mock workflow that returns a predefined response
@@ -106,7 +106,7 @@ def test_process_text_input(mock_create_workflow):
     assert initial_state.user_input.content == "Hello"
     assert initial_state.user_input.content_type == InputType.TEXT
 
-@patch("langchain_app.workflow.create_workflow")
+@patch("workflows.workflow.create_workflow")
 def test_process_file_input(mock_create_workflow):
     """Test processing file input."""
     # Create a mock workflow that returns a predefined response
@@ -148,7 +148,7 @@ def test_process_file_input(mock_create_workflow):
     assert initial_state.user_input.file_name == "invoice.png"
     assert initial_state.user_input.mime_type == "image/png"
 
-@patch("langchain_app.workflow.create_workflow")
+@patch("workflows.workflow.create_workflow")
 def test_error_handling(mock_create_workflow):
     """Test error handling in the workflow."""
     # Create a mock workflow that raises an exception
@@ -169,7 +169,7 @@ def test_error_handling(mock_create_workflow):
     assert "Test workflow error" in result["metadata"]["error"]
     assert result["confidence"] == 0.0
 
-@patch("langchain_app.workflow.create_workflow")
+@patch("workflows.workflow.create_workflow")
 def test_missing_response(mock_create_workflow):
     """Test handling a workflow that doesn't produce a response."""
     # Create a mock workflow that returns a state without a response
@@ -191,9 +191,9 @@ def test_missing_response(mock_create_workflow):
     assert "I apologize" in result["content"]
     assert result["confidence"] == 0.0
 
-@patch("langchain_app.nodes.text_intent_classifier")
-@patch("langchain_app.nodes.response_formatter")
-@patch("langchain_app.nodes.input_classifier")
+@patch("workflows.nodes.text_intent_classifier")
+@patch("workflows.nodes.response_formatter")
+@patch("workflows.nodes.input_classifier")
 def test_text_greeting_workflow(mock_input_classifier, mock_response_formatter, mock_text_intent_classifier, mock_state_functions):
     """Test the greeting workflow path."""
     # Mock the node functions
@@ -221,9 +221,9 @@ def test_text_greeting_workflow(mock_input_classifier, mock_response_formatter, 
     )
     
     # Create the workflow with patched nodes
-    with patch("langchain_app.workflow.input_classifier", mock_input_classifier):
-        with patch("langchain_app.workflow.text_intent_classifier", mock_text_intent_classifier):
-            with patch("langchain_app.workflow.response_formatter", mock_response_formatter):
+    with patch("workflows.workflow.input_classifier", mock_input_classifier):
+        with patch("workflows.workflow.text_intent_classifier", mock_text_intent_classifier):
+            with patch("workflows.workflow.response_formatter", mock_response_formatter):
                 workflow = create_workflow()
                 
                 # Run the workflow
@@ -243,10 +243,10 @@ def test_text_greeting_workflow(mock_input_classifier, mock_response_formatter, 
                 mock_text_intent_classifier.assert_called_once()
                 mock_response_formatter.assert_called_once()
 
-@patch("langchain_app.nodes.file_validator")
-@patch("langchain_app.nodes.data_extractor")
-@patch("langchain_app.nodes.response_formatter")
-@patch("langchain_app.nodes.input_classifier")
+@patch("workflows.nodes.file_validator")
+@patch("workflows.nodes.data_extractor")
+@patch("workflows.nodes.response_formatter")
+@patch("workflows.nodes.input_classifier")
 def test_valid_invoice_workflow(mock_input_classifier, mock_response_formatter, mock_data_extractor, mock_file_validator, mock_state_functions):
     """Test the valid invoice workflow path."""
     # Mock the node functions
@@ -282,10 +282,10 @@ def test_valid_invoice_workflow(mock_input_classifier, mock_response_formatter, 
     )
     
     # Create the workflow with patched nodes
-    with patch("langchain_app.workflow.input_classifier", mock_input_classifier):
-        with patch("langchain_app.workflow.file_validator", mock_file_validator):
-            with patch("langchain_app.workflow.data_extractor", mock_data_extractor):
-                with patch("langchain_app.workflow.response_formatter", mock_response_formatter):
+    with patch("workflows.workflow.input_classifier", mock_input_classifier):
+        with patch("workflows.workflow.file_validator", mock_file_validator):
+            with patch("workflows.workflow.data_extractor", mock_data_extractor):
+                with patch("workflows.workflow.response_formatter", mock_response_formatter):
                     workflow = create_workflow()
                     
                     # Run the workflow

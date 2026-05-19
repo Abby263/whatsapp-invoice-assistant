@@ -13,7 +13,7 @@ from uuid import uuid4, UUID
 
 from memory.langgraph_memory import memory_manager, LangGraphMemory, MemoryEntry
 from memory.context_manager import context_manager, ContextManager
-from langchain_app.state import WorkflowState, ConversationHistory, UserInput, InputType, IntentType, AgentResponse
+from workflows.state import WorkflowState, ConversationHistory, UserInput, InputType, IntentType, AgentResponse
 
 
 class TestLangGraphMemory:

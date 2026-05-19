@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional
 from utils.base_agent import BaseAgent
 from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
-from langchain_app.state import IntentType as StateIntentType
+from workflows.state import IntentType as StateIntentType
 from constants.fallback_messages import get_intent_fallback, GENERAL_FALLBACKS
 
 logger = logging.getLogger(__name__)

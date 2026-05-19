@@ -19,7 +19,7 @@ from agents.file_validator import FileValidatorAgent
 from agents.data_extractor import DataExtractorAgent
 from services.llm_factory import LLMFactory
 from services.conversation_policy import compact_whatsapp_message
-from langchain_app.state import IntentType, FileType
+from workflows.state import IntentType, FileType
 from utils.base_agent import AgentInput, AgentContext
 from constants.fallback_messages import FILE_PROCESSING_FALLBACKS
 from storage import StorageConfigurationError, record_media_upload, store_user_upload
