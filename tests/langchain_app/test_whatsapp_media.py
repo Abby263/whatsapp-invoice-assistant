@@ -337,7 +337,7 @@ async def test_format_extraction_response_requests_whatsapp_approval():
     assert "No invoice or line-item rows have been added to analytics yet." in content
     assert "APPROVE 99" in content
     assert "REJECT 99" in content
-    assert "Saved history" in content
+    assert "Saved history" not in content
 
 
 @pytest.mark.asyncio

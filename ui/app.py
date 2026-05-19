@@ -1866,7 +1866,7 @@ def history_api():
 
 @app.route('/api/history/approval', methods=['POST'])
 def history_approval_api():
-    """Approve or reject a pending WhatsApp upload from the web history view."""
+    """Return WhatsApp-only approval guidance for stale web clients."""
     try:
         auth_context, linked_user, auth_response = require_linked_user()
         if auth_response:
@@ -1900,6 +1900,8 @@ def history_approval_api():
             status_code = 404
         elif result.get('metadata', {}).get('hitl_status') == 'invalid_action':
             status_code = 400
+        elif result.get('metadata', {}).get('hitl_status') == 'whatsapp_required':
+            status_code = 409
         return jsonify(result), status_code
     except ValueError as exc:
         return jsonify({

@@ -105,8 +105,6 @@ def _seed_history(session_factory):
             status="uploaded",
             processing_metadata={
                 "hitl_status": "awaiting_confirmation",
-                "hitl_approval_command": "APPROVE 2",
-                "hitl_rejection_command": "REJECT 2",
                 "pending_extraction_summary": {
                     "document_type": "handwritten_ledger",
                     "vendor_name": "Handwritten ledger",
@@ -187,6 +185,7 @@ def test_list_user_history_returns_documents_and_generated_invoices(monkeypatch,
     pending_upload = next(record for record in result["documents"] if record["kind"] == "media")
     assert pending_upload["hitl_status"] == "awaiting_confirmation"
     assert pending_upload["approval_command"] == "APPROVE 2"
+    assert pending_upload["rejection_command"] == "REJECT 2"
     assert pending_upload["content_type"] == "image/jpeg"
     assert pending_upload["file_url"] == "https://signed.example/users/1/invoices/unprocessed"
     assert pending_upload["total_amount"] == 2297270.0

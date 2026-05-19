@@ -171,44 +171,19 @@ async def test_approve_pending_extraction_downloads_and_reprocesses(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_review_pending_upload_from_web_approves(monkeypatch):
-    captured = {}
+async def test_review_pending_upload_from_web_requires_whatsapp(monkeypatch):
+    async def fake_approve(*_args, **_kwargs):
+        raise AssertionError("web approval must not approve pending uploads")
 
-    async def fake_approve(user_id, media_id):
-        captured["user_id"] = user_id
-        captured["media_id"] = media_id
-        return {
-            "content": "Upload approved.",
-            "metadata": {"hitl_status": "confirmed", "approved_media_id": str(media_id)},
-        }
+    def fake_reject(*_args, **_kwargs):
+        raise AssertionError("web approval must not reject pending uploads")
 
     monkeypatch.setattr(hitl_service, "approve_pending_extraction", fake_approve)
+    monkeypatch.setattr(hitl_service, "reject_pending_upload", fake_reject)
 
     result = await hitl_service.review_pending_upload_from_web("7", 77, "approve")
 
-    assert captured == {"user_id": "7", "media_id": 77}
-    assert result["status"] == "success"
-    assert result["message"] == "Upload approved."
-    assert result["metadata"]["hitl_status"] == "confirmed"
-
-
-@pytest.mark.asyncio
-async def test_review_pending_upload_from_web_rejects(monkeypatch):
-    captured = {}
-
-    def fake_reject(user_id, media_id):
-        captured["user_id"] = user_id
-        captured["media_id"] = media_id
-        return {
-            "content": "Upload rejected.",
-            "metadata": {"hitl_status": "rejected", "media_id": str(media_id)},
-        }
-
-    monkeypatch.setattr(hitl_service, "reject_pending_upload", fake_reject)
-
-    result = await hitl_service.review_pending_upload_from_web("7", 77, "reject")
-
-    assert captured == {"user_id": "7", "media_id": 77}
-    assert result["status"] == "success"
-    assert result["message"] == "Upload rejected."
-    assert result["metadata"]["hitl_status"] == "rejected"
+    assert result["status"] == "error"
+    assert result["metadata"]["hitl_status"] == "whatsapp_required"
+    assert "APPROVE 77" in result["message"]
+    assert "REJECT 77" in result["message"]

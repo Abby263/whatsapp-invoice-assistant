@@ -758,6 +758,12 @@ input, select, textarea {
     font-size: 12.5px;
 }
 
+.history-main .history-approval-note {
+    color: var(--brand-strong);
+    font-weight: 700;
+    line-height: 1.35;
+}
+
 .generated-invoice-actions,
 .history-actions {
     display: flex;
