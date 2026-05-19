@@ -2,38 +2,19 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, Iterable, Optional
 
 
 HELP_COMMANDS = {
-    "good afternoon",
-    "good evening",
-    "good morning",
-    "hello",
-    "hello there",
     "help",
-    "hey",
-    "hi",
-    "how are u",
-    "how are you",
-    "how do you work",
-    "how does this work",
-    "hows it going",
     "menu",
     "start",
-    "what can you do",
-    "what do you do",
-    "whats up",
 }
 STATUS_COMMANDS = {"status", "pending", "uploads"}
 
 
 def normalize_command(text: str) -> str:
-    normalized = (text or "").strip().lower().replace("’", "'")
-    normalized = normalized.replace("'", "")
-    normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
-    return " ".join(normalized.split())
+    return " ".join((text or "").strip().lower().split())
 
 
 def is_help_message(text: str) -> bool:
@@ -58,6 +39,14 @@ def build_help_message(pending_count: Optional[int] = None) -> str:
     if pending_count is not None:
         lines.extend(["", f"Pending uploads: {pending_count} (reply STATUS)"])
     return "\n".join(lines)
+
+
+def build_greeting_message() -> str:
+    return (
+        "I'm doing well and ready to help.\n\n"
+        "You can send a receipt, invoice, bill, PDF, or handwritten expense page. "
+        "You can also ask a question about approved spending data."
+    )
 
 
 def build_pending_uploads_message(pending_uploads: Iterable[Dict[str, Any]]) -> str:

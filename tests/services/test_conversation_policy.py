@@ -7,6 +7,7 @@ from services.conversation_policy import (
     off_topic_response,
 )
 from services.whatsapp_copy import (
+    build_greeting_message,
     build_help_message,
     build_pending_uploads_message,
     is_help_message,
@@ -26,11 +27,13 @@ def test_invoice_and_greeting_messages_stay_in_scope():
     assert is_off_topic_message("What is the pending status?") is False
 
 
-def test_casual_greetings_are_deterministic_help_messages():
-    assert is_help_message("How are you") is True
-    assert is_help_message("How are you?") is True
-    assert is_help_message("What's up?") is True
-    assert is_help_message("What can you do?") is True
+def test_only_command_words_are_deterministic_help_messages():
+    assert is_help_message("help") is True
+    assert is_help_message("menu") is True
+    assert is_help_message("start") is True
+    assert is_help_message("How are you") is False
+    assert is_help_message("What's up?") is False
+    assert is_help_message("What can you do?") is False
     assert is_help_message("How much did I spend?") is False
 
 
@@ -61,6 +64,15 @@ def test_help_message_is_deterministic_and_mentions_status():
     assert "Receipt Intelligence" in message
     assert "APPROVE <id>" in message
     assert "Pending uploads: 2" in message
+
+
+def test_greeting_message_answers_naturally_without_showing_help_menu():
+    message = build_greeting_message()
+
+    assert "doing well" in message
+    assert "ready to help" in message
+    assert "Receipt Intelligence" not in message
+    assert "Business Assistant" not in message
 
 
 def test_pending_uploads_message_lists_approval_commands():

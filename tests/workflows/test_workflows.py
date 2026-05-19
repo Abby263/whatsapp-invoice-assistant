@@ -117,25 +117,19 @@ async def test_intent_classification(sample_text_input, sample_query_input,
 async def test_text_processing_workflow(sample_greeting_input):
     """Test the text processing workflow for greeting messages."""
     # Patch the dependent functions to avoid actual API calls, including the entire general_response_workflow module
-    with patch("workflows.text_processing_workflow.classify_intent") as mock_classify, \
-         patch("agents.response_formatter.ResponseFormatterAgent.process") as mock_process:
+    with patch("workflows.text_processing_workflow.classify_intent") as mock_classify:
         # Set up mock returns
         mock_classify.return_value = IntentType.GREETING.value
-        mock_process.return_value = {
-            "content": GENERATED_GREETING_RESPONSE,
-            "confidence": 0.8,
-            "metadata": {},
-        }
         
         # Call the function under test
         result = await process_text_message(sample_greeting_input)
         
         # Verify the result
-        assert "WhatsApp Invoice Assistant" in result["content"]
-        assert "receipt photo or PDF" in result["content"]
-        assert "What did I spend" in result["content"]
+        assert "doing well" in result["content"]
+        assert "ready to help" in result["content"]
+        assert "Receipt Intelligence" not in result["content"]
         assert result["metadata"]["intent"] == IntentType.GREETING.value
-        assert 0.4 <= result["confidence"] <= 0.9  # Allow for a range of confidence values
+        assert result["confidence"] == 0.95
         
         # Verify the mock was called correctly
         mock_classify.assert_called_once_with(sample_greeting_input, None)
@@ -161,8 +155,8 @@ async def test_general_response_workflow():
         
         # Also test greeting process
         result = await process_greeting("Hello")
-        assert "I'm your WhatsApp Invoice Assistant" in result["content"]
-        assert "create an invoice" in result["content"]
+        assert "doing well" in result["content"]
+        assert "ready to help" in result["content"]
         assert result["metadata"]["intent"] == IntentType.GREETING.value
 
 
