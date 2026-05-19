@@ -370,4 +370,49 @@ class ResponseFormatterAgent(BaseAgent):
                 summary += "\n" + "\n".join(vendor_lines)
             return summary
 
+        if format_type == "query_result" and isinstance(parsed, dict):
+            source = str(parsed.get("source") or "")
+            if source.startswith("agentic_rag") or source in {"rag", "rag_fallback", "vector_similarity"}:
+                return self._format_rag_query_result(parsed)
+
         return None
+
+    def _format_rag_query_result(self, payload: Dict[str, Any]) -> str:
+        results = payload.get("results") if isinstance(payload.get("results"), list) else []
+        if not results:
+            return "I could not find matching approved receipt data."
+
+        lines = [
+            f"I found {len(results)} relevant approved receipt record{'s' if len(results) != 1 else ''}:"
+        ]
+        for index, row in enumerate(results[:5], start=1):
+            if not isinstance(row, dict):
+                continue
+            vendor = str(row.get("vendor") or "Unknown vendor").strip()
+            date = str(row.get("date") or row.get("invoice_date") or "date not visible").split("T")[0]
+            currency = str(row.get("currency") or "").strip().upper()
+            description = str(row.get("description") or row.get("content_text") or "receipt").strip()
+            amount = row.get("total_price")
+            if amount in (None, ""):
+                amount = row.get("total_amount")
+            amount_text = self._format_amount(amount, currency)
+            match_type = ", ".join(row.get("match_types") or [row.get("result_type") or "match"])
+            lines.append(
+                f"{index}. {vendor} | {date} | {description[:90]} | {amount_text} | {match_type}"
+            )
+
+        if len(results) > 5:
+            lines.append(f"... {len(results) - 5} more matching records")
+        lines.append("Source: approved saved receipts only.")
+        return "\n".join(lines)
+
+    def _format_amount(self, amount: Any, currency: str) -> str:
+        if amount in (None, ""):
+            return "amount not visible"
+        try:
+            amount_value = round(float(amount), 2)
+            if currency:
+                return f"{amount_value:g} {currency}"
+            return f"{amount_value:g}"
+        except (TypeError, ValueError):
+            return str(amount)

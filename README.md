@@ -31,10 +31,11 @@ If production environment variables are missing, the hosted app falls back to de
 - Extracts merchant, date, totals, taxes, payment details, and line items from receipts and handwritten expense ledgers.
 - Stores original receipt files in a private Supabase Storage bucket.
 - Stores normalized invoice, item, media, message, user, and generated-invoice records in Supabase Postgres.
-- Generates OpenAI embeddings and stores them in pgvector columns for semantic search.
-- Answers user-scoped finance questions from extracted data.
+- Generates OpenAI embeddings and stores them in pgvector columns for guarded agentic RAG.
+- Answers user-scoped finance questions from approved extracted data using SQL, full-document retrieval, line-item retrieval, and keyword fallback.
 - Generates outgoing invoices from WhatsApp or the website using saved seller/client defaults.
 - Shows parsing quality signals, row counts, and review warnings for handwritten or low-confidence uploads.
+- Lets signed-in users approve or reject pending WhatsApp uploads from Saved history, or use WhatsApp `APPROVE <upload_id>` / `REJECT <upload_id>` commands.
 - Lets signed-in users delete one saved upload, one generated invoice, or all historical data from the web app.
 - Shows receipt, invoice, workflow, storage, database, and vector status in the UI.
 
@@ -74,10 +75,10 @@ flowchart TB
         ROUTER["Text and media router"]
         VALIDATOR["Document validator"]
         EXTRACTOR["Structured document extraction"]
-        HITL["WhatsApp HITL approval"]
+        HITL["HITL approval"]
         STORE["Confirmed database storage"]
         SQL["User-scoped Text-to-SQL"]
-        RAG["Vector search"]
+        RAG["Agentic RAG retrieval"]
         GENERATOR["Invoice generation"]
         HIST["History deletion"]
         FORMATTER["Compact WhatsApp formatter"]
@@ -109,8 +110,8 @@ flowchart TB
     EXTRACTOR --> CHAT
     EXTRACTOR --> STORAGE
     EXTRACTOR --> HITL
-    HITL -->|"APPROVE upload_id"| STORE
-    HITL -->|"REJECT upload_id"| STORAGE
+    HITL -->|"APPROVE upload_id or web approve"| STORE
+    HITL -->|"REJECT upload_id or web reject"| STORAGE
     STORE --> DB
     STORE --> EMBED
     EMBED --> VECTOR
@@ -151,11 +152,13 @@ Every uploaded file follows the same contract before it reaches analytics:
 4. Valid files are uploaded to Supabase Storage under a user-scoped path and registered in `media`.
 5. The extractor returns the canonical schema from [schemas/llm_outputs/document_extraction.py](schemas/llm_outputs/document_extraction.py).
 6. The normalizer fixes row-level ledger dates, computes ledger totals from extracted rows, and records `extraction_quality` warnings when review is needed.
-7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands.
-8. Only after `APPROVE <upload_id>` does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
-9. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
-10. Text turns load recent Supabase-backed conversation memory so short follow-ups stay attached to the same user context across WhatsApp and the website.
-11. Deletes require human confirmation: browser deletes include a confirmation dialog, and WhatsApp deletes require exact `CONFIRM DELETE ...` commands before rows or files are removed.
+7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands, and the same pending upload appears under Saved history on the website.
+8. The linked user can approve or reject from Saved history, or reply on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`.
+9. Only after approval does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
+10. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
+11. Text turns load recent Supabase-backed conversation memory so short follow-ups stay attached to the same user context across WhatsApp and the website.
+12. Spend questions use user-scoped SQL first, then the agentic RAG retriever over approved `invoice_embeddings`, approved `items.description_embedding`, and finalized receipt keywords.
+13. Deletes require human confirmation: browser deletes include a confirmation dialog, and WhatsApp deletes require exact `CONFIRM DELETE ...` commands before rows or files are removed.
 
 ## Runtime Components
 
@@ -193,7 +196,7 @@ Uploaded receipt files and generated invoice documents are stored in the private
 
 Conversation memory is user scoped. For production WhatsApp and web requests, the agent loads memory from `conversations` and `messages` by the resolved internal `users.id`; caller-supplied history is ignored unless it comes from an internal trusted workflow path.
 
-Receipt extraction uses a WhatsApp human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web history view, but invoice rows, line items, embeddings, and analytics are created only after the same linked WhatsApp user replies `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
+Receipt extraction uses a human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web Saved history view, but invoice rows, line items, embeddings, and analytics are created only after approval. The same linked user can approve/reject from the website or reply on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
 
 ## Why Supabase Storage Instead Of S3
 
@@ -282,9 +285,10 @@ make test                # Run the pytest suite
 4. Sign in with Clerk on the website.
 5. Use **Link WhatsApp** and enter the WhatsApp number that will message the Twilio sender.
 6. Send `Hi` on WhatsApp and confirm the assistant responds.
-7. Send a receipt image or PDF and confirm it appears in the web app.
-8. Ask a question over the stored data, such as `What did I spend this month?`.
-9. Generate an outgoing invoice and confirm it appears in generated invoices and analytics.
+7. Send a receipt image or PDF and confirm it appears in Saved history as a pending upload with Approve and Reject actions.
+8. Approve the upload and confirm the receipt moves into saved analytics.
+9. Ask a question over the stored data, such as `What did I spend this month?`.
+10. Generate an outgoing invoice and confirm it appears in generated invoices and analytics.
 
 ## Documentation
 

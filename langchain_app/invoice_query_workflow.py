@@ -168,8 +168,7 @@ async def process_invoice_query(
                             logger.info(f"RAG search returned {len(rag_result.get('results', []))} results")
                             query_result = rag_result
                             results = rag_result.get("results", [])
-                            # Add a flag to indicate this came from RAG
-                            query_result["source"] = "rag"
+                            query_result["source"] = "agentic_rag"
                 else:
                     logger.error(f"Error generating semantic SQL: {semantic_sql_result['error']}")
 
@@ -186,7 +185,7 @@ async def process_invoice_query(
                         logger.info(f"RAG fallback search returned {len(rag_result.get('results', []))} results")
                         query_result = rag_result
                         results = rag_result.get("results", [])
-                        query_result["source"] = "rag_fallback"
+                        query_result["source"] = "agentic_rag_fallback"
 
             logger.info(f"Final query returned {len(results)} results")
 
@@ -223,6 +222,8 @@ async def process_invoice_query(
                 "query": query_result.get("sql_query", sql_query),
                 "success": query_result.get("success", False),
                 "source": query_result.get("source", "sql"),
+                "retrieval_plan": query_result.get("retrieval_plan"),
+                "retrieval_checks": query_result.get("checks"),
             })
             formatted_response["sql_query"] = query_result.get("sql_query", sql_query)
             formatted_response["execution_time"] = round(time.time() - start_time, 2)

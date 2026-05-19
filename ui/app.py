@@ -1863,6 +1863,56 @@ def history_api():
             'message': f"Error handling history request: {str(e)}"
         }), 500
 
+
+@app.route('/api/history/approval', methods=['POST'])
+def history_approval_api():
+    """Approve or reject a pending WhatsApp upload from the web history view."""
+    try:
+        auth_context, linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
+        payload = request.get_json(silent=True) or {}
+        user_id = linked_user.id if linked_user else payload.get('user_id', USER_ID)
+        media_id = payload.get('media_id') or payload.get('id')
+        action = payload.get('action')
+        if not user_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'User ID is required'
+            }), 400
+        if not media_id:
+            return jsonify({
+                'status': 'error',
+                'message': 'Media ID is required'
+            }), 400
+
+        from services.hitl_service import review_pending_upload_from_web
+
+        result = run_async(
+            review_pending_upload_from_web,
+            int(user_id),
+            int(media_id),
+            action,
+        )
+        status_code = 200 if result.get('status') == 'success' else 409
+        if result.get('metadata', {}).get('hitl_status') == 'not_found':
+            status_code = 404
+        elif result.get('metadata', {}).get('hitl_status') == 'invalid_action':
+            status_code = 400
+        return jsonify(result), status_code
+    except ValueError as exc:
+        return jsonify({
+            'status': 'error',
+            'message': str(exc)
+        }), 400
+    except Exception as e:
+        logger.exception(f"Error handling upload approval request: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f"Error handling upload approval request: {str(e)}"
+        }), 500
+
 @app.route('/api/embeddings/update', methods=['POST'])
 def update_embeddings():
     """

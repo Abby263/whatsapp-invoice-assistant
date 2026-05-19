@@ -28,5 +28,10 @@ def test_compact_whatsapp_message_truncates_readably():
 
 
 def test_media_processing_ack_mentions_attachment_count():
-    assert "WhatsApp may deliver them one at a time" in media_processing_ack(1)
-    assert media_processing_ack(2) == "Received 2 files. I am processing them now and will send a short summary when done."
+    assert media_processing_ack(1) == (
+        "Received a file. I am processing it now and will send a final status for this file."
+    )
+    assert "forwarded multiple images" not in media_processing_ack(1)
+    assert media_processing_ack(2) == (
+        "Received 2 files. I am processing them now and will send a final status when all files are done."
+    )

@@ -343,6 +343,9 @@ def _serialize_invoice_document(invoice: Any, media_records: Sequence[Any], item
 
 def _serialize_media_document(media: Any) -> Dict[str, Any]:
     metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
+    review_summary = metadata.get("pending_extraction_summary")
+    if not isinstance(review_summary, dict):
+        review_summary = {}
     access_url = _media_access_url(media)
     return {
         "kind": "media",
@@ -351,16 +354,17 @@ def _serialize_media_document(media: Any) -> Dict[str, Any]:
         "invoice_id": None,
         "title": media.original_filename or media.filename or "Upload",
         "filename": media.original_filename or media.filename,
-        "date": None,
-        "total_amount": None,
-        "currency": None,
-        "item_count": 0,
+        "date": _visible_review_value(review_summary.get("transaction_date")),
+        "total_amount": review_summary.get("total_amount"),
+        "currency": review_summary.get("currency"),
+        "item_count": int(review_summary.get("item_count") or 0),
         "status": media.status or "uploaded",
         "processing_status": metadata.get("processing_status"),
         "hitl_status": metadata.get("hitl_status"),
         "hitl_action": metadata.get("hitl_action"),
         "approval_command": metadata.get("hitl_approval_command"),
         "rejection_command": metadata.get("hitl_rejection_command"),
+        "review_summary": review_summary,
         "created_at": _iso(media.created_at),
         "file_path": media.file_path,
         "file_url": access_url,
@@ -459,6 +463,13 @@ def _coerce_int(value: Any, label: str) -> int:
         return int(str(value))
     except (TypeError, ValueError):
         raise ValueError(f"Invalid {label}") from None
+
+
+def _visible_review_value(value: Any) -> Optional[str]:
+    text = str(value or "").strip()
+    if not text or text.lower() == "not visible":
+        return None
+    return text
 
 
 def _unique_ints(values: Iterable[Any]) -> List[int]:

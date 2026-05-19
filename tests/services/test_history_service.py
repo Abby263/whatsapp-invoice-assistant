@@ -107,6 +107,17 @@ def _seed_history(session_factory):
                 "hitl_status": "awaiting_confirmation",
                 "hitl_approval_command": "APPROVE 2",
                 "hitl_rejection_command": "REJECT 2",
+                "pending_extraction_summary": {
+                    "document_type": "handwritten_ledger",
+                    "vendor_name": "Handwritten ledger",
+                    "transaction_date": "2026-05-16",
+                    "total_amount": 2297270.0,
+                    "currency": "INR",
+                    "item_count": 28,
+                    "item_label": "entries",
+                    "needs_review": True,
+                    "sample_items": ["no date | Dm Delhi | 400000.0 INR"],
+                },
             },
         ),
         Media(
@@ -178,6 +189,10 @@ def test_list_user_history_returns_documents_and_generated_invoices(monkeypatch,
     assert pending_upload["approval_command"] == "APPROVE 2"
     assert pending_upload["content_type"] == "image/jpeg"
     assert pending_upload["file_url"] == "https://signed.example/users/1/invoices/unprocessed"
+    assert pending_upload["total_amount"] == 2297270.0
+    assert pending_upload["currency"] == "INR"
+    assert pending_upload["item_count"] == 28
+    assert pending_upload["review_summary"]["needs_review"] is True
     invoice_record = next(record for record in result["documents"] if record["kind"] == "invoice")
     assert invoice_record["file_url"] == "https://signed.example/users/1/invoices/ledger"
     assert result["generated_invoices"][0]["invoice_number"] == "OUT-001"

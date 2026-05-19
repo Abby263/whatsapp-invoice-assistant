@@ -337,6 +337,38 @@ async def test_format_extraction_response_requests_whatsapp_approval():
     assert "No invoice or line-item rows have been added to analytics yet." in content
     assert "APPROVE 99" in content
     assert "REJECT 99" in content
+    assert "Saved history" in content
+
+
+@pytest.mark.asyncio
+async def test_format_extraction_response_does_not_call_pending_entries_saved():
+    result = await file_processing_workflow.format_extraction_response(
+        {
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "transaction": {"date": "2026-02-15"},
+                "financial": {"total": 7825.0, "currency": "INR"},
+                "additional_info": {"document_type": "handwritten_ledger"},
+                "items": [
+                    {"description": "Printing", "total_price": 500.0},
+                    {"description": "Paper", "total_price": 300.0},
+                    {"description": "Ink", "total_price": 200.0},
+                    {"description": "Courier", "total_price": 100.0},
+                    {"description": "Fuel", "total_price": 50.0},
+                ],
+            },
+            "metadata": {
+                "hitl_status": "awaiting_confirmation",
+                "hitl_approval_command": "APPROVE 99",
+                "hitl_rejection_command": "REJECT 99",
+            },
+        },
+        "ledger.jpg",
+    )
+
+    content = result["content"]
+    assert "... 1 more entries extracted" in content
+    assert "... 1 more entries saved" not in content
 
 
 @pytest.mark.asyncio

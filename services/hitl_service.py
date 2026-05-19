@@ -178,6 +178,42 @@ async def approve_pending_extraction(
                 logger.debug("Temporary HITL file already removed: %s", temp_path)
 
 
+async def review_pending_upload_from_web(
+    user_id: Union[str, UUID, int],
+    media_id: int,
+    action: str,
+) -> Dict[str, Any]:
+    """Approve or reject a pending upload from the authenticated web UI."""
+
+    normalized_action = str(action or "").strip().lower()
+    if normalized_action == "approve":
+        result = await approve_pending_extraction(user_id, media_id)
+    elif normalized_action == "reject":
+        result = reject_pending_upload(user_id, media_id)
+    else:
+        return {
+            "status": "error",
+            "message": "Review action must be approve or reject.",
+            "metadata": {
+                "hitl_status": "invalid_action",
+                "media_id": str(media_id),
+                "action": action,
+            },
+        }
+
+    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    hitl_status = metadata.get("hitl_status")
+    successful_statuses = {"confirmed", "already_confirmed"} if normalized_action == "approve" else {"rejected"}
+    status = "success" if hitl_status in successful_statuses else "error"
+    return {
+        "status": status,
+        "message": result.get("content") or "",
+        "metadata": metadata,
+        "media_id": str(media_id),
+        "action": normalized_action,
+    }
+
+
 def reject_pending_upload(user_id: Union[str, UUID, int], media_id: int) -> Dict[str, Any]:
     """Discard a pending upload after the user explicitly rejects it."""
 

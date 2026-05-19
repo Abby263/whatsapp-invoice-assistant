@@ -17,7 +17,7 @@
             document.documentElement.dataset.theme = savedTheme;
         }
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260517-connections') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260518-review') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -439,7 +439,7 @@
                         <div class="card-head">
                             <div>
                                 <h3>Saved history</h3>
-                                <p>Review and delete receipt uploads, extracted records, and generated invoices for the linked user.</p>
+                                <p>Review pending uploads, saved receipts, and generated invoices for the linked user.</p>
                             </div>
                             <div class="card-head-actions">
                                 <button type="button" class="btn btn-secondary" id="refreshHistoryBtn">
@@ -456,7 +456,7 @@
                             <div class="history-list" id="historyList">
                                 <div class="empty-state" id="historyEmpty">
                                     <i class="fas fa-box-archive"></i>
-                                    <p>No saved receipt history for this user yet.</p>
+                                    <p>No receipt uploads or invoices for this user yet.</p>
                                 </div>
                             </div>
                         </div>
@@ -799,6 +799,6 @@
     </div>
 
     <!-- Scripts -->
-    <script src="{{ url_for('static', filename='js/app.js', v='20260517-connections') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js', v='20260518-review') }}"></script>
 </body>
 </html>

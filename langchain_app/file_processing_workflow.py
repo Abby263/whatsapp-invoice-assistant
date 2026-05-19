@@ -704,6 +704,7 @@ def _mark_media_awaiting_approval(
         processing_metadata={
             **hitl_metadata,
             "processing_status": "awaiting_human_confirmation",
+            "pending_extraction_summary": _pending_extraction_summary(extraction_result),
             "extraction_quality": (
                 extraction_result.get("data", {}).get("extraction_quality")
                 if isinstance(extraction_result.get("data"), dict)
@@ -712,6 +713,28 @@ def _mark_media_awaiting_approval(
         },
     )
     return hitl_metadata
+
+
+def _pending_extraction_summary(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Store a compact review summary without finalizing analytics rows."""
+
+    data = extraction_result.get("data") if isinstance(extraction_result, dict) else {}
+    fields = _document_response_fields(data if isinstance(data, dict) else {})
+    items = [item for item in fields["items"] if isinstance(item, dict)]
+    return {
+        "document_type": fields["document_type"],
+        "vendor_name": fields["vendor_name"],
+        "transaction_date": fields["transaction_date"],
+        "total_amount": fields["total_amount"],
+        "currency": fields["currency"],
+        "item_count": len(items),
+        "item_label": "entries" if fields["is_ledger"] else "items",
+        "needs_review": bool((fields.get("extraction_quality") or {}).get("needs_review")),
+        "sample_items": [
+            _format_item_line(item, fields["currency"], fields["is_ledger"])
+            for item in items[:4]
+        ],
+    }
 
 
 def _prepare_file_metadata(
@@ -1155,7 +1178,8 @@ async def format_extraction_response(
             lines.append(f"{index}. {_format_item_line(item, fields['currency'], fields['is_ledger'])}")
         remaining = len(items) - 4
         if remaining > 0:
-            lines.append(f"... {remaining} more {item_label} saved")
+            item_state = "extracted" if hitl_pending else "saved"
+            lines.append(f"... {remaining} more {item_label} {item_state}")
 
     if file_storage:
         lines.append("")
@@ -1168,8 +1192,7 @@ async def format_extraction_response(
         lines.append("No invoice or line-item rows have been added to analytics yet.")
         if approval_command and rejection_command:
             lines.append(f"Reply {approval_command} to save, or {rejection_command} to discard.")
-        else:
-            lines.append("Open the website to review this pending upload.")
+        lines.append("You can also review this pending upload from Saved history on the website.")
     else:
         lines.append("Next: ask \"What did I spend on printing?\"")
     response = compact_whatsapp_message("\n".join(lines), max_chars=1000)
