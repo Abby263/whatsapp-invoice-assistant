@@ -274,7 +274,6 @@ def home():
 @app.get("/chat")
 @app.get("/receipts")
 @app.get("/inspector")
-@app.get("/connections")
 @app.get("/settings")
 def workspace_route():
     return render_template("index.html")
@@ -380,15 +379,24 @@ def auth_sync():
         return auth_context
     if _live_backend_enabled():
         try:
-            identity = live_backend.get_auth_identity(auth_context)
+            identity = live_backend.sync_auth_identity(auth_context)
             return jsonify(
                 {
                     "status": "success",
-                    "message": "Clerk session synchronized",
+                    "message": "Phone account synchronized",
                     "identity": identity,
                     "linked_user": identity.get("linked_user") if identity else None,
                 }
             )
+        except ValueError as exc:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": str(exc),
+                    "needs_phone": True,
+                    "identity": live_backend.get_auth_identity(auth_context),
+                }
+            ), 409
         except Exception as exc:
             return _live_error(exc)
 
@@ -415,8 +423,9 @@ def auth_link_whatsapp():
             return jsonify(
                 {
                     "status": "error",
-                    "message": "Sign in with Clerk before linking a WhatsApp number.",
+                    "message": "Sign in with a verified phone number before opening the workspace.",
                     "auth_required": True,
+                    "needs_phone": True,
                 }
             ), 401
         try:
@@ -427,7 +436,7 @@ def auth_link_whatsapp():
             return jsonify(
                 {
                     "status": "success",
-                    "message": "Clerk account linked to WhatsApp number",
+                    "message": "Phone account synchronized",
                     "user": user,
                     "identity": {
                         "clerk_user_id": auth_context.clerk_user_id,
@@ -437,7 +446,7 @@ def auth_link_whatsapp():
                 }
             )
         except ValueError as exc:
-            return _live_error(exc, 409)
+            return jsonify({"status": "error", "message": str(exc), "needs_phone": True}), 409
         except Exception as exc:
             return _live_error(exc)
     if not auth_context:
@@ -542,7 +551,7 @@ def create_user():
         try:
             return jsonify(live_backend.create_or_link_user(auth_context, data))
         except ValueError as exc:
-            return _live_error(exc, 409)
+            return jsonify({"status": "error", "message": str(exc), "needs_phone": True}), 409
         except Exception as exc:
             return _live_error(exc)
     whatsapp_number = live_backend.normalize_whatsapp_number(
@@ -632,8 +641,9 @@ def message():
         return jsonify(
             {
                 "status": "error",
-                "message": "Link your WhatsApp number before querying receipts.",
+                "message": "Sign in with a verified phone number before querying receipts.",
                 "needs_link": True,
+                "needs_phone": True,
             }
         ), 403
 
@@ -899,8 +909,9 @@ def upload():
         return jsonify(
             {
                 "status": "error",
-                "message": "Link your WhatsApp number before uploading receipts.",
+                "message": "Sign in with a verified phone number before uploading receipts.",
                 "needs_link": True,
+                "needs_phone": True,
             }
         ), 403
 

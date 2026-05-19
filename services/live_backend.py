@@ -8,7 +8,6 @@ when production secrets are not configured.
 from __future__ import annotations
 
 import asyncio
-import json
 import mimetypes
 import os
 import shutil
@@ -22,6 +21,7 @@ from utils.phone_numbers import normalize_whatsapp_number as normalize_phone_num
 
 
 DEFAULT_WHATSAPP_NUMBER = "+1234567890"
+VERIFIED_PHONE_REQUIRED_MESSAGE = "Sign in with a verified phone number first"
 
 
 def is_live_backend_enabled() -> bool:
@@ -137,25 +137,49 @@ def get_auth_identity(auth_context: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def link_clerk_to_whatsapp(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+def sync_verified_phone_user(auth_context: Any) -> Dict[str, Any]:
+    """Create or link the app user from Clerk's verified phone profile."""
+
     from database.connection import get_db_session
     from database.user_utils import link_clerk_user_to_whatsapp
+    from utils.clerk_auth import ClerkAuthError, verified_phone_profile_from_clerk
 
-    whatsapp_number = normalize_whatsapp_number(payload.get("whatsapp_number"), default="")
-    if not whatsapp_number:
-        raise ValueError("WhatsApp number is required")
+    try:
+        profile = verified_phone_profile_from_clerk(auth_context)
+    except ClerkAuthError as exc:
+        raise ValueError(str(exc)) from exc
 
     session = get_db_session()
     try:
         return link_clerk_user_to_whatsapp(
             session=session,
             clerk_user_id=auth_context.clerk_user_id,
-            whatsapp_number=whatsapp_number,
-            name=payload.get("name"),
-            email=payload.get("email"),
+            whatsapp_number=profile.phone_number,
+            name=profile.name,
+            email=profile.email,
         )
     finally:
         session.close()
+
+
+def sync_auth_identity(auth_context: Any) -> Optional[Dict[str, Any]]:
+    """Ensure a signed-in phone account has an app user and return identity."""
+
+    if not auth_context:
+        return None
+    linked_user = sync_verified_phone_user(auth_context)
+    return {
+        "clerk_user_id": auth_context.clerk_user_id,
+        "session_id": auth_context.session_id,
+        "linked_user": linked_user,
+        "needs_link": False,
+    }
+
+
+def link_clerk_to_whatsapp(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    del payload
+
+    return sync_verified_phone_user(auth_context)
 
 
 def get_or_create_user_for_whatsapp(
@@ -188,7 +212,17 @@ def list_users(auth_context: Any = None) -> Dict[str, Any]:
             "needs_link": False,
         }
     if auth_context:
-        return {"status": "success", "users": [], "needs_link": True}
+        try:
+            synced_user = sync_verified_phone_user(auth_context)
+            return {"status": "success", "users": [synced_user], "needs_link": False}
+        except ValueError as exc:
+            return {
+                "status": "success",
+                "users": [],
+                "needs_link": True,
+                "needs_phone": True,
+                "message": str(exc),
+            }
 
     from database.connection import get_db_session
     from database.connection import ensure_application_schema
@@ -209,6 +243,28 @@ def initialize_workspace(
     reset_conversation: bool = False,
 ) -> Dict[str, Any]:
     linked_user = get_linked_user(auth_context.clerk_user_id) if auth_context else None
+    if not linked_user and auth_context:
+        try:
+            synced_user = sync_verified_phone_user(auth_context)
+            conversation_id = _reset_or_current_conversation_id(synced_user["id"], reset_conversation)
+            return {
+                "status": "success",
+                "message": "Workspace initialized",
+                "conversation_id": conversation_id,
+                "user_id": synced_user["id"],
+                "whatsapp_number": synced_user["whatsapp_number"],
+                "needs_link": False,
+            }
+        except ValueError as exc:
+            return {
+                "status": "success",
+                "message": str(exc),
+                "conversation_id": _conversation_key(auth_context.clerk_user_id),
+                "user_id": None,
+                "whatsapp_number": normalize_whatsapp_number(whatsapp_number),
+                "needs_link": True,
+                "needs_phone": True,
+            }
     if linked_user:
         user = serialize_user(linked_user)
         conversation_id = _reset_or_current_conversation_id(user["id"], reset_conversation)
@@ -223,11 +279,12 @@ def initialize_workspace(
     if auth_context:
         return {
             "status": "success",
-            "message": "Sign in complete; link your WhatsApp number to load receipts.",
+            "message": "Sign in with a verified phone number to load receipts.",
             "conversation_id": _conversation_key(auth_context.clerk_user_id),
             "user_id": None,
             "whatsapp_number": normalize_whatsapp_number(whatsapp_number),
             "needs_link": True,
+            "needs_phone": True,
         }
 
     user = get_or_create_user_for_whatsapp(whatsapp_number or DEFAULT_WHATSAPP_NUMBER)
@@ -244,10 +301,10 @@ def initialize_workspace(
 
 def create_or_link_user(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
     if auth_context:
-        user = link_clerk_to_whatsapp(auth_context, payload)
+        user = sync_verified_phone_user(auth_context)
         return {
             "status": "success",
-            "message": "Clerk account linked to WhatsApp number",
+            "message": "Phone account synchronized",
             "user": user,
             "identity": {
                 "clerk_user_id": auth_context.clerk_user_id,
@@ -277,7 +334,10 @@ def resolve_request_user(
     if linked_user:
         return serialize_user(linked_user), False
     if auth_context:
-        return None, True
+        try:
+            return sync_verified_phone_user(auth_context), False
+        except ValueError:
+            return None, True
     if payload.get("user_id"):
         from database.connection import get_db_session
         from database.schemas import User
@@ -304,8 +364,9 @@ def process_chat_message(auth_context: Any, payload: Dict[str, Any]) -> Dict[str
     if needs_link:
         return {
             "status": "error",
-            "message": "Link your WhatsApp number before querying receipts.",
+            "message": "Sign in with a verified phone number before querying receipts.",
             "needs_link": True,
+            "needs_phone": True,
         }
     message = (payload.get("message") or "").strip()
     if not message:
@@ -340,8 +401,9 @@ def process_upload(auth_context: Any, uploaded_file: Any, form: Dict[str, Any]) 
     if needs_link:
         return {
             "status": "error",
-            "message": "Link your WhatsApp number before uploading receipts.",
+            "message": "Sign in with a verified phone number before uploading receipts.",
             "needs_link": True,
+            "needs_phone": True,
         }
 
     filename = secure_filename(uploaded_file.filename) or "receipt"
@@ -388,7 +450,7 @@ def get_company_profile(user_id: Optional[str], auth_context: Any = None) -> Dic
 
     user, needs_link = resolve_request_user(auth_context, {"user_id": user_id} if user_id else {})
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     target_id = int(user["id"] if user else user_id)
 
     session = get_db_session()
@@ -413,7 +475,7 @@ def update_company_profile(payload: Dict[str, Any], auth_context: Any = None) ->
 
     user, needs_link = resolve_request_user(auth_context, payload)
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     session = get_db_session()
     try:
         preferences = update_invoice_defaults(session, int(user["id"]), payload)
@@ -436,7 +498,7 @@ def list_generated(auth_context: Any, query: Optional[Dict[str, Any]] = None) ->
 
     user, needs_link = resolve_request_user(auth_context, query or {})
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     invoices = list_generated_invoices(int(user["id"]))
     analytics = get_generated_invoice_stats(int(user["id"]))
     return {
@@ -452,7 +514,7 @@ def create_generated(auth_context: Any, payload: Dict[str, Any], source: str = "
 
     user, needs_link = resolve_request_user(auth_context, payload)
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     invoice = generate_and_persist_invoice(payload, user_id=int(user["id"]), source=source)
     return {
         "status": "success",
@@ -469,7 +531,7 @@ def generated_analytics(auth_context: Any, query: Optional[Dict[str, Any]] = Non
 
     user, needs_link = resolve_request_user(auth_context, query or {})
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     return {
         "status": "success",
         "analytics": get_generated_invoice_stats(int(user["id"])),
@@ -481,7 +543,7 @@ def list_history(auth_context: Any, query: Optional[Dict[str, Any]] = None) -> D
 
     user, needs_link = resolve_request_user(auth_context, query or {})
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     limit = (query or {}).get("limit") or 50
     return list_user_history(int(user["id"]), int(limit))
 
@@ -491,7 +553,7 @@ def delete_history(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]
 
     user, needs_link = resolve_request_user(auth_context, payload)
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     return delete_user_history(int(user["id"]), payload)
 
 
@@ -500,7 +562,7 @@ async def review_history_upload(auth_context: Any, payload: Dict[str, Any]) -> D
 
     user, needs_link = resolve_request_user(auth_context, payload)
     if needs_link:
-        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
     media_id = payload.get("media_id") or payload.get("id")
     if not media_id:
         return {"status": "error", "message": "Media ID is required"}

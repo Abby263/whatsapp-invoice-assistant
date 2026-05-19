@@ -8,9 +8,15 @@ Authorization header and the backend verifies them against the Clerk JWKS.
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
+
+from utils.phone_numbers import normalize_whatsapp_number
+
+
+logger = logging.getLogger(__name__)
 
 
 class ClerkAuthError(Exception):
@@ -25,6 +31,16 @@ class ClerkAuthContext:
     session_id: Optional[str]
     issuer: Optional[str]
     claims: Dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ClerkVerifiedPhoneProfile:
+    """Verified Clerk profile details used to create the app user."""
+
+    clerk_user_id: str
+    phone_number: str
+    name: Optional[str]
+    email: Optional[str]
 
 
 def _truthy(value: Optional[str]) -> bool:
@@ -61,6 +77,15 @@ def is_auth_required() -> bool:
     if configured is not None:
         return _truthy(configured)
     return is_clerk_enabled()
+
+
+def is_verified_phone_required() -> bool:
+    """Whether web accounts must have a verified Clerk phone number."""
+
+    configured = os.getenv("CLERK_REQUIRE_VERIFIED_PHONE")
+    if configured is not None:
+        return _truthy(configured)
+    return is_auth_required()
 
 
 def derive_clerk_issuer_from_publishable_key(
@@ -121,6 +146,7 @@ def get_auth_config() -> Dict[str, Any]:
         "provider": "clerk",
         "enabled": bool(publishable_key),
         "required": is_auth_required(),
+        "phone_auth_required": is_verified_phone_required(),
         "publishable_key": publishable_key,
         "issuer": get_clerk_issuer(),
     }
@@ -200,3 +226,124 @@ def verify_clerk_request(flask_request: Any) -> ClerkAuthContext:
     if not token:
         raise ClerkAuthError("Missing Clerk session token")
     return verify_clerk_token(token)
+
+
+def _clerk_api_base_url() -> str:
+    return os.getenv("CLERK_API_URL", "https://api.clerk.com/v1").rstrip("/")
+
+
+def fetch_clerk_user(clerk_user_id: str) -> Dict[str, Any]:
+    """Fetch the canonical Clerk user profile from the Backend API."""
+
+    secret_key = get_clerk_secret_key()
+    if not secret_key:
+        raise ClerkAuthError("Clerk secret key is required to verify phone ownership")
+
+    try:
+        import httpx
+    except ImportError as exc:  # pragma: no cover - project dependency guard
+        raise ClerkAuthError("httpx is required to fetch Clerk user profiles") from exc
+
+    url = f"{_clerk_api_base_url()}/users/{clerk_user_id}"
+    try:
+        response = httpx.get(
+            url,
+            headers={"Authorization": f"Bearer {secret_key}"},
+            timeout=10,
+        )
+    except Exception as exc:
+        raise ClerkAuthError("Could not contact Clerk to verify the phone number") from exc
+
+    if response.status_code == 404:
+        raise ClerkAuthError("Clerk user was not found")
+    if response.status_code >= 400:
+        logger.warning("Clerk user lookup failed status=%s body=%s", response.status_code, response.text[:300])
+        raise ClerkAuthError("Could not verify this Clerk phone number")
+
+    payload = response.json()
+    return payload if isinstance(payload, dict) else {}
+
+
+def _value(data: Dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in data:
+            return data[key]
+    return None
+
+
+def _is_verified_phone(phone_record: Dict[str, Any]) -> bool:
+    if phone_record.get("verified") is True:
+        return True
+    verification = phone_record.get("verification")
+    if isinstance(verification, dict):
+        status = str(_value(verification, "status", "state") or "").lower()
+        return status == "verified"
+    return False
+
+
+def _primary_or_first_verified_phone(user_payload: Dict[str, Any]) -> Optional[str]:
+    phone_numbers = _value(user_payload, "phone_numbers", "phoneNumbers")
+    if not isinstance(phone_numbers, list):
+        return None
+
+    primary_id = _value(user_payload, "primary_phone_number_id", "primaryPhoneNumberId")
+    verified_records = [
+        phone for phone in phone_numbers
+        if isinstance(phone, dict) and _is_verified_phone(phone)
+    ]
+    if not verified_records:
+        return None
+
+    primary_record = next(
+        (
+            phone for phone in verified_records
+            if primary_id and _value(phone, "id") == primary_id
+        ),
+        verified_records[0],
+    )
+    phone_value = _value(primary_record, "phone_number", "phoneNumber", "phone")
+    return normalize_whatsapp_number(phone_value, default="") or None
+
+
+def _primary_email(user_payload: Dict[str, Any]) -> Optional[str]:
+    email_addresses = _value(user_payload, "email_addresses", "emailAddresses")
+    if not isinstance(email_addresses, list):
+        return None
+    primary_id = _value(user_payload, "primary_email_address_id", "primaryEmailAddressId")
+    email_record = next(
+        (
+            email for email in email_addresses
+            if isinstance(email, dict) and primary_id and _value(email, "id") == primary_id
+        ),
+        None,
+    )
+    if not email_record:
+        email_record = next((email for email in email_addresses if isinstance(email, dict)), None)
+    if not email_record:
+        return None
+    email = _value(email_record, "email_address", "emailAddress", "email")
+    return str(email).strip() or None
+
+
+def verified_phone_profile_from_clerk(
+    auth_context: ClerkAuthContext,
+) -> ClerkVerifiedPhoneProfile:
+    """Return the verified Clerk phone profile, or raise a user-safe error."""
+
+    user_payload = fetch_clerk_user(auth_context.clerk_user_id)
+    phone_number = _primary_or_first_verified_phone(user_payload)
+    if not phone_number:
+        raise ClerkAuthError(
+            "Sign in with a verified phone number before opening the workspace."
+        )
+
+    first_name = str(_value(user_payload, "first_name", "firstName") or "").strip()
+    last_name = str(_value(user_payload, "last_name", "lastName") or "").strip()
+    full_name = " ".join(value for value in [first_name, last_name] if value).strip() or None
+
+    return ClerkVerifiedPhoneProfile(
+        clerk_user_id=auth_context.clerk_user_id,
+        phone_number=phone_number,
+        name=full_name,
+        email=_primary_email(user_payload),
+    )

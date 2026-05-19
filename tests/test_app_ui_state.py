@@ -37,7 +37,7 @@ def test_demo_init_starts_without_default_whatsapp_number(monkeypatch):
     assert data["whatsapp_number"] is None
 
 
-def test_hosted_ui_uses_single_connections_entrypoint(monkeypatch):
+def test_hosted_ui_uses_phone_auth_without_connections_tab(monkeypatch):
     monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
     monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
 
@@ -46,10 +46,11 @@ def test_hosted_ui_uses_single_connections_entrypoint(monkeypatch):
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert 'data-view="connections"' in html
+    assert 'data-view="connections"' not in html
     assert 'id="linkWhatsappBtn"' not in html
-    assert html.count("Connect WhatsApp") == 1
-    assert "No WhatsApp linked" in html
+    assert "Connect WhatsApp" not in html
+    assert "Sign in with phone" in html
+    assert "Phone sign-in required" in html
 
 
 def test_hosted_ui_sidebar_uses_addressable_routes(monkeypatch):
@@ -72,7 +73,7 @@ def test_hosted_ui_supports_direct_sidebar_routes(monkeypatch):
 
     client = hosted_app.app.test_client()
 
-    for route in ["/chat", "/receipts", "/inspector", "/connections", "/settings"]:
+    for route in ["/chat", "/receipts", "/inspector", "/settings"]:
         response = client.get(route)
         assert response.status_code == 200
         assert 'data-view="overview"' in response.get_data(as_text=True)

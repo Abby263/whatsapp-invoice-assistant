@@ -54,6 +54,7 @@ const authStatus = document.getElementById('authStatus');
 const signInBtn = document.getElementById('signInBtn');
 const clerkUserButton = document.getElementById('clerkUserButton');
 const topbarUser = document.getElementById('topbarUser');
+const refreshAccountBtn = document.getElementById('refreshAccountBtn');
 const linkWhatsappPrimaryBtn = document.getElementById('linkWhatsappPrimaryBtn');
 const refreshConnectionsBtn = document.getElementById('refreshConnectionsBtn');
 const connectedNumbersList = document.getElementById('connectedNumbersList');
@@ -79,13 +80,9 @@ const VIEW_META = {
         title: 'Workflow inspector',
         subtitle: 'LangGraph steps, intent, and token usage for the most recent message.'
     },
-    connections: {
-        title: 'Connections',
-        subtitle: 'Connect WhatsApp numbers and verify which account is active.'
-    },
     settings: {
         title: 'Settings',
-        subtitle: 'Users, memory, embeddings, and database health.'
+        subtitle: 'Account, memory, embeddings, and database health.'
     }
 };
 
@@ -94,7 +91,6 @@ const VIEW_ROUTES = {
     chat: '/chat',
     receipts: '/receipts',
     inspector: '/inspector',
-    connections: '/connections',
     settings: '/settings'
 };
 
@@ -115,6 +111,7 @@ let authState = {
     required: false,
     isSignedIn: false,
     needsLink: false,
+    needsPhone: false,
     user: null
 };
 const nativeFetch = window.fetch.bind(window);
@@ -131,16 +128,16 @@ function setWhatsappLinkState(state) {
     }
 }
 
-function setWhatsappUnlinked(label = 'No WhatsApp linked') {
+function setWhatsappUnlinked(label = 'Phone sign-in required') {
     whatsappNumber = '';
     userId = '0';
     setWhatsappLinkState('unlinked');
     setElementText(userWhatsappDisplay, 'Not linked');
     setElementText(userIdDisplay, userId || '0');
     setElementText(connectionPrimaryNumber, 'No number connected');
-    setElementText(connectionPrimaryHint, 'Sign in and connect your WhatsApp number to load receipt uploads on this website.');
+    setElementText(connectionPrimaryHint, 'Sign in with a verified phone number to load receipt uploads on this website.');
     if (linkWhatsappPrimaryBtn) {
-        linkWhatsappPrimaryBtn.querySelector('span').textContent = 'Connect WhatsApp';
+        linkWhatsappPrimaryBtn.querySelector('span').textContent = 'Sync phone';
     }
 
     if (whatsappNumberSelect) {
@@ -152,6 +149,19 @@ function setWhatsappUnlinked(label = 'No WhatsApp linked') {
         whatsappNumberSelect.value = '';
         whatsappNumberSelect.disabled = true;
     }
+}
+
+function verifiedPhoneRequiredMessage(message) {
+    return message || 'Sign in or sign up with a verified phone number before using this workspace.';
+}
+
+function requireVerifiedPhone(message) {
+    authState.needsLink = true;
+    authState.needsPhone = true;
+    setWhatsappUnlinked('Phone verification required');
+    setAuthUiState('needs-link', 'Verify phone');
+    updateWorkspaceAuthAvailability();
+    addSystemMessage(verifiedPhoneRequiredMessage(message));
 }
 
 function normalizeUiWhatsappNumber(value) {
@@ -179,7 +189,7 @@ function setActiveWhatsappUser(user) {
     setElementText(connectionPrimaryNumber, whatsappNumber);
     setElementText(connectionPrimaryHint, 'Receipts sent from this WhatsApp number will appear in the web history after processing.');
     if (linkWhatsappPrimaryBtn) {
-        linkWhatsappPrimaryBtn.querySelector('span').textContent = 'Update WhatsApp';
+        linkWhatsappPrimaryBtn.querySelector('span').textContent = 'Refresh account';
     }
 
     if (whatsappNumberSelect) {
@@ -210,6 +220,7 @@ function preserveActiveWhatsappSelection(reason = '') {
     }
 
     authState.needsLink = false;
+    authState.needsPhone = false;
     setWhatsappLinkState('linked');
     setElementText(userIdDisplay, userId || '0');
     setElementText(userWhatsappDisplay, whatsappNumber);
@@ -412,6 +423,7 @@ async function setupAuth() {
             } else if (!user && authState.isSignedIn) {
                 authState.isSignedIn = false;
                 authState.needsLink = false;
+                authState.needsPhone = false;
                 authState.user = null;
                 setWhatsappUnlinked();
                 setAuthUiState('signed-out', 'Sign in required');
@@ -431,6 +443,7 @@ async function setupAuth() {
 async function handleSignedInUser() {
     authState.isSignedIn = true;
     authState.needsLink = false;
+    authState.needsPhone = false;
     authState.user = window.Clerk.user || null;
     updateWorkspaceAuthAvailability();
 
@@ -452,16 +465,20 @@ async function handleSignedInUser() {
         if (linkedUser) {
             applyLinkedUser(linkedUser);
             setAuthUiState('signed-in', 'Signed in');
+        } else if (data.needs_phone) {
+            requireVerifiedPhone(data.message);
         } else {
             authState.needsLink = true;
-            setAuthUiState('signed-in', 'Signed in');
+            authState.needsPhone = true;
+            setAuthUiState('needs-link', 'Verify phone');
             updateWorkspaceAuthAvailability();
-            addSystemMessage('Sign-in complete. Link your WhatsApp number so web and WhatsApp receipts use the same account.');
+            addSystemMessage('Sign-in complete. Add and verify a phone number on this account to load WhatsApp receipts.');
         }
     } catch (error) {
         console.error('Error syncing Clerk user:', error);
         authState.needsLink = true;
-        setAuthUiState('signed-in', 'Signed in');
+        authState.needsPhone = true;
+        setAuthUiState('needs-link', 'Verify phone');
         updateWorkspaceAuthAvailability();
     }
 }
@@ -489,38 +506,31 @@ async function linkAuthenticatedWhatsappNumber() {
     }
 
     const user = authState.user || window.Clerk.user;
-    const defaultNumber = user?.primaryPhoneNumber?.phoneNumber || whatsappNumber || '';
-    const linkedNumber = prompt('Enter the WhatsApp number used for receipt uploads:', defaultNumber);
-    if (!linkedNumber) {
-        return;
-    }
-
-    showLoading('Linking WhatsApp number...');
+    showLoading('Syncing verified phone account...');
     try {
         const response = await fetch('/api/auth/link-whatsapp', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                ...getClerkProfilePayload(user),
-                whatsapp_number: linkedNumber.trim()
-            })
+            body: JSON.stringify(getClerkProfilePayload(user))
         });
         const data = await response.json();
 
         if (data.status === 'success' && data.user) {
             applyLinkedUser(data.user);
             setAuthUiState('signed-in', 'Signed in');
-            addSystemMessage(`Linked this workspace to WhatsApp number ${data.user.whatsapp_number}.`);
+            addSystemMessage(`Using verified phone number ${data.user.whatsapp_number} for this workspace.`);
             initializeApp();
             loadUsers();
             loadHistory();
             updateDatabaseCounts();
+        } else if (data.needs_phone) {
+            requireVerifiedPhone(data.message);
         } else {
-            addSystemMessage(`Could not link WhatsApp number: ${data.message}`);
+            addSystemMessage(`Could not sync the verified phone account: ${data.message}`);
         }
     } catch (error) {
-        console.error('Error linking WhatsApp number:', error);
-        addSystemMessage(`Could not link WhatsApp number: ${error.message}`);
+        console.error('Error syncing verified phone account:', error);
+        addSystemMessage(`Could not sync the verified phone account: ${error.message}`);
     } finally {
         hideLoading();
     }
@@ -532,6 +542,7 @@ function applyLinkedUser(linkedUser) {
     }
 
     authState.needsLink = false;
+    authState.needsPhone = false;
     setActiveWhatsappUser(linkedUser);
 
     updateWorkspaceAuthAvailability();
@@ -577,11 +588,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadHistory();
         loadUsers();
     } else {
-        addSystemMessage('Sign in to connect your WhatsApp receipts with this workspace.');
+        addSystemMessage('Sign in or sign up with a verified phone number to use this workspace.');
     }
 
     if (!whatsappNumber) {
-        setWhatsappUnlinked(authState.needsLink ? 'No WhatsApp linked' : 'No user selected');
+        setWhatsappUnlinked(authState.needsPhone ? 'Phone verification required' : 'No user selected');
     }
 
     // Setup WhatsApp number select event handling
@@ -589,10 +600,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         whatsappNumberSelect.addEventListener('change', switchUser);
     }
 
-    // Setup create user button
-    const createUserBtn = document.getElementById('createUserBtn');
-    if (createUserBtn) {
-        createUserBtn.addEventListener('click', showCreateUserDialog);
+    if (refreshAccountBtn) {
+        refreshAccountBtn.addEventListener('click', linkAuthenticatedWhatsappNumber);
     }
 
     // Setup company profile button
@@ -611,10 +620,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (refreshHistoryBtn) {
         refreshHistoryBtn.addEventListener('click', loadHistory);
-    }
-
-    if (refreshConnectionsBtn) {
-        refreshConnectionsBtn.addEventListener('click', loadUsers);
     }
 
     if (deleteAllHistoryBtn) {
@@ -758,10 +763,6 @@ function switchView(viewName, options = {}) {
         setTimeout(() => messageInput.focus(), 50);
     }
 
-    if (viewName === 'connections') {
-        loadUsers();
-    }
-
     updateBrowserRoute(viewName, options.replaceUrl === true);
 }
 
@@ -876,8 +877,12 @@ function loadUsers() {
                     if (preserveActiveWhatsappSelection('users response had no linked users')) {
                         return;
                     }
-                    setWhatsappUnlinked(data.needs_link ? 'No WhatsApp linked' : 'No user selected');
-                    updateWorkspaceAuthAvailability();
+                    if (data.needs_phone) {
+                        requireVerifiedPhone(data.message);
+                    } else {
+                        setWhatsappUnlinked(data.needs_link ? 'Phone verification required' : 'No user selected');
+                        updateWorkspaceAuthAvailability();
+                    }
                     return;
                 }
 
@@ -1010,8 +1015,7 @@ function initializeForUser(whatsappNumber) {
                         hideLoading();
                         return;
                     }
-                    setWhatsappUnlinked('No WhatsApp linked');
-                    addSystemMessage('Link your WhatsApp number before loading receipts.');
+                    requireVerifiedPhone(data.message || 'Sign in with a verified phone number before loading receipts.');
                     hideLoading();
                     return;
                 }
@@ -1086,9 +1090,7 @@ function initializeApp() {
                     if (preserveActiveWhatsappSelection('init response required linking')) {
                         return;
                     }
-                    authState.needsLink = true;
-                    setWhatsappUnlinked('No WhatsApp linked');
-                    updateWorkspaceAuthAvailability();
+                    requireVerifiedPhone(data.message);
                     return;
                 }
 
@@ -1114,7 +1116,7 @@ function initializeApp() {
 function sendMessage() {
     const message = messageInput.value.trim();
     if (authState.required && !whatsappNumber) {
-        addSystemMessage('Link your WhatsApp number before using the workspace.');
+        addSystemMessage('Sign in with a verified phone number before using the workspace.');
         return;
     }
     if (message && !isProcessing) {
@@ -1226,7 +1228,7 @@ function uploadFile() {
         return;
     }
     if (authState.required && !whatsappNumber) {
-        addSystemMessage('Link your WhatsApp number before uploading receipts.');
+        addSystemMessage('Sign in with a verified phone number before uploading receipts.');
         fileInput.value = '';
         return;
     }

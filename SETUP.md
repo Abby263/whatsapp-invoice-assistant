@@ -43,7 +43,7 @@ Expected webhook result:
 | Vercel | Hosted web UI and Flask webhook/API routes in `app.py`. |
 | Supabase Postgres | Users, receipts, extracted invoice data, generated invoices, and pgvector embeddings. |
 | Supabase Storage | Private storage for uploaded receipts and generated invoice documents. |
-| Clerk | Website authentication and linking a web user to a WhatsApp number. |
+| Clerk | Website authentication with verified phone-number ownership. |
 | OpenAI | Intent routing, extraction, responses, and embeddings. |
 | Twilio WhatsApp | Incoming WhatsApp text/media webhooks. |
 
@@ -202,7 +202,7 @@ The configured model handles chat, intent routing, and image/text extraction. Em
 ## Clerk Setup
 
 1. Create a Clerk application.
-2. Enable the sign-in methods you want. Phone plus email is recommended.
+2. Enable phone-number sign-in and sign-up, and disable email-only sign-in for this app.
 3. Open `Configure` -> `API keys`.
 4. Set:
 
@@ -210,15 +210,16 @@ The configured model handles chat, intent routing, and image/text extraction. Em
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
 CLERK_SECRET_KEY=<clerk-secret-key>
 CLERK_REQUIRE_AUTH=true
+CLERK_REQUIRE_VERIFIED_PHONE=true
 CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 ```
 
-How account linking works:
+How account identity works:
 
-1. User signs in on the website.
-2. User clicks `Link WhatsApp`.
-3. User enters the same WhatsApp number used to send receipts.
-4. The app links Clerk `sub` to the internal `users` row for that WhatsApp number.
+1. User signs in or signs up on the website with a phone-number OTP.
+2. The backend fetches the canonical Clerk user profile with `CLERK_SECRET_KEY`.
+3. The app only creates or links an internal `users` row when Clerk returns a verified phone number.
+4. The verified phone number becomes the user's WhatsApp account number.
 5. Website receipts, WhatsApp uploads, generated invoices, and analytics resolve to the same `users.id`.
 
 ## Twilio WhatsApp Setup
@@ -412,11 +413,10 @@ Expected: HTTP `200` with TwiML.
 ### 5. Web Link Test
 
 1. Open `https://whatsapp-invoice-assistant.vercel.app`.
-2. Sign in with Clerk.
-3. Click `Link WhatsApp`.
-4. Enter the same WhatsApp number used in the Twilio `From` field, including country code.
-5. Confirm the top-right user selector shows the linked WhatsApp number.
-6. Confirm receipts and generated invoices are visible for that user.
+2. Sign in or sign up with a verified phone number.
+3. Use the same phone number in the Twilio `From` field, including country code.
+4. Confirm the top-right account selector shows the signed-in phone number.
+5. Confirm receipts and generated invoices are visible for that user.
 
 ### 6. Invoice Generation Test
 
@@ -473,8 +473,8 @@ Check:
 Check:
 
 - The web user signed in with Clerk.
-- The user clicked `Link WhatsApp`.
-- The linked number matches Twilio `From`, including country code.
+- The Clerk account has a verified phone number.
+- The verified phone number matches Twilio `From`, including country code.
 - The `users` row has both `whatsapp_number` and `clerk_user_id`.
 
 ### Generated Invoices Are Not Saved
