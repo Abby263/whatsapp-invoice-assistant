@@ -321,6 +321,7 @@ make test                # Run the pytest suite
 - [docs/DATABASE.md](docs/DATABASE.md): Database schema and relationships.
 - [docs/VECTOR_SEARCH.md](docs/VECTOR_SEARCH.md): pgvector and embedding behavior.
 - [docs/TECH_STACK.md](docs/TECH_STACK.md): Current runtime stack and repository map.
+- [docs/PRODUCTION_BACKLOG.md](docs/PRODUCTION_BACKLOG.md): Next production hardening items.
 - [CONTRIBUTING.md](CONTRIBUTING.md): Contribution workflow.
 
 ## License
