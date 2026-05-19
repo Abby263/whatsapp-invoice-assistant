@@ -24,15 +24,21 @@ from workflows.text_processing_workflow import process_text_message as process_t
 from workflows.file_processing_workflow import process_file_message as process_file
 from workflows.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS
-from services.conversation_policy import compact_whatsapp_message, media_processing_ack
+from services.conversation_policy import (
+    compact_whatsapp_message,
+    media_processing_ack,
+    text_processing_ack,
+)
 from services.conversation_memory import (
     load_user_conversation_history,
     save_conversation_turn,
 )
 from services.job_queue import (
     JOB_TYPE_TWILIO_MEDIA_BATCH,
+    JOB_TYPE_TWILIO_TEXT_MESSAGE,
     enqueue_job,
     queue_enabled_for_media_count,
+    queue_enabled_for_text_message,
 )
 from services.rate_limit_service import (
     SCOPE_MEDIA_UPLOAD,
@@ -40,7 +46,9 @@ from services.rate_limit_service import (
     check_and_record,
     record_token_usage,
 )
+from services.hitl_service import parse_hitl_command
 from services.twilio_messaging import send_processing_ack, send_whatsapp_message
+from services.whatsapp_copy import build_help_message, is_help_message, is_status_message
 from schemas.llm_outputs import is_ledger_document
 from utils import observability
 from utils.phone_numbers import normalize_whatsapp_number
@@ -420,18 +428,53 @@ async def _process_claimed_whatsapp_message(
         sender = message_data.get("From", "unknown")
         media_count = _parse_num_media(message_data.get("NumMedia"))
         has_media = media_count > 0
+        message_text = str(message_data.get("Body") or "")
+        has_text = "Body" in message_data and not has_media
+        text_ack_sent = False
 
-        if has_media:
+        skip_processing_ack = _truthy_payload_flag(message_data, "SkipProcessingAck")
+        force_text_final_reply = _truthy_payload_flag(message_data, "SendFinalReply")
+
+        if has_text and is_help_message(message_text):
+            result = _deterministic_help_result(sender)
+            _mark_webhook_event_processed(message_sid, result)
+            return result
+
+        if has_media and not skip_processing_ack:
             send_processing_ack(
                 to_number=sender,
                 from_number=(
                     message_data.get("To") or get_settings().twilio_phone_number
                 ),
                 body=media_processing_ack(media_count),
+                dedupe_key=message_sid,
             )
-
+        elif (
+            has_text
+            and not skip_processing_ack
+            and _should_send_text_processing_ack(message_text)
+        ):
+            text_ack_sent = send_processing_ack(
+                to_number=sender,
+                from_number=(
+                    message_data.get("To") or get_settings().twilio_phone_number
+                ),
+                body=text_processing_ack(),
+                dedupe_key=message_sid,
+            )
         user_id = extract_user_id_from_sender(sender)
         observability.bind_context(user_id=user_id)
+
+        if has_text and allow_queue and _should_queue_text_message(message_text):
+            queued_result = _enqueue_text_message_job(
+                message_data=message_data,
+                message_sid=message_sid,
+                user_id=user_id,
+                ack_sent=text_ack_sent,
+            )
+            if queued_result is not None:
+                _mark_webhook_event_processed(message_sid, queued_result)
+                return queued_result
 
         if has_media and allow_queue and queue_enabled_for_media_count(media_count):
             job = enqueue_job(
@@ -458,9 +501,8 @@ async def _process_claimed_whatsapp_message(
             return result
 
         # Check if this is a text or media message
-        if "Body" in message_data and not has_media:
+        if has_text:
             # This is a text message
-            message_text = message_data.get("Body", "")
 
             # Get conversation history if available
             conversation_history = await load_conversation_history(user_id)
@@ -474,6 +516,18 @@ async def _process_claimed_whatsapp_message(
                 whatsapp_message_sid=message_sid,
                 conversation_history_trusted=True,
             )
+            text_final_outbound = text_ack_sent or force_text_final_reply
+            if text_ack_sent:
+                metadata = _ensure_result_metadata(result)
+                metadata["twilio_processing_ack_sent"] = True
+            if text_final_outbound and _send_text_final_reply(
+                result=result,
+                to_number=sender,
+                from_number=message_data.get("To")
+                or get_settings().twilio_phone_number,
+            ):
+                result["suppress_twiml_response"] = True
+                _ensure_result_metadata(result)["twilio_final_reply_sent"] = True
             _mark_webhook_event_processed(message_sid, result)
             return result
 
@@ -662,6 +716,93 @@ def _parse_num_media(value: Any) -> int:
         return 0
 
 
+def _truthy_payload_flag(payload: Dict[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _ensure_result_metadata(result: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = result.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+        result["metadata"] = metadata
+    return metadata
+
+
+def _deterministic_help_result(sender: str) -> Dict[str, Any]:
+    return {
+        "message": build_help_message(),
+        "metadata": {
+            "intent": IntentType.HELP.value,
+            "scope": "deterministic_help",
+        },
+        "status": "success",
+        "type": "text",
+        "user_id": None,
+        "whatsapp_number": sender,
+    }
+
+
+def _should_queue_text_message(message_text: str) -> bool:
+    text = (message_text or "").strip()
+    if not queue_enabled_for_text_message(text):
+        return False
+    if is_help_message(text) or is_status_message(text):
+        return False
+    if parse_hitl_command(text):
+        return False
+    return True
+
+
+def _enqueue_text_message_job(
+    *,
+    message_data: Dict[str, Any],
+    message_sid: Optional[str],
+    user_id: Optional[Union[str, UUID]],
+    ack_sent: bool,
+) -> Optional[Dict[str, Any]]:
+    try:
+        job = enqueue_job(
+            JOB_TYPE_TWILIO_TEXT_MESSAGE,
+            {
+                **message_data,
+                "RequestId": observability.current_context().get("request_id"),
+                "SkipProcessingAck": True,
+                "SendFinalReply": True,
+            },
+            user_id=user_id,
+            idempotency_key=f"twilio:{message_sid}:text" if message_sid else None,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not enqueue Twilio text message %s; processing inline: %s",
+            message_sid,
+            exc,
+        )
+        return None
+
+    metadata = {
+        "intent": IntentType.GENERAL.value,
+        "queued": True,
+        "job": job,
+        "twilio_message_sid": message_sid,
+        "twilio_final_reply_pending": True,
+    }
+    if ack_sent:
+        metadata["twilio_processing_ack_sent"] = True
+
+    return {
+        "status": "queued",
+        "message": "" if ack_sent else text_processing_ack(),
+        "suppress_twiml_response": bool(ack_sent),
+        "metadata": metadata,
+    }
+
+
 def _message_sid_from_payload(message_data: Optional[Dict[str, Any]]) -> Optional[str]:
     if not isinstance(message_data, dict):
         return None
@@ -795,7 +936,10 @@ def _webhook_response_payload(result: Dict[str, Any]) -> Dict[str, Any]:
             key: metadata.get(key)
             for key in (
                 "intent",
+                "queued",
                 "twilio_final_reply_sent",
+                "twilio_final_reply_pending",
+                "twilio_processing_ack_sent",
                 "media_count",
                 "saved_count",
                 "pending_approval_count",
@@ -1105,6 +1249,41 @@ def _send_media_final_reply(
     """Send the media processing result out-of-band when possible."""
 
     if not get_settings().twilio_media_final_reply_enabled:
+        return False
+
+    message = result.get("message") or result.get("content") or ""
+    if not message:
+        return False
+
+    return send_whatsapp_message(
+        to_number=to_number,
+        from_number=from_number,
+        body=compact_whatsapp_message(message),
+    )
+
+
+def _should_send_text_processing_ack(message_text: str) -> bool:
+    """Return whether a text message should use ack-first processing."""
+
+    text = (message_text or "").strip()
+    if not text:
+        return False
+    settings = get_settings()
+    if not settings.twilio_text_ack_enabled:
+        return False
+    if is_help_message(text) or is_status_message(text):
+        return False
+    return True
+
+
+def _send_text_final_reply(
+    result: Dict[str, Any],
+    to_number: str,
+    from_number: Optional[str],
+) -> bool:
+    """Send a text workflow result out-of-band after an early acknowledgement."""
+
+    if not get_settings().twilio_text_final_reply_enabled:
         return False
 
     message = result.get("message") or result.get("content") or ""

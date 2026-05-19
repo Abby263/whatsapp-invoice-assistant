@@ -17,5 +17,6 @@ httpx==0.28.1
 twilio==9.4.1
 numpy==1.26.4
 Pillow==11.0.0
+PyMuPDF==1.26.5
 openpyxl==3.1.5
 python-docx==1.1.2

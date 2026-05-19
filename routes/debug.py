@@ -89,15 +89,34 @@ def check_embeddings():
     )
 
 
-@bp.post("/api/jobs/run")
+def _job_runner_authorized(settings, payload) -> bool:
+    auth_header = request.headers.get("Authorization", "")
+    if settings.cron_secret and auth_header == f"Bearer {settings.cron_secret}":
+        return True
+    supplied_secret = payload.get("secret") or payload.get("job_secret")
+    if settings.async_job_secret and supplied_secret == settings.async_job_secret:
+        return True
+    return False
+
+
+@bp.route("/api/jobs/run", methods=["GET", "POST"])
 def jobs_run():
-    payload = request.get_json(silent=True) or {}
+    payload = (
+        request.get_json(silent=True) or {}
+        if request.method == "POST"
+        else request.args.to_dict(flat=True)
+    )
     settings = shared.get_settings()
     auth_context = None
-    if not (settings.async_job_secret and payload.get("secret") == settings.async_job_secret):
+    runner_authorized = _job_runner_authorized(settings, payload)
+    if request.method == "GET" and not runner_authorized:
+        return jsonify({"status": "error", "message": "Unauthorized job runner"}), 401
+    if not runner_authorized:
         auth_context = shared._require_demo_auth()
         if shared._is_auth_response(auth_context):
             return auth_context
+    elif settings.async_job_secret and not payload.get("secret"):
+        payload = {**payload, "secret": settings.async_job_secret}
     if not shared._live_backend_enabled():
         return jsonify(
             {

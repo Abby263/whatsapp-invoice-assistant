@@ -12,10 +12,39 @@ from constants.fallback_messages import (
     FILE_VALIDATION_PROMPTS,
     FILE_VALIDATION_MESSAGES,
 )
+from utils.document_ingest import (
+    IngestedDocument,
+    format_pdf_text_for_llm,
+    ingest_document,
+)
 from utils.image_preprocess import preprocess_image_bytes
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
+
+
+def _ingest_metadata(document: IngestedDocument) -> dict:
+    metadata = {
+        "ingest_kind": document.kind,
+        "page_count": document.page_count,
+        "pages_processed": document.pages_processed,
+    }
+    metadata.update(document.metadata or {})
+    if document.kind in {"digital_pdf", "scanned_pdf"}:
+        metadata["pdf_pages_processed"] = document.pages_processed
+    return metadata
+
+
+def _legacy_binary_validation_content(
+    content: bytes,
+    *,
+    file_name: str,
+    file_type: str,
+) -> str:
+    ingested = ingest_document(content, content_type=file_type, file_name=file_name)
+    if ingested.kind == "digital_pdf":
+        return format_pdf_text_for_llm(ingested, file_name=file_name)
+    return f"Binary file: {file_name}, type: {file_type}, size: {len(content)} bytes"
 
 
 class FileValidatorAgent(BaseAgent):
@@ -54,6 +83,7 @@ class FileValidatorAgent(BaseAgent):
             file_path = agent_input.file_path or ""
             file_name = agent_input.file_name or ""
             file_type = agent_input.content_type or "unknown"
+            ingest_metadata = {}
 
             logger.info(f"Validating file: {file_path} (type: {file_type})")
 
@@ -68,7 +98,11 @@ class FileValidatorAgent(BaseAgent):
                     is not self.llm_factory
                 ):
                     validation_result = await legacy_validator(
-                        f"Binary file: {file_name}, type: {file_type}, size: {len(file_content)} bytes"
+                        _legacy_binary_validation_content(
+                            file_content,
+                            file_name=file_name,
+                            file_type=file_type,
+                        )
                     )
                     clean_result = self._strip_code_blocks(validation_result)
                     try:
@@ -104,6 +138,34 @@ class FileValidatorAgent(BaseAgent):
                             "raw_validation_result": parsed_result,
                         },
                     )
+
+                ingested = ingest_document(
+                    file_content,
+                    content_type=file_type,
+                    file_name=file_name or file_path,
+                )
+                ingest_metadata = _ingest_metadata(ingested)
+
+                if ingested.kind == "digital_pdf":
+                    content_for_validation = format_pdf_text_for_llm(
+                        ingested,
+                        file_name=file_name or file_path,
+                    )
+                elif ingested.kind in {"image", "scanned_pdf"} and ingested.pages:
+                    first_image_page = next(
+                        (page for page in ingested.pages if page.image_bytes),
+                        None,
+                    )
+                    if first_image_page is not None:
+                        file_content = first_image_page.image_bytes or file_content
+                        file_type = first_image_page.mime_type
+                    else:
+                        content_for_validation = (
+                            f"Unreadable document: {file_name}, type: {file_type}, "
+                            f"size: {len(file_content)} bytes"
+                        )
+                else:
+                    content_for_validation = f"Binary file: {file_name}, type: {file_type}, size: {len(file_content)} bytes"
 
                 # For image types, we'll use GPT-4o-mini to validate if it's an invoice
                 if file_type and (
@@ -278,6 +340,7 @@ class FileValidatorAgent(BaseAgent):
                                 "dimensions": dimensions,
                                 "missing_elements": missing_elements,
                                 "reasons": reasons,
+                                **ingest_metadata,
                             },
                         )
 
@@ -302,11 +365,9 @@ class FileValidatorAgent(BaseAgent):
                                 "dimensions": dimensions,
                                 "missing_elements": ["validation failed"],
                                 "reasons": f"{FILE_VALIDATION_MESSAGES['image_validation_failed']}: {str(e)}",
+                                **ingest_metadata,
                             },
                         )
-
-                # For other binary files, create a descriptive message
-                content_for_validation = f"Binary file: {file_name}, type: {file_type}, size: {len(file_content)} bytes"
             else:
                 # For text content, we can pass it directly
                 content_for_validation = file_content
@@ -359,6 +420,7 @@ class FileValidatorAgent(BaseAgent):
                     "missing_elements": missing_elements,
                     "reasons": reasons,
                     "raw_validation_result": parsed_result,
+                    **ingest_metadata,
                 },
             )
 

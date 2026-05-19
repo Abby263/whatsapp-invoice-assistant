@@ -23,18 +23,38 @@ def _processing_ack_cooldown_seconds() -> int:
         return 75
 
 
-def _recent_ack_key(to_number: str, from_number: Optional[str]) -> str:
-    return f"{from_number or ''}->{to_number or ''}"
+def _recent_ack_key(
+    to_number: str,
+    from_number: Optional[str],
+    dedupe_key: Optional[str] = None,
+) -> str:
+    key = f"{from_number or ''}->{to_number or ''}"
+    if dedupe_key:
+        return f"{key}:{dedupe_key}"
+    return key
 
 
-def _persistent_ack_key(to_number: str, from_number: Optional[str], cooldown: int) -> str:
+def _persistent_ack_key(
+    to_number: str,
+    from_number: Optional[str],
+    cooldown: int,
+    dedupe_key: Optional[str] = None,
+) -> str:
+    if dedupe_key:
+        pair = f"{_recent_ack_key(to_number, from_number)}:{dedupe_key}"
+        pair_hash = hashlib.sha256(pair.encode("utf-8")).hexdigest()[:32]
+        return f"processing_ack:{pair_hash}"
     slot = int(time.time() // max(cooldown, 1))
     pair = _recent_ack_key(to_number, from_number)
     pair_hash = hashlib.sha256(pair.encode("utf-8")).hexdigest()[:24]
     return f"processing_ack:{pair_hash}:{slot}"
 
 
-def _processing_ack_recent(to_number: str, from_number: Optional[str]) -> bool:
+def _processing_ack_recent(
+    to_number: str,
+    from_number: Optional[str],
+    dedupe_key: Optional[str] = None,
+) -> bool:
     cooldown = _processing_ack_cooldown_seconds()
     if cooldown <= 0:
         return False
@@ -45,15 +65,27 @@ def _processing_ack_recent(to_number: str, from_number: Optional[str]) -> bool:
         if timestamp < expired_before:
             _RECENT_PROCESSING_ACKS.pop(key, None)
 
-    last_sent = _RECENT_PROCESSING_ACKS.get(_recent_ack_key(to_number, from_number))
+    last_sent = _RECENT_PROCESSING_ACKS.get(
+        _recent_ack_key(to_number, from_number, dedupe_key)
+    )
     return last_sent is not None and now - last_sent < cooldown
 
 
-def _mark_processing_ack_sent(to_number: str, from_number: Optional[str]) -> None:
-    _RECENT_PROCESSING_ACKS[_recent_ack_key(to_number, from_number)] = time.monotonic()
+def _mark_processing_ack_sent(
+    to_number: str,
+    from_number: Optional[str],
+    dedupe_key: Optional[str] = None,
+) -> None:
+    _RECENT_PROCESSING_ACKS[
+        _recent_ack_key(to_number, from_number, dedupe_key)
+    ] = time.monotonic()
 
 
-def _claim_processing_ack_in_database(to_number: str, from_number: Optional[str]) -> Optional[bool]:
+def _claim_processing_ack_in_database(
+    to_number: str,
+    from_number: Optional[str],
+    dedupe_key: Optional[str] = None,
+) -> Optional[bool]:
     """Return whether this request owns the shared acknowledgement slot.
 
     Vercel can run simultaneous webhook requests on different function
@@ -87,7 +119,14 @@ def _claim_processing_ack_in_database(to_number: str, from_number: Optional[str]
                     ON CONFLICT (whatsapp_message_id) DO NOTHING
                     """
                 ),
-                {"dedupe_key": _persistent_ack_key(to_number, from_number, cooldown)},
+                {
+                    "dedupe_key": _persistent_ack_key(
+                        to_number,
+                        from_number,
+                        cooldown,
+                        dedupe_key=dedupe_key,
+                    )
+                },
             )
             session.commit()
             return result.rowcount == 1
@@ -98,23 +137,38 @@ def _claim_processing_ack_in_database(to_number: str, from_number: Optional[str]
         return None
 
 
-def send_processing_ack(to_number: str, body: str, from_number: Optional[str] = None) -> bool:
+def send_processing_ack(
+    to_number: str,
+    body: str,
+    from_number: Optional[str] = None,
+    dedupe_key: Optional[str] = None,
+) -> bool:
     """Send an optional out-of-band acknowledgement before long media processing."""
 
     if not _truthy_env("TWILIO_PROCESSING_ACK_ENABLED"):
         return False
-    if _processing_ack_recent(to_number, from_number):
-        logger.info("Skipping duplicate Twilio processing acknowledgement during cooldown")
+    if _processing_ack_recent(to_number, from_number, dedupe_key=dedupe_key):
+        logger.info(
+            "Skipping duplicate Twilio processing acknowledgement during cooldown"
+        )
         return False
 
-    database_claimed = _claim_processing_ack_in_database(to_number, from_number)
+    database_claimed = _claim_processing_ack_in_database(
+        to_number,
+        from_number,
+        dedupe_key=dedupe_key,
+    )
     if database_claimed is False:
-        logger.info("Skipping duplicate Twilio processing acknowledgement from shared cooldown")
+        logger.info(
+            "Skipping duplicate Twilio processing acknowledgement from shared cooldown"
+        )
         return False
 
-    sent = send_whatsapp_message(to_number=to_number, body=body, from_number=from_number)
+    sent = send_whatsapp_message(
+        to_number=to_number, body=body, from_number=from_number
+    )
     if sent:
-        _mark_processing_ack_sent(to_number, from_number)
+        _mark_processing_ack_sent(to_number, from_number, dedupe_key=dedupe_key)
     return sent
 
 

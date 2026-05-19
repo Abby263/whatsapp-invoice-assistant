@@ -845,8 +845,9 @@ class LLMFactory:
             A JSON string containing the extracted invoice data
         """
         try:
-            # Check if content is an image
+            # Check if content is visual input
             is_image = False
+            visual_pages = []
             base64_image = None
 
             if isinstance(content, dict) and content.get("type") == "image" and "content" in content:
@@ -854,7 +855,25 @@ class LLMFactory:
                 base64_image = content["content"]
                 dimensions = content.get("dimensions", "unknown")
                 mime_type = content.get("mime_type", "image/jpeg")
+                visual_pages = [{
+                    "page_number": content.get("page_number") or 1,
+                    "content": base64_image,
+                    "mime_type": mime_type,
+                    "dimensions": dimensions,
+                }]
                 logger.info(f"Processing image for data extraction: {dimensions}, {mime_type}")
+            elif isinstance(content, dict) and content.get("type") == "document_images":
+                pages = content.get("pages") if isinstance(content.get("pages"), list) else []
+                visual_pages = [
+                    page
+                    for page in pages
+                    if isinstance(page, dict) and page.get("content")
+                ]
+                is_image = bool(visual_pages)
+                logger.info(
+                    "Processing %s rendered document pages for data extraction",
+                    len(visual_pages),
+                )
 
             # Load the appropriate data extraction prompt using prompt mappings
             if is_image:
@@ -873,7 +892,33 @@ class LLMFactory:
 
                     client = OpenAI(api_key=self.api_keys[ModelProvider.OPENAI])
 
-                    # Create a message with the image content
+                    user_content = [
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extract this uploaded financial document using the required JSON "
+                                "schema. If multiple pages are provided, combine the same document "
+                                "across pages and preserve page-specific line items. For handwritten "
+                                "ledger rows, use each written row date and fill extraction_quality "
+                                "so incomplete parsing is visible."
+                            )
+                        }
+                    ]
+                    for page in visual_pages:
+                        page_number = page.get("page_number") or len(user_content)
+                        page_mime_type = page.get("mime_type") or "image/jpeg"
+                        user_content.append({
+                            "type": "text",
+                            "text": f"Page {page_number}",
+                        })
+                        user_content.append({
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{page_mime_type};base64,{page['content']}"
+                            }
+                        })
+
+                    # Create a message with the visual content
                     messages = [
                         {
                             "role": "system",
@@ -881,22 +926,7 @@ class LLMFactory:
                         },
                         {
                             "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": (
-                                        "Extract this single uploaded financial document using the required JSON "
-                                        "schema. For handwritten ledger rows, use each written row date and fill "
-                                        "extraction_quality so incomplete parsing is visible."
-                                    )
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:{mime_type};base64,{base64_image}"
-                                    }
-                                }
-                            ]
+                            "content": user_content
                         }
                     ]
 

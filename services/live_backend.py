@@ -449,7 +449,11 @@ def process_twilio_webhook(form: Dict[str, Any]) -> Dict[str, Any]:
 
 def run_async_jobs(auth_context: Any, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     from config.settings import get_settings
-    from services.job_queue import JOB_TYPE_TWILIO_MEDIA_BATCH, run_ready_jobs
+    from services.job_queue import (
+        JOB_TYPE_TWILIO_MEDIA_BATCH,
+        JOB_TYPE_TWILIO_TEXT_MESSAGE,
+        run_ready_jobs,
+    )
     from workflows.api import process_queued_whatsapp_message
 
     payload = payload or {}
@@ -464,8 +468,14 @@ def run_async_jobs(auth_context: Any, payload: Optional[Dict[str, Any]] = None) 
     def process_twilio_media_batch(job_payload: Dict[str, Any]) -> Dict[str, Any]:
         return run_async(process_queued_whatsapp_message(job_payload))
 
+    def process_twilio_text_message(job_payload: Dict[str, Any]) -> Dict[str, Any]:
+        return run_async(process_queued_whatsapp_message(job_payload))
+
     return run_ready_jobs(
-        {JOB_TYPE_TWILIO_MEDIA_BATCH: process_twilio_media_batch},
+        {
+            JOB_TYPE_TWILIO_MEDIA_BATCH: process_twilio_media_batch,
+            JOB_TYPE_TWILIO_TEXT_MESSAGE: process_twilio_text_message,
+        },
         limit=int(payload.get("limit") or 5),
     )
 

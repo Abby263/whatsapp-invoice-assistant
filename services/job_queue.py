@@ -14,6 +14,7 @@ from config.settings import get_settings
 logger = logging.getLogger(__name__)
 
 JOB_TYPE_TWILIO_MEDIA_BATCH = "twilio_media_batch"
+JOB_TYPE_TWILIO_TEXT_MESSAGE = "twilio_text_message"
 
 
 def enqueue_job(
@@ -115,6 +116,15 @@ def queue_enabled_for_media_count(media_count: int) -> bool:
     return (
         settings.async_work_queue_enabled
         and media_count > settings.async_inline_media_limit
+    )
+
+
+def queue_enabled_for_text_message(message_text: str) -> bool:
+    settings = get_settings()
+    return (
+        settings.async_work_queue_enabled
+        and settings.async_text_queue_enabled
+        and bool((message_text or "").strip())
     )
 
 

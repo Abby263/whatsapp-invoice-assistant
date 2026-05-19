@@ -63,6 +63,10 @@ class AppSettings(BaseSettings):
     twilio_media_final_reply_enabled: bool = Field(
         default=True, alias="TWILIO_MEDIA_FINAL_REPLY_ENABLED"
     )
+    twilio_text_ack_enabled: bool = Field(default=True, alias="TWILIO_TEXT_ACK_ENABLED")
+    twilio_text_final_reply_enabled: bool = Field(
+        default=True, alias="TWILIO_TEXT_FINAL_REPLY_ENABLED"
+    )
 
     clerk_publishable_key: Optional[str] = Field(
         default=None, alias="CLERK_PUBLISHABLE_KEY"
@@ -109,8 +113,12 @@ class AppSettings(BaseSettings):
     async_work_queue_enabled: bool = Field(
         default=False, alias="ASYNC_WORK_QUEUE_ENABLED"
     )
+    async_text_queue_enabled: bool = Field(
+        default=True, alias="ASYNC_TEXT_QUEUE_ENABLED"
+    )
     async_inline_media_limit: int = Field(default=3, alias="ASYNC_INLINE_MEDIA_LIMIT")
     async_job_secret: Optional[str] = Field(default=None, alias="ASYNC_JOB_SECRET")
+    cron_secret: Optional[str] = Field(default=None, alias="CRON_SECRET")
 
     deployment_smoke_base_url: str = Field(
         default="http://localhost:5001",

@@ -105,6 +105,13 @@ def media_processing_ack(media_count: int) -> str:
     )
 
 
+def text_processing_ack() -> str:
+    return (
+        "💬 *Message Received*\n\n"
+        "I am checking this now and will send the answer here."
+    )
+
+
 def compact_whatsapp_message(message: str, max_chars: int | None = None) -> str:
     """Keep WhatsApp replies readable and bounded."""
 

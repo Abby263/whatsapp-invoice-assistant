@@ -207,7 +207,7 @@ The application stores user-scoped operational data in Supabase Postgres:
 - `generated_invoices` and `generated_invoice_items`: outgoing invoices created from WhatsApp or the web app.
 - `conversations`, `messages`, and `whatsapp_messages`: chat history and delivery metadata.
 - `rate_limit_events` and `usage`: per-user request limits, token usage, and cost metadata.
-- `async_jobs`: idempotent durable jobs for long-running media batches.
+- `async_jobs`: idempotent durable jobs for long-running media batches and slower WhatsApp text answers.
 - pgvector embedding columns: semantic search over invoice and item content.
 
 Uploaded receipt files and generated invoice documents are stored in the private Supabase Storage bucket configured by `SUPABASE_STORAGE_BUCKET`, defaulting to `receipts`. The database stores metadata and storage paths; the app generates signed URLs when users need to view a file.
@@ -329,6 +329,7 @@ make test                # Run the pytest suite
 - [docs/TECH_STACK.md](docs/TECH_STACK.md): Current runtime stack and repository map.
 - [docs/PRODUCTION_BACKLOG.md](docs/PRODUCTION_BACKLOG.md): Next production hardening items.
 - [docs/WHATSAPP_UX.md](docs/WHATSAPP_UX.md): WhatsApp chat UX improvement plan.
+- [docs/OCR_IMPROVEMENTS.md](docs/OCR_IMPROVEMENTS.md): OCR, PDF ingestion, and extraction quality roadmap.
 - [CONTRIBUTING.md](CONTRIBUTING.md): Contribution workflow.
 
 ## License
