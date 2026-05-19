@@ -2,6 +2,7 @@
 
 import app as hosted_app
 from routes import shared as hosted_shared
+from workflows import api as workflow_api
 
 
 class _AuthContext:
@@ -201,6 +202,37 @@ def test_twilio_webhook_hides_internal_exception_details(monkeypatch):
     assert response.headers["X-Request-ID"]
 
 
+def test_twilio_webhook_hey_returns_help_without_user_lookup(monkeypatch):
+    def fail_user_lookup(sender):
+        raise AssertionError("greeting webhook should not wait on user lookup")
+
+    def fail_enqueue(*args, **kwargs):
+        raise AssertionError("greeting webhook should not be queued")
+
+    monkeypatch.setenv("TWILIO_VALIDATE_REQUESTS", "false")
+    monkeypatch.setenv("ASYNC_WORK_QUEUE_ENABLED", "true")
+    monkeypatch.setenv("ASYNC_TEXT_QUEUE_ENABLED", "true")
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(workflow_api, "extract_user_id_from_sender", fail_user_lookup)
+    monkeypatch.setattr(workflow_api, "enqueue_job", fail_enqueue)
+
+    client = hosted_app.app.test_client()
+    response = client.post(
+        "/webhook",
+        data={
+            "From": "whatsapp:+15551234567",
+            "To": "whatsapp:+16473628073",
+            "Body": "Hey",
+            "NumMedia": "0",
+            "MessageSid": "SM-hey-fast",
+        },
+    )
+
+    assert response.status_code == 200
+    assert b"Receipt Intelligence" in response.data
+    assert b"<Message>" in response.data
+
+
 def test_agent_flow_requires_auth_when_auth_required(monkeypatch):
     def auth_response():
         return hosted_app.jsonify({"status": "error", "message": "auth required"}), 401
@@ -222,3 +254,43 @@ def test_embeddings_update_disabled_on_live_backend(monkeypatch):
 
     assert response.status_code == 403
     assert response.get_json()["status"] == "error"
+
+
+def test_jobs_run_accepts_cron_authorization(monkeypatch):
+    captured = {}
+
+    def fail_auth():
+        raise AssertionError("cron-authorized job runner should not require UI auth")
+
+    def fake_run_async_jobs(auth_context, payload):
+        captured["auth_context"] = auth_context
+        captured["payload"] = payload
+        return {"status": "success", "count": 0, "processed": []}
+
+    monkeypatch.setenv("CRON_SECRET", "cron-secret")
+    monkeypatch.setenv("ASYNC_JOB_SECRET", "job-secret")
+    monkeypatch.setattr(hosted_shared, "_require_demo_auth", fail_auth)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(hosted_app.live_backend, "run_async_jobs", fake_run_async_jobs)
+
+    client = hosted_app.app.test_client()
+    response = client.get(
+        "/api/jobs/run?limit=2",
+        headers={"Authorization": "Bearer cron-secret"},
+    )
+
+    assert response.status_code == 200
+    assert captured["auth_context"] is None
+    assert captured["payload"]["limit"] == "2"
+    assert captured["payload"]["secret"] == "job-secret"
+
+
+def test_jobs_run_get_requires_cron_authorization(monkeypatch):
+    monkeypatch.setenv("CRON_SECRET", "cron-secret")
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
+
+    client = hosted_app.app.test_client()
+    response = client.get("/api/jobs/run")
+
+    assert response.status_code == 401
+    assert response.get_json()["message"] == "Unauthorized job runner"

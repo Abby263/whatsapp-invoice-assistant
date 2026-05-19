@@ -78,6 +78,8 @@ TWILIO_PROCESSING_ACK_ENABLED=true
 TWILIO_PROCESSING_ACK_COOLDOWN_SECONDS=75
 TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED=true
 TWILIO_MEDIA_FINAL_REPLY_ENABLED=true
+TWILIO_TEXT_ACK_ENABLED=true
+TWILIO_TEXT_FINAL_REPLY_ENABLED=true
 
 HITL_CONFIRMATION_REQUIRED=true
 CLERK_STEP_UP_MAX_AGE_SECONDS=300
@@ -92,8 +94,10 @@ RATE_LIMIT_APPROVALS_PER_WINDOW=200
 RATE_LIMIT_EMBEDDINGS_PER_WINDOW=1000
 
 ASYNC_WORK_QUEUE_ENABLED=false
+ASYNC_TEXT_QUEUE_ENABLED=true
 ASYNC_INLINE_MEDIA_LIMIT=3
 ASYNC_JOB_SECRET=<long-random-secret-for-job-runner>
+CRON_SECRET=<long-random-secret-for-vercel-cron>
 
 DEPLOYMENT_SMOKE_BASE_URL=https://whatsapp-invoice-assistant.vercel.app
 DEPLOYMENT_SMOKE_TIMEOUT_SECONDS=10
@@ -111,13 +115,16 @@ Notes:
 - `TWILIO_PROCESSING_ACK_COOLDOWN_SECONDS` prevents repeated "processing" acknowledgements when WhatsApp/Twilio splits a multi-image forward into multiple one-file webhooks.
 - `TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED` stores that acknowledgement claim in Postgres so the cooldown still works when Vercel handles the rapid webhooks on different function instances.
 - `TWILIO_MEDIA_FINAL_REPLY_ENABLED` sends the final media processing summary as an outbound Twilio message, which is more reliable than waiting for a long-running webhook response.
+- `TWILIO_TEXT_ACK_ENABLED` sends an immediate "message received" acknowledgement for slower text requests before agent, SQL, or RAG work starts.
+- `TWILIO_TEXT_FINAL_REPLY_ENABLED` sends the final text answer as an outbound WhatsApp message after an early acknowledgement or queued job.
 - `HITL_CONFIRMATION_REQUIRED=true` keeps extracted receipt rows out of `invoices`, `items`, and embeddings until the user replies on WhatsApp with `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Delete requests require exact `CONFIRM DELETE ...` commands.
 - `CLERK_STEP_UP_MAX_AGE_SECONDS` controls how fresh the Clerk session token must be before optional browser approval can finalize a pending upload.
 - `CONVERSATION_MEMORY_WINDOW_MESSAGES` controls how many recent user/assistant messages are passed back into the agent for multi-turn context.
 - `CONVERSATION_MEMORY_MAX_STORED_MESSAGES` caps stored messages per active user conversation before older messages are pruned.
 - Conversation memory is always loaded by internal `users.id` for production user-scoped requests. Do not send browser/client-provided conversation history to the backend as a source of truth.
 - `RATE_LIMIT_*` settings enforce per-user rolling-window limits for text turns, media uploads, approval finalization, and embeddings.
-- `ASYNC_WORK_QUEUE_ENABLED=true` queues large media batches instead of processing every attachment inside the Twilio webhook. Run queued jobs through `POST /api/jobs/run` with `ASYNC_JOB_SECRET`.
+- `ASYNC_WORK_QUEUE_ENABLED=true` queues large media batches and slower text questions instead of processing all work inside the Twilio webhook. `ASYNC_TEXT_QUEUE_ENABLED=false` can keep text inline while leaving media queueing available.
+- Run queued jobs through `POST /api/jobs/run` with `ASYNC_JOB_SECRET`, or through `GET /api/jobs/run` from Vercel Cron with `Authorization: Bearer $CRON_SECRET`.
 - `DEPLOYMENT_SMOKE_*` settings are used by `scripts/deployment_smoke.py`.
 
 Optional local-only variables:

@@ -21,7 +21,7 @@ This document records the production hardening work completed after the Vercel-o
 | Web approval with step-up auth | Done | Browser approval is optional and requires a fresh Clerk session token before it can approve or reject; WhatsApp approval remains available. |
 | Python 3.11+ upgrade | Done | `.python-version` targets Python 3.12 and CI tests Python 3.10, 3.11, and 3.12. |
 | Single typed settings object | Done | `config/settings.py` centralizes production/demo settings with `pydantic-settings`. |
-| Async work queue | Done | `async_jobs` and `services/job_queue.py` provide durable idempotent jobs; large media batches can be queued and processed through `/api/jobs/run`. |
+| Async work queue | Done | `async_jobs` and `services/job_queue.py` provide durable idempotent jobs; large media batches and slower WhatsApp text answers can be queued and processed through `/api/jobs/run`. |
 | Deployment smoke tests | Done | `scripts/deployment_smoke.py` checks `/health` and `/api/auth/config` against a deployment URL. |
 
 ## Guardrails For Future Work

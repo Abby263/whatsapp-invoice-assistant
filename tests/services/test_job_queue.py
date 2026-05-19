@@ -71,3 +71,15 @@ def test_run_ready_jobs_marks_completed(monkeypatch, session_factory):
         assert job.result == {"doubled": 6}
     finally:
         session.close()
+
+
+def test_text_queue_requires_global_queue_enabled(monkeypatch):
+    monkeypatch.setenv("ASYNC_WORK_QUEUE_ENABLED", "false")
+    monkeypatch.setenv("ASYNC_TEXT_QUEUE_ENABLED", "true")
+    assert job_queue.queue_enabled_for_text_message("What did I spend?") is False
+
+    monkeypatch.setenv("ASYNC_WORK_QUEUE_ENABLED", "true")
+    assert job_queue.queue_enabled_for_text_message("What did I spend?") is True
+
+    monkeypatch.setenv("ASYNC_TEXT_QUEUE_ENABLED", "false")
+    assert job_queue.queue_enabled_for_text_message("What did I spend?") is False
