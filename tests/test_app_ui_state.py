@@ -1,6 +1,7 @@
 """Tests for hosted UI user-linking defaults."""
 
 import app as hosted_app
+from routes import shared as hosted_shared
 
 
 class _AuthContext:
@@ -9,8 +10,8 @@ class _AuthContext:
 
 
 def test_demo_users_do_not_expose_default_whatsapp_number(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "is_clerk_enabled", lambda: False)
     hosted_app.DEMO_LINKS.clear()
 
     client = hosted_app.app.test_client()
@@ -23,8 +24,8 @@ def test_demo_users_do_not_expose_default_whatsapp_number(monkeypatch):
 
 
 def test_demo_init_starts_without_default_whatsapp_number(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "is_clerk_enabled", lambda: False)
     hosted_app.DEMO_LINKS.clear()
 
     client = hosted_app.app.test_client()
@@ -38,8 +39,8 @@ def test_demo_init_starts_without_default_whatsapp_number(monkeypatch):
 
 
 def test_hosted_ui_uses_phone_auth_without_connections_tab(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "is_clerk_enabled", lambda: False)
 
     client = hosted_app.app.test_client()
     response = client.get("/")
@@ -54,8 +55,8 @@ def test_hosted_ui_uses_phone_auth_without_connections_tab(monkeypatch):
 
 
 def test_hosted_ui_sidebar_uses_addressable_routes(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "is_clerk_enabled", lambda: False)
 
     client = hosted_app.app.test_client()
     response = client.get("/")
@@ -68,8 +69,8 @@ def test_hosted_ui_sidebar_uses_addressable_routes(monkeypatch):
 
 
 def test_hosted_ui_supports_direct_sidebar_routes(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "is_clerk_enabled", lambda: False)
 
     client = hosted_app.app.test_client()
 
@@ -80,8 +81,8 @@ def test_hosted_ui_supports_direct_sidebar_routes(monkeypatch):
 
 
 def test_demo_link_whatsapp_requires_explicit_number(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: _AuthContext())
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_require_demo_auth", lambda: _AuthContext())
     hosted_app.DEMO_LINKS.clear()
 
     client = hosted_app.app.test_client()
@@ -92,8 +93,8 @@ def test_demo_link_whatsapp_requires_explicit_number(monkeypatch):
 
 
 def test_demo_link_whatsapp_normalizes_number(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
-    monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: _AuthContext())
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_require_demo_auth", lambda: _AuthContext())
     hosted_app.DEMO_LINKS.clear()
 
     client = hosted_app.app.test_client()
@@ -109,7 +110,7 @@ def test_demo_link_whatsapp_normalizes_number(monkeypatch):
 
 def test_twilio_webhook_can_suppress_twiml_after_outbound_reply(monkeypatch):
     monkeypatch.setenv("TWILIO_VALIDATE_REQUESTS", "false")
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
     monkeypatch.setattr(
         hosted_app.live_backend,
         "process_twilio_webhook",
@@ -138,7 +139,7 @@ def test_twilio_webhook_can_suppress_twiml_after_outbound_reply(monkeypatch):
 
 def test_twilio_validation_is_optional_in_demo_mode_when_env_missing(monkeypatch):
     monkeypatch.delenv("TWILIO_VALIDATE_REQUESTS", raising=False)
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: False)
 
     with hosted_app.app.test_request_context("/webhook", method="POST", data={}):
         assert hosted_app._twilio_request_is_valid() is True
@@ -147,7 +148,7 @@ def test_twilio_validation_is_optional_in_demo_mode_when_env_missing(monkeypatch
 def test_twilio_webhook_validates_signature_by_default_when_live(monkeypatch):
     monkeypatch.delenv("TWILIO_VALIDATE_REQUESTS", raising=False)
     monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test-token")
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
 
     called = {"value": False}
 
@@ -175,7 +176,7 @@ def test_twilio_webhook_validates_signature_by_default_when_live(monkeypatch):
 
 def test_twilio_webhook_hides_internal_exception_details(monkeypatch):
     monkeypatch.setenv("TWILIO_VALIDATE_REQUESTS", "false")
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
 
     def fail_processing(_form):
         raise RuntimeError("database password leaked")
@@ -202,7 +203,7 @@ def test_agent_flow_requires_auth_when_auth_required(monkeypatch):
     def auth_response():
         return hosted_app.jsonify({"status": "error", "message": "auth required"}), 401
 
-    monkeypatch.setattr(hosted_app, "_require_demo_auth", auth_response)
+    monkeypatch.setattr(hosted_shared, "_require_demo_auth", auth_response)
 
     client = hosted_app.app.test_client()
     response = client.get("/api/agent-flow")
@@ -211,8 +212,8 @@ def test_agent_flow_requires_auth_when_auth_required(monkeypatch):
 
 
 def test_embeddings_update_disabled_on_live_backend(monkeypatch):
-    monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: None)
-    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+    monkeypatch.setattr(hosted_shared, "_require_demo_auth", lambda: None)
+    monkeypatch.setattr(hosted_shared, "_live_backend_enabled", lambda: True)
 
     client = hosted_app.app.test_client()
     response = client.post("/api/embeddings/update", json={"force": True})
