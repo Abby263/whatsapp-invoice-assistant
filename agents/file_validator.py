@@ -8,7 +8,11 @@ from typing import Optional
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
 from constants.llm_configs import Models, TemperatureSettings, TokenLimits
-from constants.fallback_messages import FILE_VALIDATION_PROMPTS, FILE_VALIDATION_MESSAGES
+from constants.fallback_messages import (
+    FILE_VALIDATION_PROMPTS,
+    FILE_VALIDATION_MESSAGES,
+)
+from utils.image_preprocess import preprocess_image_bytes
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -31,9 +35,9 @@ class FileValidatorAgent(BaseAgent):
         """
         super().__init__(llm_factory)
 
-    async def process(self,
-                     agent_input: AgentInput,
-                     context: Optional[AgentContext] = None) -> AgentOutput:
+    async def process(
+        self, agent_input: AgentInput, context: Optional[AgentContext] = None
+    ) -> AgentOutput:
         """
         Process a file to determine if it's a valid invoice.
 
@@ -55,10 +59,13 @@ class FileValidatorAgent(BaseAgent):
 
             # For binary content like images, we need special handling
             if isinstance(file_content, bytes):
-                legacy_validator = getattr(self.llm_factory, "validate_invoice_file", None)
+                legacy_validator = getattr(
+                    self.llm_factory, "validate_invoice_file", None
+                )
                 if (
                     legacy_validator is not None
-                    and getattr(legacy_validator, "__self__", None) is not self.llm_factory
+                    and getattr(legacy_validator, "__self__", None)
+                    is not self.llm_factory
                 ):
                     validation_result = await legacy_validator(
                         f"Binary file: {file_name}, type: {file_type}, size: {len(file_content)} bytes"
@@ -74,8 +81,12 @@ class FileValidatorAgent(BaseAgent):
                             metadata={
                                 "file_path": file_path,
                                 "file_type": file_type,
-                                "missing_elements": ["unable to parse validation result"],
-                                "reasons": FILE_VALIDATION_MESSAGES["parse_validation_failed"],
+                                "missing_elements": [
+                                    "unable to parse validation result"
+                                ],
+                                "reasons": FILE_VALIDATION_MESSAGES[
+                                    "parse_validation_failed"
+                                ],
                             },
                         )
                     is_valid = parsed_result.get("is_valid_invoice", False)
@@ -86,34 +97,51 @@ class FileValidatorAgent(BaseAgent):
                         metadata={
                             "file_path": file_path,
                             "file_type": file_type,
-                            "missing_elements": parsed_result.get("missing_elements", []),
+                            "missing_elements": parsed_result.get(
+                                "missing_elements", []
+                            ),
                             "reasons": parsed_result.get("reasons", ""),
                             "raw_validation_result": parsed_result,
                         },
                     )
 
                 # For image types, we'll use GPT-4o-mini to validate if it's an invoice
-                if file_type and ("image" in file_type.lower() or file_type.lower() in ["png", "jpg", "jpeg"]):
+                if file_type and (
+                    "image" in file_type.lower()
+                    or file_type.lower() in ["png", "jpg", "jpeg"]
+                ):
                     # Get additional file info
+                    preprocessed_image = preprocess_image_bytes(file_content, file_type)
+                    file_content = preprocessed_image.content
                     file_size = len(file_content)
 
                     # Try to get image dimensions if possible
-                    dimensions = "unknown"
-                    try:
-                        from PIL import Image
-                        import io
-                        img = Image.open(io.BytesIO(file_content))
-                        dimensions = f"{img.width}x{img.height}"
-                    except Exception as e:
-                        logger.warning(f"Could not determine image dimensions: {str(e)}")
+                    dimensions = preprocessed_image.dimensions
+                    if dimensions == "unknown":
+                        try:
+                            from PIL import Image
+                            import io
+
+                            img = Image.open(io.BytesIO(file_content))
+                            dimensions = f"{img.width}x{img.height}"
+                        except Exception as e:
+                            logger.warning(
+                                f"Could not determine image dimensions: {str(e)}"
+                            )
+                    else:
+                        logger.info("Preprocessed image for validation: %s", dimensions)
 
                     # Prepare for image analysis using GPT-4o-mini
                     try:
                         # Convert image to base64 for analysis
-                        base64_image = base64.b64encode(file_content).decode('utf-8')
+                        base64_image = base64.b64encode(file_content).decode("utf-8")
 
-                        validation_config = self.llm_factory.get_task_config("validation")
-                        client = self.llm_factory._create_openai_instance(validation_config)
+                        validation_config = self.llm_factory.get_task_config(
+                            "validation"
+                        )
+                        client = self.llm_factory._create_openai_instance(
+                            validation_config
+                        )
 
                         # Define a prompt for invoice validation
                         try:
@@ -122,10 +150,16 @@ class FileValidatorAgent(BaseAgent):
 
                             # First try to load through the factory
                             try:
-                                prompt = self.llm_factory.load_prompt_template(image_prompt_name)
-                                logger.debug(f"Loaded {image_prompt_name} via LLMFactory")
+                                prompt = self.llm_factory.load_prompt_template(
+                                    image_prompt_name
+                                )
+                                logger.debug(
+                                    f"Loaded {image_prompt_name} via LLMFactory"
+                                )
                             except Exception as e:
-                                logger.warning(f"Could not load {image_prompt_name} via LLMFactory: {str(e)}")
+                                logger.warning(
+                                    f"Could not load {image_prompt_name} via LLMFactory: {str(e)}"
+                                )
 
                                 # Fall back to direct file loading
                                 prompt_path = (
@@ -138,62 +172,72 @@ class FileValidatorAgent(BaseAgent):
                                 if prompt_path.exists():
                                     with open(prompt_path, "r") as f:
                                         prompt = f.read()
-                                    logger.debug("Loaded image validation prompt from file")
+                                    logger.debug(
+                                        "Loaded image validation prompt from file"
+                                    )
                                 else:
-                                    logger.warning("file_validator_image_prompt.txt not found, using fallback prompt")
+                                    logger.warning(
+                                        "file_validator_image_prompt.txt not found, using fallback prompt"
+                                    )
                                     # Use fallback prompt from constants
                                     prompt = FILE_VALIDATION_PROMPTS["image_validation"]
                         except Exception as e:
-                            logger.error(f"Error loading image validation prompt: {str(e)}")
+                            logger.error(
+                                f"Error loading image validation prompt: {str(e)}"
+                            )
                             logger.warning("Using fallback image validation prompt")
                             # Use fallback prompt from constants
                             prompt = FILE_VALIDATION_PROMPTS["image_validation"]
 
                         # Detect proper MIME type for the image
-                        mime_type = "image/jpeg"  # default
-                        try:
-                            from PIL import Image
-                            import io
-                            img = Image.open(io.BytesIO(file_content))
-                            img_format = img.format.lower() if img.format else "jpeg"
-                            if img_format == "jpeg" or img_format == "jpg":
-                                mime_type = "image/jpeg"
-                            elif img_format == "png":
-                                mime_type = "image/png"
-                            elif img_format == "gif":
-                                mime_type = "image/gif"
-                            elif img_format == "webp":
-                                mime_type = "image/webp"
-                            else:
-                                mime_type = f"image/{img_format}"
-                            logger.info(f"Detected image format: {img_format}, using MIME type: {mime_type}")
-                        except Exception as e:
-                            logger.warning(f"Could not determine image format: {str(e)}. Using default: {mime_type}")
+                        mime_type = preprocessed_image.mime_type
+                        if dimensions == "unknown":
+                            try:
+                                from PIL import Image
+                                import io
 
+                                img = Image.open(io.BytesIO(file_content))
+                                img_format = (
+                                    img.format.lower() if img.format else "jpeg"
+                                )
+                                if img_format == "jpeg" or img_format == "jpg":
+                                    mime_type = "image/jpeg"
+                                elif img_format == "png":
+                                    mime_type = "image/png"
+                                elif img_format == "gif":
+                                    mime_type = "image/gif"
+                                elif img_format == "webp":
+                                    mime_type = "image/webp"
+                                else:
+                                    mime_type = f"image/{img_format}"
+                                logger.info(
+                                    f"Detected image format: {img_format}, using MIME type: {mime_type}"
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"Could not determine image format: {str(e)}. Using default: {mime_type}"
+                                )
                         # Call OpenAI with the image
                         response = self.llm_factory._create_openai_chat_completion(
                             client,
                             model_name=validation_config.get("model", Models.DEFAULT),
                             messages=[
-                                {
-                                    "role": "system",
-                                    "content": prompt
-                                },
+                                {"role": "system", "content": prompt},
                                 {
                                     "role": "user",
                                     "content": [
                                         {
                                             "type": "text",
-                                            "text": "Is this a valid invoice?"
+                                            "text": "Is this a valid invoice?",
                                         },
                                         {
                                             "type": "image_url",
                                             "image_url": {
                                                 "url": f"data:{mime_type};base64,{base64_image}"
-                                            }
-                                        }
-                                    ]
-                                }
+                                            },
+                                        },
+                                    ],
+                                },
                             ],
                             temperature=validation_config.get(
                                 "temperature",
@@ -219,7 +263,9 @@ class FileValidatorAgent(BaseAgent):
                         missing_elements = parsed_result.get("missing_elements", [])
                         reasons = parsed_result.get("reasons", "")
 
-                        logger.info(f"Image validation result: {'Valid' if is_valid else 'Invalid'} invoice with {confidence:.2f} confidence")
+                        logger.info(
+                            f"Image validation result: {'Valid' if is_valid else 'Invalid'} invoice with {confidence:.2f} confidence"
+                        )
 
                         return AgentOutput(
                             content=is_valid,
@@ -231,14 +277,18 @@ class FileValidatorAgent(BaseAgent):
                                 "file_size": file_size,
                                 "dimensions": dimensions,
                                 "missing_elements": missing_elements,
-                                "reasons": reasons
-                            }
+                                "reasons": reasons,
+                            },
                         )
 
                     except Exception as e:
-                        logger.error(f"Error during image validation: {str(e)}", exc_info=True)
+                        logger.error(
+                            f"Error during image validation: {str(e)}", exc_info=True
+                        )
                         # If image analysis fails, fall back to regular validation
-                        logger.warning("Falling back to basic file validation for image")
+                        logger.warning(
+                            "Falling back to basic file validation for image"
+                        )
 
                         # For safety, assume it's NOT a valid invoice when validation fails
                         return AgentOutput(
@@ -251,8 +301,8 @@ class FileValidatorAgent(BaseAgent):
                                 "file_size": file_size,
                                 "dimensions": dimensions,
                                 "missing_elements": ["validation failed"],
-                                "reasons": f"{FILE_VALIDATION_MESSAGES['image_validation_failed']}: {str(e)}"
-                            }
+                                "reasons": f"{FILE_VALIDATION_MESSAGES['image_validation_failed']}: {str(e)}",
+                            },
                         )
 
                 # For other binary files, create a descriptive message
@@ -262,7 +312,9 @@ class FileValidatorAgent(BaseAgent):
                 content_for_validation = file_content
 
             # Call LLM to validate the file
-            validation_result = await self.llm_factory.validate_invoice_file(content_for_validation)
+            validation_result = await self.llm_factory.validate_invoice_file(
+                content_for_validation
+            )
 
             # Parse the response - handle possible code blocks in the response
             try:
@@ -271,14 +323,16 @@ class FileValidatorAgent(BaseAgent):
                 parsed_result = json.loads(clean_result)
                 logger.debug(f"Parsed validation result: {parsed_result}")
             except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse validation result as JSON: {validation_result}")
+                logger.warning(
+                    f"Failed to parse validation result as JSON: {validation_result}"
+                )
                 logger.error(f"JSON parsing error: {str(e)}")
                 # Create a fallback result if parsing fails
                 parsed_result = {
                     "is_valid_invoice": False,
                     "confidence_score": 0.5,
                     "missing_elements": ["unable to parse validation result"],
-                    "reasons": FILE_VALIDATION_MESSAGES["parse_validation_failed"]
+                    "reasons": FILE_VALIDATION_MESSAGES["parse_validation_failed"],
                 }
 
             # Extract validation status and confidence
@@ -304,8 +358,8 @@ class FileValidatorAgent(BaseAgent):
                     "file_type": file_type,
                     "missing_elements": missing_elements,
                     "reasons": reasons,
-                    "raw_validation_result": parsed_result
-                }
+                    "raw_validation_result": parsed_result,
+                },
             )
 
         except Exception as e:
@@ -317,8 +371,8 @@ class FileValidatorAgent(BaseAgent):
                 error=f"File validation failed: {str(e)}",
                 metadata={
                     "file_path": agent_input.file_path or "",
-                    "file_type": agent_input.content_type or "unknown"
-                }
+                    "file_type": agent_input.content_type or "unknown",
+                },
             )
 
     def _strip_code_blocks(self, text: str) -> str:
@@ -335,7 +389,7 @@ class FileValidatorAgent(BaseAgent):
         text = text.strip()
 
         # Remove markdown code block backticks (```json and ```)
-        code_block_pattern = r'^```(?:json)?\s*([\s\S]*?)```$'
+        code_block_pattern = r"^```(?:json)?\s*([\s\S]*?)```$"
         match = re.match(code_block_pattern, text, re.DOTALL)
 
         if match:

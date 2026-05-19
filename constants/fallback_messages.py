@@ -18,19 +18,21 @@ GENERAL_FALLBACKS = {
 # Intent-based fallback messages
 INTENT_FALLBACKS = {
     IntentType.GREETING: "Hello. I'm your WhatsApp Invoice Assistant. What would you like to do with receipts, invoices, or spending today?",
-
     IntentType.GENERAL: """I'm your AI-powered Invoice Assistant.
 
 I can help you extract data from receipts and invoices, track expenses, generate invoices, and answer questions about your saved records.""",
-
-    IntentType.HELP: "I can help with receipt extraction, invoice generation, and spend questions over your saved invoice data.",
+    IntentType.HELP: (
+        "Receipt Intelligence\n\n"
+        "Send a receipt photo/PDF, a handwritten expense page, ask a spending question, "
+        "or create an invoice. After upload, reply APPROVE <id> or REJECT <id>."
+    ),
     IntentType.GOODBYE: "Thank you for using WhatsApp Invoice Assistant. Have a great day!",
     IntentType.UNKNOWN: "I'm not sure what you're asking for. You can try rephrasing your question or ask for help to see what I can do.",
 }
 
 # File processing fallback messages
 FILE_PROCESSING_FALLBACKS = {
-    "invalid_file": "The file you've uploaded doesn't appear to be a valid invoice. Please try uploading a clear image of an invoice or receipt.",
+    "invalid_file": "I couldn't read this as a receipt, invoice, bill, or handwritten expense ledger. Please try a clearer photo or PDF.",
     "unsupported_format": "Sorry, this file format is not supported. Please upload a PDF, image (JPG, PNG), Excel, or CSV file.",
     "extraction_failed": "I couldn't extract information from this file. Please try uploading a clearer image or a different invoice.",
     "upload_failed": "There was a problem uploading your file. Please try again later.",
@@ -69,7 +71,7 @@ FILE_VALIDATION_MESSAGES = {
     "plain_text_invalid": "Plain text is not a valid invoice file format",
     "parse_validation_failed": "Failed to parse validation response",
     "validation_failed": "Could not properly validate the file",
-    "image_validation_failed": "Could not properly validate image"
+    "image_validation_failed": "Could not properly validate image",
 }
 
 # Invoice query fallback messages
@@ -109,6 +111,7 @@ API_FALLBACKS = {
     "not_found": "The requested resource was not found.",
     "unauthorized": "You are not authorized to access this resource.",
 }
+
 
 # Get fallback message by intent type
 def get_intent_fallback(intent_type: str) -> str:

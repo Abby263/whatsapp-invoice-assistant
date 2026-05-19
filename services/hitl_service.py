@@ -17,6 +17,7 @@ from services.conversation_policy import compact_whatsapp_message
 from services.history_service import delete_user_history
 from services.llm_factory import LLMFactory
 from services.rate_limit_service import SCOPE_APPROVAL, check_and_record
+from services.whatsapp_copy import build_pending_uploads_message, format_money
 from storage import StorageConfigurationError, SupabaseStorageHandler
 from utils import observability
 
@@ -43,7 +44,9 @@ async def handle_human_confirmation_message(
     target_id = _coerce_optional_int(hitl_intent.get("target_id"))
 
     if action == "approve_upload" and target_id is not None:
-        return await approve_pending_extraction(user_id, target_id, conversation_history)
+        return await approve_pending_extraction(
+            user_id, target_id, conversation_history
+        )
 
     if action == "reject_upload" and target_id is not None:
         return reject_pending_upload(user_id, target_id)
@@ -72,7 +75,11 @@ def parse_hitl_command(text_content: str) -> Optional[Dict[str, Any]]:
         (r"^REJECT\s+(\d+)$", "reject_upload", "upload"),
         (r"^CONFIRM\s+DELETE\s+RECEIPT\s+(\d+)$", "confirm_delete", "receipt"),
         (r"^CONFIRM\s+DELETE\s+UPLOAD\s+(\d+)$", "confirm_delete", "upload"),
-        (r"^CONFIRM\s+DELETE\s+GENERATED\s+(\d+)$", "confirm_delete", "generated_invoice"),
+        (
+            r"^CONFIRM\s+DELETE\s+GENERATED\s+(\d+)$",
+            "confirm_delete",
+            "generated_invoice",
+        ),
     ]
     for pattern, action, target_scope in simple_commands:
         match = re.fullmatch(pattern, text, flags=re.IGNORECASE)
@@ -97,6 +104,48 @@ def parse_hitl_command(text_content: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def count_pending_uploads(user_id: Optional[Union[str, UUID, int]]) -> Optional[int]:
+    if user_id is None:
+        return None
+    uploads = _load_pending_uploads(user_id, limit=20)
+    return len(uploads) if uploads is not None else None
+
+
+def build_pending_upload_status(
+    user_id: Optional[Union[str, UUID, int]]
+) -> Dict[str, Any]:
+    if user_id is None:
+        return _response(
+            "I need a linked WhatsApp user before I can show pending uploads.",
+            {
+                "intent": IntentType.HELP.value,
+                "scope": "pending_uploads",
+                "hitl_status": "missing_user",
+            },
+            confidence=0.8,
+        )
+
+    uploads = _load_pending_uploads(user_id, limit=8)
+    if uploads is None:
+        return _response(
+            "I could not load pending uploads right now. Please try again.",
+            {
+                "intent": IntentType.HELP.value,
+                "scope": "pending_uploads",
+                "hitl_status": "load_failed",
+            },
+            confidence=0.6,
+        )
+    return _response(
+        build_pending_uploads_message(uploads),
+        {
+            "intent": IntentType.HELP.value,
+            "scope": "pending_uploads",
+            "pending_count": len(uploads),
+        },
+    )
+
+
 async def classify_hitl_intent(
     text_content: str,
     conversation_history: List[Dict[str, Any]],
@@ -106,10 +155,8 @@ async def classify_hitl_intent(
     try:
         llm_factory = LLMFactory()
         prompt_template = llm_factory.load_prompt_template("hitl_intent")
-        prompt = (
-            prompt_template
-            .replace("{message}", json.dumps(text_content))
-            .replace("{conversation_history}", json.dumps(conversation_history[-8:]))
+        prompt = prompt_template.replace("{message}", json.dumps(text_content)).replace(
+            "{conversation_history}", json.dumps(conversation_history[-8:])
         )
         raw_response = await llm_factory.agenerate_completion(
             prompt=prompt,
@@ -179,7 +226,9 @@ async def approve_pending_extraction(
     pending_extraction_result = _pending_extraction_from_media(media_info)
     cache_check: Optional[Dict[str, Any]] = None
     if pending_extraction_result:
-        cache_check = _pending_extraction_cache_check(media_info, pending_extraction_result)
+        cache_check = _pending_extraction_cache_check(
+            media_info, pending_extraction_result
+        )
         if cache_check["valid"]:
             return await _approve_pending_extraction_payload(
                 user_id=user_id,
@@ -208,7 +257,11 @@ async def approve_pending_extraction(
                 confidence=0.5,
             )
 
-    file_key = file_storage.get("file_key") or file_storage.get("path") or media_info.get("file_path")
+    file_key = (
+        file_storage.get("file_key")
+        or file_storage.get("path")
+        or media_info.get("file_path")
+    )
     if not file_key:
         return _response(
             "\n".join(
@@ -230,15 +283,23 @@ async def approve_pending_extraction(
         )
 
     try:
-        file_bytes = SupabaseStorageHandler(bucket_name=file_storage.get("bucket")).download_file(file_key)
+        file_bytes = SupabaseStorageHandler(
+            bucket_name=file_storage.get("bucket")
+        ).download_file(file_key)
     except StorageConfigurationError as exc:
         logger.warning("Storage is not configured for HITL approval: %s", exc)
         return _response(
             "⚠️ *Approval Failed*\n\n*Reason:* Storage is not configured, so this upload cannot be approved yet.",
-            {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "storage_not_configured", "media_id": str(media_id)},
+            {
+                "intent": IntentType.FILE_PROCESSING.value,
+                "hitl_status": "storage_not_configured",
+                "media_id": str(media_id),
+            },
         )
     except Exception as exc:
-        logger.exception("Could not download pending upload %s for approval: %s", media_id, exc)
+        logger.exception(
+            "Could not download pending upload %s for approval: %s", media_id, exc
+        )
         return _response(
             f"⚠️ *Approval Failed*\n\n*Upload:* #{media_id}\n*Reason:* The stored file could not be reopened.\n\nPlease resend the file.",
             {
@@ -249,15 +310,26 @@ async def approve_pending_extraction(
             },
         )
 
-    file_name = media_info.get("original_filename") or media_info.get("filename") or f"upload_{media_id}"
-    suffix = Path(file_name).suffix or mimetypes.guess_extension(media_info.get("content_type") or "") or ".bin"
+    file_name = (
+        media_info.get("original_filename")
+        or media_info.get("filename")
+        or f"upload_{media_id}"
+    )
+    suffix = (
+        Path(file_name).suffix
+        or mimetypes.guess_extension(media_info.get("content_type") or "")
+        or ".bin"
+    )
     temp_path = ""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as handle:
             handle.write(file_bytes)
             temp_path = handle.name
 
-        from workflows.file_processing_workflow import detect_file_type, process_invoice_file
+        from workflows.file_processing_workflow import (
+            detect_file_type,
+            process_invoice_file,
+        )
 
         file_type = detect_file_type(temp_path, media_info.get("content_type") or "")
         file_metadata = {
@@ -280,13 +352,17 @@ async def approve_pending_extraction(
             hitl_confirmed=True,
         )
         result.setdefault("metadata", {})
-        result["metadata"].update({
-            "hitl_status": "confirmed",
-            "hitl_action": "store_extraction",
-            "approved_media_id": str(media_id),
-        })
+        result["metadata"].update(
+            {
+                "hitl_status": "confirmed",
+                "hitl_action": "store_extraction",
+                "approved_media_id": str(media_id),
+            }
+        )
         if result.get("content"):
-            result["content"] = compact_whatsapp_message(result["content"], max_chars=1000)
+            result["content"] = compact_whatsapp_message(
+                result["content"], max_chars=1000
+            )
         return result
     finally:
         if temp_path:
@@ -311,12 +387,14 @@ async def _approve_pending_extraction_payload(
     payload.setdefault("metadata", {})
     if not isinstance(payload["metadata"], dict):
         payload["metadata"] = {}
-    payload["metadata"].update({
-        "hitl_confirmed": True,
-        "hitl_status": "confirmed",
-        "hitl_action": "store_extraction",
-        "approved_media_id": str(media_id),
-    })
+    payload["metadata"].update(
+        {
+            "hitl_confirmed": True,
+            "hitl_status": "confirmed",
+            "hitl_action": "store_extraction",
+            "approved_media_id": str(media_id),
+        }
+    )
     if approved_from_cache:
         payload["metadata"]["approved_from_cache"] = True
     file_storage = payload["metadata"].get("file_storage")
@@ -332,18 +410,27 @@ async def _approve_pending_extraction_payload(
         AgentContext(user_id=str(user_id)),
     )
     content = storage_result.content if isinstance(storage_result.content, dict) else {}
-    if storage_result.status == "success" and content.get("status") in {"success", "duplicate"}:
+    if storage_result.status == "success" and content.get("status") in {
+        "success",
+        "duplicate",
+    }:
         invoice_id = content.get("invoice_id")
         item_count = len(content.get("item_ids") or [])
+        summary = _document_summary_from_payload(payload)
         if approved_from_cache:
-            _mark_media_approved_from_cache(user_id, content.get("media_id") or media_id)
+            _mark_media_approved_from_cache(
+                user_id, content.get("media_id") or media_id
+            )
         lines = [
             "✅ *Document Saved*",
             "",
             f"*Upload:* #{media_id}",
-            f"*Receipt:* #{invoice_id or 'existing'}",
-            f"*Items:* {item_count}",
+            f"Receipt #{invoice_id or 'existing'} - {summary}",
+            f"Upload #{media_id} is now included in approved analytics.",
             "*Status:* Analytics updated.",
+            "",
+            f"Items saved: {item_count}",
+            'Try: "Show my latest receipts" or "Total spend this month"',
         ]
         return _response(
             "\n".join(lines),
@@ -360,7 +447,11 @@ async def _approve_pending_extraction_payload(
             },
         )
 
-    error_message = storage_result.error or content.get("error") or "Could not save the pending extraction."
+    error_message = (
+        storage_result.error
+        or content.get("error")
+        or "Could not save the pending extraction."
+    )
     return _response(
         f"⚠️ *Approval Failed*\n\n*Upload:* #{media_id}\n*Reason:* {error_message}",
         {
@@ -373,8 +464,14 @@ async def _approve_pending_extraction_payload(
     )
 
 
-def _pending_extraction_from_media(media_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    metadata = media_info.get("metadata") if isinstance(media_info.get("metadata"), dict) else {}
+def _pending_extraction_from_media(
+    media_info: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    metadata = (
+        media_info.get("metadata")
+        if isinstance(media_info.get("metadata"), dict)
+        else {}
+    )
     value = metadata.get("pending_extraction_result")
     return value if isinstance(value, dict) else None
 
@@ -385,11 +482,31 @@ def _pending_extraction_cache_check(
 ) -> Dict[str, Any]:
     """Validate that cached extraction metadata still points at the current media row."""
 
-    metadata = extraction_result.get("metadata") if isinstance(extraction_result.get("metadata"), dict) else {}
-    file_metadata = metadata.get("file_metadata") if isinstance(metadata.get("file_metadata"), dict) else {}
-    cached_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
-    nested_storage = file_metadata.get("file_storage") if isinstance(file_metadata.get("file_storage"), dict) else {}
-    media_storage = media_info.get("file_storage") if isinstance(media_info.get("file_storage"), dict) else {}
+    metadata = (
+        extraction_result.get("metadata")
+        if isinstance(extraction_result.get("metadata"), dict)
+        else {}
+    )
+    file_metadata = (
+        metadata.get("file_metadata")
+        if isinstance(metadata.get("file_metadata"), dict)
+        else {}
+    )
+    cached_storage = (
+        metadata.get("file_storage")
+        if isinstance(metadata.get("file_storage"), dict)
+        else {}
+    )
+    nested_storage = (
+        file_metadata.get("file_storage")
+        if isinstance(file_metadata.get("file_storage"), dict)
+        else {}
+    )
+    media_storage = (
+        media_info.get("file_storage")
+        if isinstance(media_info.get("file_storage"), dict)
+        else {}
+    )
 
     checks: List[str] = []
     mismatches: Dict[str, Dict[str, str]] = {}
@@ -403,7 +520,9 @@ def _pending_extraction_cache_check(
         if current_text != cached_text:
             mismatches[name] = {"current": current_text, "cached": cached_text}
 
-    current_hash = media_info.get("content_hash") or media_storage.get("checksum_sha256")
+    current_hash = media_info.get("content_hash") or media_storage.get(
+        "checksum_sha256"
+    )
     cached_hash = (
         metadata.get("checksum_sha256")
         or file_metadata.get("checksum_sha256")
@@ -446,7 +565,9 @@ def _pending_extraction_cache_check(
     )
     compare("original_filename", current_filename, cached_filename)
 
-    current_content_type = media_info.get("content_type") or media_storage.get("content_type")
+    current_content_type = media_info.get("content_type") or media_storage.get(
+        "content_type"
+    )
     cached_content_type = (
         cached_storage.get("content_type")
         or nested_storage.get("content_type")
@@ -490,7 +611,11 @@ def _mark_media_approved_from_cache(
             )
             if media is None:
                 return
-            metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
+            metadata = (
+                media.processing_metadata
+                if isinstance(media.processing_metadata, dict)
+                else {}
+            )
             media.processing_metadata = {
                 **metadata,
                 "approved_from_cache": True,
@@ -561,7 +686,9 @@ async def review_pending_upload_from_web(
     }
 
 
-def reject_pending_upload(user_id: Union[str, UUID, int], media_id: int) -> Dict[str, Any]:
+def reject_pending_upload(
+    user_id: Union[str, UUID, int], media_id: int
+) -> Dict[str, Any]:
     """Discard a pending upload after the user explicitly rejects it."""
 
     media_info = _load_user_media(user_id, media_id)
@@ -592,7 +719,7 @@ def reject_pending_upload(user_id: Union[str, UUID, int], media_id: int) -> Dict
     )
     if result.get("status") == "success":
         return _response(
-            f"🗑️ *Upload Discarded*\n\n*Upload:* #{media_id}\n*Status:* No invoice or analytics rows were created.",
+            f"*Discarded upload #{media_id}.*\n\nNothing was added to your spending.",
             {
                 "intent": IntentType.FILE_PROCESSING.value,
                 "hitl_status": "rejected",
@@ -612,7 +739,9 @@ def reject_pending_upload(user_id: Union[str, UUID, int], media_id: int) -> Dict
     )
 
 
-def execute_confirmed_delete(user_id: Union[str, UUID, int], payload: Dict[str, Any]) -> Dict[str, Any]:
+def execute_confirmed_delete(
+    user_id: Union[str, UUID, int], payload: Dict[str, Any]
+) -> Dict[str, Any]:
     """Delete user data only after an exact WhatsApp confirmation command."""
 
     confirmed_payload = {**payload, "confirmed": True}
@@ -718,8 +847,16 @@ def _load_user_media(user_id: Union[str, UUID, int], media_id: int) -> Dict[str,
                     "message": f"I could not find upload #{media_id} for your WhatsApp account.",
                     "metadata": {"hitl_status": "not_found", "media_id": str(media_id)},
                 }
-            metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
-            file_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
+            metadata = (
+                media.processing_metadata
+                if isinstance(media.processing_metadata, dict)
+                else {}
+            )
+            file_storage = (
+                metadata.get("file_storage")
+                if isinstance(metadata.get("file_storage"), dict)
+                else {}
+            )
             file_storage = {
                 **file_storage,
                 "file_key": file_storage.get("file_key") or media.file_path,
@@ -727,8 +864,11 @@ def _load_user_media(user_id: Union[str, UUID, int], media_id: int) -> Dict[str,
                 "url": file_storage.get("url") or media.file_url,
                 "content_type": file_storage.get("content_type") or media.content_type,
                 "file_size": file_storage.get("file_size") or media.file_size,
-                "checksum_sha256": file_storage.get("checksum_sha256") or media.content_hash,
-                "original_filename": file_storage.get("original_filename") or media.original_filename or media.filename,
+                "checksum_sha256": file_storage.get("checksum_sha256")
+                or media.content_hash,
+                "original_filename": file_storage.get("original_filename")
+                or media.original_filename
+                or media.filename,
                 "media_id": str(media.id),
             }
             return {
@@ -742,8 +882,12 @@ def _load_user_media(user_id: Union[str, UUID, int], media_id: int) -> Dict[str,
                 "content_type": media.content_type,
                 "content_hash": media.content_hash,
                 "file_storage": file_storage,
-                "file_metadata": metadata.get("file_metadata") if isinstance(metadata.get("file_metadata"), dict) else {},
-                "validation_result": metadata.get("validation_result") if isinstance(metadata.get("validation_result"), dict) else None,
+                "file_metadata": metadata.get("file_metadata")
+                if isinstance(metadata.get("file_metadata"), dict)
+                else {},
+                "validation_result": metadata.get("validation_result")
+                if isinstance(metadata.get("validation_result"), dict)
+                else None,
                 "metadata": metadata,
             }
         finally:
@@ -757,7 +901,101 @@ def _load_user_media(user_id: Union[str, UUID, int], media_id: int) -> Dict[str,
         }
 
 
-def _delete_payload_from_intent(hitl_intent: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _load_pending_uploads(
+    user_id: Union[str, UUID, int],
+    *,
+    limit: int = 8,
+) -> Optional[List[Dict[str, Any]]]:
+    try:
+        user_id_value = int(str(user_id))
+    except (TypeError, ValueError):
+        return None
+
+    try:
+        from database.connection import ensure_application_schema, get_db_session
+        from database.schemas import Media
+
+        ensure_application_schema()
+        session = get_db_session()
+        try:
+            media_rows = (
+                session.query(Media)
+                .filter(Media.user_id == user_id_value, Media.invoice_id.is_(None))
+                .order_by(Media.created_at.desc(), Media.id.desc())
+                .limit(50)
+                .all()
+            )
+            pending: List[Dict[str, Any]] = []
+            for media in media_rows:
+                metadata = (
+                    media.processing_metadata
+                    if isinstance(media.processing_metadata, dict)
+                    else {}
+                )
+                if metadata.get("hitl_status") != "awaiting_confirmation":
+                    continue
+                summary = (
+                    metadata.get("pending_extraction_summary")
+                    if isinstance(metadata.get("pending_extraction_summary"), dict)
+                    else {}
+                )
+                pending.append(
+                    {
+                        "id": str(media.id),
+                        "media_id": str(media.id),
+                        "title": _pending_title(media, summary),
+                        "filename": media.original_filename or media.filename,
+                        "transaction_date": summary.get("transaction_date"),
+                        "total_amount": summary.get("total_amount"),
+                        "currency": summary.get("currency"),
+                        "approval_command": metadata.get("hitl_approval_command")
+                        or f"APPROVE {media.id}",
+                        "rejection_command": metadata.get("hitl_rejection_command")
+                        or f"REJECT {media.id}",
+                    }
+                )
+                if len(pending) >= limit:
+                    break
+            return pending
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning("Could not load pending uploads for user=%s: %s", user_id, exc)
+        return None
+
+
+def _pending_title(media: Any, summary: Dict[str, Any]) -> str:
+    vendor = str(summary.get("vendor_name") or "").strip()
+    if vendor and vendor.lower() not in {"not visible", "unknown"}:
+        return vendor
+    document_type = str(summary.get("document_type") or "").replace("_", " ").strip()
+    if document_type:
+        return document_type.title()
+    return media.original_filename or media.filename or "Upload"
+
+
+def _document_summary_from_payload(payload: Dict[str, Any]) -> str:
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    vendor = data.get("vendor") if isinstance(data.get("vendor"), dict) else {}
+    vendor_name = str(
+        vendor.get("name") or data.get("vendor_name") or "Document"
+    ).strip()
+    financial = data.get("financial") if isinstance(data.get("financial"), dict) else {}
+    total = (
+        financial.get("total")
+        or financial.get("total_amount")
+        or data.get("total_amount")
+        or data.get("total")
+    )
+    currency = financial.get("currency") or data.get("currency") or "INR"
+    if total not in (None, ""):
+        return f"{vendor_name}, {format_money(total, currency)}"
+    return vendor_name
+
+
+def _delete_payload_from_intent(
+    hitl_intent: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
     payload, _, _ = _confirmation_details_from_intent(hitl_intent)
     return payload
 
@@ -769,7 +1007,11 @@ def _confirmation_details_from_intent(
     target_id = _coerce_optional_int(hitl_intent.get("target_id"))
 
     if scope == "all":
-        return {"scope": "all"}, "CONFIRM DELETE ALL", "all saved records for this linked WhatsApp user"
+        return (
+            {"scope": "all"},
+            "CONFIRM DELETE ALL",
+            "all saved records for this linked WhatsApp user",
+        )
     if scope == "receipt" and target_id is not None:
         return (
             {"scope": "document", "kind": "invoice", "id": target_id},
@@ -796,7 +1038,7 @@ def _parse_hitl_intent_json(raw_response: str) -> Dict[str, Any]:
     end = raw_response.rfind("}")
     if start == -1 or end == -1 or end < start:
         raise ValueError("HITL intent response did not contain a JSON object")
-    parsed = json.loads(raw_response[start:end + 1])
+    parsed = json.loads(raw_response[start : end + 1])
     if not isinstance(parsed, dict):
         raise ValueError("HITL intent response was not a JSON object")
     return {

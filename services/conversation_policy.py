@@ -22,9 +22,17 @@ IN_SCOPE_TERMS = {
     "paid",
     "payment",
     "vendor",
+    "category",
+    "categories",
+    "coffee",
+    "transport",
+    "status",
+    "pending",
+    "approve",
+    "reject",
+    "gst",
     "total",
     "tax",
-    "gst",
     "create invoice",
     "generate invoice",
     "upload",
@@ -65,7 +73,10 @@ def is_off_topic_message(text: str) -> bool:
     if any(term in normalized for term in OFF_TOPIC_TERMS):
         return True
 
-    years = [int(value) for value in re.findall(r"\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\b", normalized)]
+    years = [
+        int(value)
+        for value in re.findall(r"\b(1[0-9]{3}|20[0-9]{2}|21[0-9]{2})\b", normalized)
+    ]
     if years and all(year < 2020 or year > 2030 for year in years):
         return True
     return False
@@ -73,11 +84,10 @@ def is_off_topic_message(text: str) -> bool:
 
 def off_topic_response() -> str:
     return (
-        "📌 *Business Assistant*\n\n"
-        "I can help with receipts, invoices, handwritten expense ledgers, "
-        "invoice generation, and questions over saved spending data.\n\n"
-        "Send a receipt photo/PDF, or ask: "
-        "\"What did I spend on transport in March?\""
+        "*Business Assistant*\n\n"
+        "I'm focused on receipts, invoices, handwritten expense ledgers, "
+        "invoice generation, and approved spending data.\n\n"
+        'Try: "What did I spend on transport this month?" or send a receipt photo/PDF.'
     )
 
 
@@ -99,7 +109,9 @@ def compact_whatsapp_message(message: str, max_chars: int | None = None) -> str:
     """Keep WhatsApp replies readable and bounded."""
 
     try:
-        configured_limit = int(os.environ.get("WHATSAPP_MAX_REPLY_CHARS", DEFAULT_MAX_WHATSAPP_CHARS))
+        configured_limit = int(
+            os.environ.get("WHATSAPP_MAX_REPLY_CHARS", DEFAULT_MAX_WHATSAPP_CHARS)
+        )
     except (TypeError, ValueError):
         configured_limit = DEFAULT_MAX_WHATSAPP_CHARS
     limit = max_chars or configured_limit
