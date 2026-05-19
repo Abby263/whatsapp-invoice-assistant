@@ -24,6 +24,7 @@ from agents.response_formatter import ResponseFormatterAgent
 from agents.invoice_rag_agent import InvoiceRAGAgent
 from services.llm_factory import LLMFactory
 from workflows.state import IntentType
+from utils import sql_guardrails
 from utils.vector_utils import generate_embedding_for_text
 from constants.fallback_messages import QUERY_FALLBACKS
 from sqlalchemy.exc import SQLAlchemyError
@@ -275,20 +276,11 @@ async def convert_to_sql(
     logger.debug("Initializing TextToSQLConversionAgent with database schema")
     agent = TextToSQLConversionAgent(llm_factory=llm_factory, db_schema_info=db_schema_info)
 
-    # If user_id is a string or UUID, try to convert to integer for database compatibility
-    user_id_int = None
-    if user_id is not None:
-        if isinstance(user_id, (str, UUID)):
-            try:
-                # If it's a UUID or string, convert it to an integer-like value
-                user_id_int = int(str(user_id).replace('-', '')[:8], 16) if '-' in str(user_id) else int(user_id)
-                logger.debug(f"Converted user_id from {user_id} to integer: {user_id_int}")
-            except (ValueError, TypeError):
-                user_id_int = 0  # Default to test user ID if conversion fails
-                logger.warning(f"Failed to convert user_id {user_id} to integer, using 0 instead")
-        else:
-            # Already an integer or integer-like
-            user_id_int = user_id
+    try:
+        user_id_int = sql_guardrails.coerce_user_id(user_id)
+    except sql_guardrails.SQLGuardrailError as exc:
+        logger.warning("Invalid user context for SQL conversion: %s", exc)
+        return {"error": str(exc)}
 
     # Add information about the context to help with SQL generation
     user_context = {
@@ -350,13 +342,13 @@ async def convert_to_sql(
             return {"error": "Unable to generate a valid SQL query from your question. Please try rephrasing your question."}
 
         # Check if the query has proper user filtering
-        if user_id and not check_user_filtering(content):
+        if user_id_int is not None and not check_user_filtering(content):
             logger.warning(f"Security issue: Generated SQL query does not contain user_id filtering: {content}")
 
             # Try to add user filtering automatically
             try:
                 original_content = content
-                content = add_user_filter(content, str(user_id))
+                content = add_user_filter(content, str(user_id_int))
 
                 if content == original_content:
                     # If we couldn't fix it, reject the query
@@ -503,12 +495,11 @@ async def execute_query(
     if params is None:
         params = {}
 
+    scoped_user_id = None
     # Add user_id to params if provided
     if user_id is not None:
         try:
-            # Convert user_id to integer if it's a string
-            if isinstance(user_id, str) and user_id.isdigit():
-                user_id = int(user_id)
+            scoped_user_id = sql_guardrails.coerce_user_id(user_id)
 
             # Check if the query explicitly asks for all data or global counts
             # This is used for admin queries or data status panels
@@ -516,15 +507,15 @@ async def execute_query(
 
             # Only add user_id filter if not a global query
             if not is_global_query and "user_id" not in params:
-                params["user_id"] = user_id
-                logger.info(f"Added user_id={user_id} filtering")
+                params["user_id"] = scoped_user_id
+                logger.info("Added bound user_id filtering")
             elif is_global_query:
                 logger.info("Global query detected, not adding user_id filter")
-        except ValueError:
+        except sql_guardrails.SQLGuardrailError as exc:
             logger.error(f"Invalid user_id: {user_id}")
             return {
                 "success": False,
-                "error": f"Invalid user_id: {user_id}",
+                "error": str(exc),
                 "results": []
             }
 
@@ -553,8 +544,12 @@ async def execute_query(
             }
 
     try:
-        sanitized_query = sanitize_sql(query)
-    except ValueError as e:
+        sanitized_query = sql_guardrails.prepare_sql_for_execution(
+            query,
+            user_id=scoped_user_id,
+            max_rows=500,
+        )
+    except sql_guardrails.SQLGuardrailError as e:
         logger.warning("Rejected unsafe SQL query: %s", str(e))
         return {
             "success": False,
@@ -674,24 +669,7 @@ def sanitize_sql(query: str) -> str:
     Returns:
         The sanitized SQL query
     """
-    import re
-
-    if not query or not query.strip():
-        raise ValueError("Empty SQL query")
-
-    sanitized = query.strip().rstrip(";")
-    if ";" in sanitized:
-        raise ValueError("Multiple SQL statements are not allowed")
-
-    if not re.match(r"^\s*(SELECT|WITH)\b", sanitized, re.IGNORECASE):
-        raise ValueError("Only SELECT queries are allowed")
-
-    dangerous_commands = ["DROP", "DELETE", "TRUNCATE", "ALTER", "UPDATE", "INSERT", "GRANT", "REVOKE"]
-    for cmd in dangerous_commands:
-        if re.search(rf"\b{cmd}\b", sanitized, re.IGNORECASE):
-            raise ValueError(f"SQL command is not allowed: {cmd}")
-
-    return sanitized
+    return sql_guardrails.sanitize_sql(query)
 
 
 async def format_query_results(
