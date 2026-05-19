@@ -108,8 +108,8 @@ def test_demo_link_whatsapp_normalizes_number(monkeypatch):
 
 
 def test_twilio_webhook_can_suppress_twiml_after_outbound_reply(monkeypatch):
+    monkeypatch.setenv("TWILIO_VALIDATE_REQUESTS", "false")
     monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
-    monkeypatch.setattr(hosted_app, "_twilio_request_is_valid", lambda: True)
     monkeypatch.setattr(
         hosted_app.live_backend,
         "process_twilio_webhook",
@@ -134,3 +134,65 @@ def test_twilio_webhook_can_suppress_twiml_after_outbound_reply(monkeypatch):
     assert response.status_code == 200
     assert b"<Response></Response>" in response.data
     assert b"<Message>" not in response.data
+
+
+def test_twilio_validation_is_optional_in_demo_mode_when_env_missing(monkeypatch):
+    monkeypatch.delenv("TWILIO_VALIDATE_REQUESTS", raising=False)
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+
+    with hosted_app.app.test_request_context("/webhook", method="POST", data={}):
+        assert hosted_app._twilio_request_is_valid() is True
+
+
+def test_twilio_webhook_validates_signature_by_default_when_live(monkeypatch):
+    monkeypatch.delenv("TWILIO_VALIDATE_REQUESTS", raising=False)
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "test-token")
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+
+    called = {"value": False}
+
+    def fail_if_called(_form):
+        called["value"] = True
+        raise AssertionError("webhook processing must not run for invalid Twilio signatures")
+
+    monkeypatch.setattr(hosted_app.live_backend, "process_twilio_webhook", fail_if_called)
+
+    client = hosted_app.app.test_client()
+    response = client.post(
+        "/webhook",
+        data={
+            "From": "whatsapp:+15551234567",
+            "To": "whatsapp:+16473628073",
+            "Body": "Hi",
+            "MessageSid": "SM-invalid",
+        },
+    )
+
+    assert response.status_code == 403
+    assert b"Invalid Twilio request signature" in response.data
+    assert called["value"] is False
+
+
+def test_twilio_webhook_hides_internal_exception_details(monkeypatch):
+    monkeypatch.setenv("TWILIO_VALIDATE_REQUESTS", "false")
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+
+    def fail_processing(_form):
+        raise RuntimeError("database password leaked")
+
+    monkeypatch.setattr(hosted_app.live_backend, "process_twilio_webhook", fail_processing)
+
+    client = hosted_app.app.test_client()
+    response = client.post(
+        "/webhook",
+        data={
+            "From": "whatsapp:+15551234567",
+            "To": "whatsapp:+16473628073",
+            "Body": "Hi",
+            "MessageSid": "SM-fail",
+        },
+    )
+
+    assert response.status_code == 500
+    assert b"Something went wrong. Please try again." in response.data
+    assert b"database password leaked" not in response.data

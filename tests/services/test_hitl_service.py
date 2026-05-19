@@ -8,6 +8,102 @@ from workflows import file_processing_workflow
 from services import hitl_service
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("APPROVE 77", {"action": "approve_upload", "target_scope": "upload", "target_id": 77}),
+        ("reject 88", {"action": "reject_upload", "target_scope": "upload", "target_id": 88}),
+        ("CONFIRM DELETE ALL", {"action": "confirm_delete", "target_scope": "all", "target_id": None}),
+        ("confirm delete receipt 12", {"action": "confirm_delete", "target_scope": "receipt", "target_id": 12}),
+        ("CONFIRM DELETE UPLOAD 13", {"action": "confirm_delete", "target_scope": "upload", "target_id": 13}),
+        ("CONFIRM DELETE GENERATED 14", {"action": "confirm_delete", "target_scope": "generated_invoice", "target_id": 14}),
+    ],
+)
+def test_parse_hitl_command_matches_exact_commands(text, expected):
+    parsed = hitl_service.parse_hitl_command(text)
+
+    assert parsed is not None
+    assert {key: parsed[key] for key in expected} == expected
+    assert parsed["confidence"] == 1.0
+
+
+def test_parse_hitl_command_rejects_ambiguous_text():
+    assert hitl_service.parse_hitl_command("approve the latest one") is None
+    assert hitl_service.parse_hitl_command("CONFIRM DELETE RECEIPT") is None
+
+
+@pytest.mark.asyncio
+async def test_exact_approve_command_skips_llm_classifier(monkeypatch):
+    captured = {}
+
+    async def fail_classify(*_args, **_kwargs):
+        raise AssertionError("exact APPROVE commands must not call the LLM classifier")
+
+    async def fake_approve(user_id, media_id, conversation_history=None):
+        captured["user_id"] = user_id
+        captured["media_id"] = media_id
+        captured["conversation_history"] = conversation_history
+        return {
+            "content": "Document Saved",
+            "metadata": {"hitl_status": "confirmed", "media_id": str(media_id)},
+        }
+
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fail_classify)
+    monkeypatch.setattr(hitl_service, "approve_pending_extraction", fake_approve)
+
+    result = await hitl_service.handle_human_confirmation_message(
+        " approve 77 ",
+        "1",
+        conversation_history=[{"role": "user", "content": "previous"}],
+    )
+
+    assert result["metadata"]["hitl_status"] == "confirmed"
+    assert captured == {
+        "user_id": "1",
+        "media_id": 77,
+        "conversation_history": [{"role": "user", "content": "previous"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_exact_confirm_delete_command_skips_llm_classifier(monkeypatch):
+    captured = {}
+
+    async def fail_classify(*_args, **_kwargs):
+        raise AssertionError("exact delete confirmations must not call the LLM classifier")
+
+    def fake_delete_user_history(user_id, payload):
+        captured["user_id"] = user_id
+        captured["payload"] = payload
+        return {
+            "status": "success",
+            "deleted": {
+                "documents": 0,
+                "media": 0,
+                "generated_invoices": 1,
+                "storage_files": 1,
+            },
+        }
+
+    monkeypatch.setattr(hitl_service, "classify_hitl_intent", fail_classify)
+    monkeypatch.setattr(hitl_service, "delete_user_history", fake_delete_user_history)
+
+    result = await hitl_service.handle_human_confirmation_message(
+        "CONFIRM DELETE GENERATED 14",
+        "7",
+    )
+
+    assert "Deletion Confirmed" in result["content"]
+    assert captured == {
+        "user_id": 7,
+        "payload": {
+            "scope": "generated_invoice",
+            "id": 14,
+            "confirmed": True,
+        },
+    }
+
+
 @pytest.mark.asyncio
 async def test_delete_request_requires_whatsapp_confirmation(monkeypatch):
     async def fake_classify_hitl_intent(*args, **kwargs):

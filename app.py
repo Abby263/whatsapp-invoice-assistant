@@ -232,8 +232,21 @@ def _mask_number(value: str | None) -> str:
 
 
 def _twilio_request_is_valid() -> bool:
-    if os.environ.get("TWILIO_VALIDATE_REQUESTS", "").lower() not in {"1", "true", "yes"}:
+    raw_setting = os.environ.get("TWILIO_VALIDATE_REQUESTS")
+    live_backend_enabled = _live_backend_enabled()
+    if raw_setting is None or raw_setting.strip() == "":
+        should_validate = live_backend_enabled
+    else:
+        normalized_setting = raw_setting.strip().lower()
+        should_validate = normalized_setting in {"1", "true", "yes", "on"}
+        if live_backend_enabled and not should_validate:
+            logger.warning(
+                "Twilio request signature validation is explicitly disabled while the live backend is enabled"
+            )
+
+    if not should_validate:
         return True
+
     try:
         from twilio.request_validator import RequestValidator
 
@@ -249,6 +262,19 @@ def _twilio_request_is_valid() -> bool:
         return RequestValidator(token).validate(url, request.form.to_dict(flat=True), signature)
     except Exception:
         return False
+
+
+def _warn_if_twilio_validation_disabled_at_startup() -> None:
+    raw_setting = os.environ.get("TWILIO_VALIDATE_REQUESTS")
+    if raw_setting is None or raw_setting.strip().lower() not in {"0", "false", "no", "off"}:
+        return
+    if _live_backend_enabled():
+        logger.warning(
+            "Twilio request signature validation is disabled at startup while the live backend is enabled"
+        )
+
+
+_warn_if_twilio_validation_disabled_at_startup()
 
 
 @app.get("/")
@@ -320,10 +346,15 @@ def whatsapp_webhook():
         message = compact_whatsapp_message(message)
         logger.info("Twilio webhook processed with status=%s", result.get("status", "unknown"))
         return _twilio_message_response(message)
-    except Exception as exc:
-        logger.exception("Twilio webhook failed")
+    except Exception:
+        logger.exception(
+            "Twilio webhook failed message_sid=%s from=%s num_media=%s",
+            form_data.get("MessageSid") or form_data.get("SmsMessageSid"),
+            _mask_number(form_data.get("From")),
+            form_data.get("NumMedia", "0"),
+        )
         return _twilio_message_response(
-            f"Sorry, I could not process that message right now: {str(exc)}",
+            "Something went wrong. Please try again.",
             status_code=500,
         )
 
