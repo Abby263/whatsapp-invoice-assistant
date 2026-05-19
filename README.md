@@ -157,7 +157,7 @@ Every uploaded file follows the same contract before it reaches analytics:
 6. The normalizer fixes row-level ledger dates, computes ledger totals from extracted rows, and records `extraction_quality` warnings when review is needed.
 7. The user gets a business-formatted WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands, and the same pending upload appears under Saved history on the website for tracking.
 8. The linked user approves or rejects by replying on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`.
-9. Only after approval does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
+9. Only after approval does the app finalize the checked extraction. If the cached extraction still matches the media metadata, it writes from cache; otherwise it reprocesses the private file before writing invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
 10. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
 11. Text turns load recent Supabase-backed conversation memory so short follow-ups stay attached to the same user context across WhatsApp and the website.
 12. Spend questions use user-scoped SQL first, then the agentic RAG retriever over approved `invoice_embeddings`, approved `items.description_embedding`, and finalized receipt keywords.
@@ -167,7 +167,9 @@ Every uploaded file follows the same contract before it reaches analytics:
 
 | Component | Purpose |
 | --- | --- |
-| [app.py](app.py) | Vercel Flask entrypoint for the hosted UI, `/webhook`, auth APIs, upload/chat routes, generated invoices, and health checks. |
+| [app.py](app.py) | Vercel Flask entrypoint that creates the hosted app and registers blueprints. |
+| [routes/](routes) | Hosted Flask blueprints for HTML, health, Twilio webhook, auth, workspace APIs, uploads, history, diagnostics, and maintenance routes. |
+| [demo.py](demo.py) | In-memory hosted-demo state and response helpers used when private production credentials are not configured. |
 | [ui/app.py](ui/app.py) | Local operator UI for development and workflow inspection. |
 | [services/live_backend.py](services/live_backend.py) | Production bridge from Flask routes to Supabase, Clerk identity, Twilio media, receipt processing, and invoice generation. |
 | [workflows/](workflows) | Text, file, query, approval, RAG, and invoice-generation workflow routing. |
@@ -216,7 +218,7 @@ The website uses Clerk phone-number OTP sign-in. The verified Clerk phone number
 ### RAG And Finalization Rules
 
 - WhatsApp uploads are not retrieval data when first received. They start as pending media records with validation, extraction, duplicate, and quality metadata.
-- Approval is the finalization step. After `APPROVE <upload_id>`, the app reprocesses the private upload and writes user-scoped invoice rows, item rows, embeddings, and analytics metadata.
+- Approval is the finalization step. After `APPROVE <upload_id>`, the app writes from the cached checked extraction when it is still valid, or reprocesses the private upload when the cache is missing or stale, then writes user-scoped invoice rows, item rows, embeddings, and analytics metadata.
 - Rejected, unsupported, duplicate, blank, non-financial, or still-pending uploads are excluded from SQL analytics and agentic RAG.
 - RAG retrieval only reads approved data for the resolved `users.id`, combining invoice embeddings, line-item embeddings, finalized receipt keywords, and keyword fallback when embeddings are unavailable.
 
