@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
+from utils.clerk_auth import is_auth_required
 from utils.phone_numbers import normalize_whatsapp_number as normalize_phone_number
 
 
@@ -338,6 +339,8 @@ def resolve_request_user(
             return sync_verified_phone_user(auth_context), False
         except ValueError:
             return None, True
+    if is_auth_required():
+        return None, True
     if payload.get("user_id"):
         from database.connection import get_db_session
         from database.schemas import User
