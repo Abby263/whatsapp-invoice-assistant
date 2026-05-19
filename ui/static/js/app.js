@@ -646,7 +646,7 @@ function setupNavigation() {
 
             event.preventDefault();
             navigateToView(item.dataset.view);
-            if (sidebar) sidebar.classList.remove('is-open');
+            closeSidebar();
         });
     });
 
@@ -658,15 +658,56 @@ function setupNavigation() {
 
     if (sidebarToggle && sidebar) {
         sidebarToggle.addEventListener('click', () => {
-            sidebar.classList.toggle('is-open');
+            setSidebarOpen(!sidebar.classList.contains('is-open'));
         });
     }
+
+    document.addEventListener('click', (event) => {
+        if (
+            !sidebar ||
+            !sidebar.classList.contains('is-open') ||
+            sidebar.contains(event.target) ||
+            sidebarToggle?.contains(event.target)
+        ) {
+            return;
+        }
+        closeSidebar();
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeSidebar();
+        }
+    });
 
     window.addEventListener('popstate', () => {
         switchView(viewFromLocation());
     });
 
     switchView(viewFromLocation(), {replaceUrl: true});
+}
+
+function setSidebarOpen(isOpen) {
+    if (!sidebar) {
+        return;
+    }
+
+    sidebar.classList.toggle('is-open', isOpen);
+    if (isOpen) {
+        sidebar.style.transition = 'none';
+        sidebar.style.transform = 'translate3d(0, 0, 0)';
+    } else {
+        sidebar.style.transform = '';
+        sidebar.style.transition = '';
+    }
+    document.body.classList.toggle('sidebar-open', isOpen);
+    if (sidebarToggle) {
+        sidebarToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    }
+}
+
+function closeSidebar() {
+    setSidebarOpen(false);
 }
 
 function normalizeRoutePath(pathname) {
@@ -2389,7 +2430,7 @@ function submitGeneratedInvoice(dialog, closeDialog) {
             addSystemMessage(`Generated invoice ${escapeHtml(invoice.invoice_number || '')}. It is now saved under this user.`);
             loadGeneratedInvoices();
             updateDatabaseCounts();
-            switchView('receipts');
+            navigateToView('receipts');
         })
         .catch(error => {
             console.error('Error generating invoice:', error);
