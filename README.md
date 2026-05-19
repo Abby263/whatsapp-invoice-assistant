@@ -1,6 +1,6 @@
 # WhatsApp Invoice Assistant
 
-AI receipt and invoice workspace for WhatsApp-first operators. Users can send receipt images or PDFs to a Twilio WhatsApp number, link the same WhatsApp number to their Clerk web account, review extracted records in the web app, generate outgoing invoices, and ask finance questions over the stored data.
+AI receipt and invoice workspace for WhatsApp-first operators. Users can send receipt images or PDFs to a Twilio WhatsApp number, sign in to the website with the same verified phone number, review extracted records, generate outgoing invoices, and ask finance questions over the stored data.
 
 The production path runs on Vercel with Flask, Clerk, Twilio, Supabase Postgres, Supabase Storage, pgvector, and OpenAI.
 
@@ -27,7 +27,7 @@ If production environment variables are missing, the hosted app falls back to de
 ## Product Capabilities
 
 - Accepts WhatsApp text, image, and PDF messages through Twilio.
-- Links Clerk web users to WhatsApp numbers so web and WhatsApp activity share one internal `users.id`.
+- Uses Clerk verified phone sign-in as the WhatsApp account identity so web and WhatsApp activity share one internal `users.id`.
 - Extracts merchant, date, totals, taxes, payment details, and line items from receipts and handwritten expense ledgers.
 - Stores original receipt files in a private Supabase Storage bucket.
 - Stores normalized invoice, item, media, message, user, and generated-invoice records in Supabase Postgres.
@@ -213,7 +213,7 @@ Full setup lives in [SETUP.md](SETUP.md). The minimum production services are:
 | --- | --- |
 | Supabase Postgres | Users, receipts, generated invoices, pgvector embeddings, and migrations. |
 | Supabase Storage | Private receipt and generated-invoice document storage. |
-| Clerk | Web sign-in and WhatsApp account linking. |
+| Clerk | Verified phone sign-in for web identity and WhatsApp account ownership. |
 | Twilio WhatsApp | Incoming WhatsApp text and media messages. |
 | OpenAI | LLM responses, extraction, image/PDF interpretation, and embeddings. |
 | Vercel | Hosted Flask app and public HTTPS webhook. |
@@ -232,6 +232,7 @@ HITL_CONFIRMATION_REQUIRED=true
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 CLERK_REQUIRE_AUTH=true
+CLERK_REQUIRE_VERIFIED_PHONE=true
 CLERK_AUTHORIZED_PARTIES=https://whatsapp-invoice-assistant.vercel.app
 
 OPENAI_API_KEY=sk-proj-...
@@ -285,8 +286,8 @@ make test                # Run the pytest suite
 1. Run `python3 scripts/validate_env.py --env-file .env`.
 2. Run `PYTHONPATH=. poetry run alembic upgrade head`.
 3. Confirm [https://whatsapp-invoice-assistant.vercel.app/health](https://whatsapp-invoice-assistant.vercel.app/health) reports `backend_enabled=true`.
-4. Sign in with Clerk on the website.
-5. Use **Link WhatsApp** and enter the WhatsApp number that will message the Twilio sender.
+4. Sign in or sign up on the website with the verified phone number that will message the Twilio sender.
+5. Confirm the top-right account selector shows that phone number.
 6. Send `Hi` on WhatsApp and confirm the assistant responds.
 7. Send a receipt image or PDF and confirm WhatsApp returns a `Document Review` message with `APPROVE <upload_id>` / `REJECT <upload_id>` commands and Saved history shows the upload as pending.
 8. Reply `APPROVE <upload_id>` in WhatsApp and confirm the receipt moves into saved analytics.

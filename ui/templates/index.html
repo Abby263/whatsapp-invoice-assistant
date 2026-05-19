@@ -17,7 +17,7 @@
             document.documentElement.dataset.theme = savedTheme;
         }
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260519-mobile') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260519-phone-auth') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -53,10 +53,6 @@
                     <i class="fas fa-diagram-project"></i>
                     <span>Inspector</span>
                 </a>
-                <a href="/connections" class="nav-item" data-view="connections">
-                    <i class="fas fa-link"></i>
-                    <span>Connections</span>
-                </a>
                 <a href="/settings" class="nav-item" data-view="settings">
                     <i class="fas fa-sliders"></i>
                     <span>Settings</span>
@@ -91,7 +87,7 @@
                 <div class="topbar-actions">
                     <div class="topbar-auth" id="authSection" data-auth-state="disabled">
                         <span class="auth-status" id="authStatus">Auth optional</span>
-                        <button id="signInBtn" class="auth-action-btn" type="button">Sign in</button>
+                        <button id="signInBtn" class="auth-action-btn" type="button">Sign in with phone</button>
                         <div id="clerkUserButton" class="clerk-user-button"></div>
                     </div>
                     <a class="topbar-github-link" href="https://github.com/Abby263/whatsapp-invoice-assistant" target="_blank" rel="noopener noreferrer" aria-label="Open GitHub repository">
@@ -101,7 +97,7 @@
                     <div class="topbar-user" id="topbarUser" data-link-state="unlinked">
                         <i class="fas fa-circle-user"></i>
                         <select id="whatsappNumberSelect" class="topbar-user-select" aria-label="Active user">
-                            <option value="">No WhatsApp linked</option>
+                            <option value="">Phone sign-in required</option>
                         </select>
                     </div>
                     <button id="themeToggleBtn" class="topbar-icon-btn theme-toggle" type="button" aria-label="Switch to dark mode" title="Toggle theme">
@@ -573,58 +569,6 @@
                     </div>
                 </section>
 
-                <!-- ============== CONNECTIONS VIEW ============== -->
-                <section class="view view-connections" data-view="connections">
-                    <div class="settings-grid">
-                        <section class="card">
-                            <div class="card-head">
-                                <div>
-                                    <h3>WhatsApp connection</h3>
-                                    <p>Connect the same WhatsApp number used for receipt uploads so web history, analytics, and chat stay scoped to one user.</p>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="connection-primary">
-                                    <div class="connection-icon" aria-hidden="true">
-                                        <i class="fab fa-whatsapp"></i>
-                                    </div>
-                                    <div>
-                                        <strong id="connectionPrimaryNumber">No number connected</strong>
-                                        <span id="connectionPrimaryHint">Sign in and connect your WhatsApp number to load receipt uploads on this website.</span>
-                                    </div>
-                                </div>
-                                <div class="settings-actions-row">
-                                    <button id="linkWhatsappPrimaryBtn" class="btn btn-primary" type="button">
-                                        <i class="fab fa-whatsapp"></i>
-                                        <span>Connect WhatsApp</span>
-                                    </button>
-                                    <button id="refreshConnectionsBtn" class="btn btn-ghost" type="button">
-                                        <i class="fas fa-rotate"></i>
-                                        <span>Refresh</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </section>
-
-                        <section class="card">
-                            <div class="card-head">
-                                <div>
-                                    <h3>Connected numbers</h3>
-                                    <p>Numbers available to this signed-in workspace.</p>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="connected-number-list" id="connectedNumbersList">
-                                    <div class="empty-state" id="connectionsEmpty">
-                                        <i class="fab fa-whatsapp"></i>
-                                        <p>No WhatsApp number is connected yet.</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </section>
-                    </div>
-                </section>
-
                 <!-- ============== SETTINGS VIEW ============== -->
                 <section class="view view-settings" data-view="settings">
                     <div class="settings-grid">
@@ -632,22 +576,22 @@
                         <section class="card">
                             <div class="card-head">
                                 <div>
-                                    <h3>Users</h3>
-                                    <p>Create new users or switch between existing test identities.</p>
+                                    <h3>Account</h3>
+                                    <p>Your signed-in phone number is used as the WhatsApp account for uploads, analytics, and chat.</p>
                                 </div>
                             </div>
                             <div class="card-body">
                                 <div class="settings-actions-row">
-                                    <button class="btn btn-primary" id="createUserBtn" type="button">
-                                        <i class="fas fa-user-plus"></i>
-                                        <span>Create new user</span>
+                                    <button class="btn btn-primary" id="refreshAccountBtn" type="button">
+                                        <i class="fas fa-rotate"></i>
+                                        <span>Refresh account</span>
                                     </button>
                                     <button class="btn btn-ghost" id="companyProfileBtn" type="button">
                                         <i class="fas fa-building"></i>
                                         <span>Company profile</span>
                                     </button>
                                 </div>
-                                <p class="form-hint">Switch the active user using the dropdown in the topbar.</p>
+                                <p class="form-hint">To change this number, update and verify the phone number on your sign-in account.</p>
                             </div>
                         </section>
 
