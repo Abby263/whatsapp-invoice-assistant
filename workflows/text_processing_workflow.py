@@ -12,13 +12,26 @@ from uuid import UUID
 from agents.text_intent_classifier import TextIntentClassifierAgent
 from services.llm_factory import LLMFactory
 from workflows.state import IntentType, UserInput
-from workflows.general_response_workflow import process_general_response, process_greeting
+from workflows.general_response_workflow import (
+    process_general_response,
+    process_greeting,
+)
 from workflows.invoice_query_workflow import process_invoice_query
 from workflows.invoice_creator_workflow import process_invoice_creation
-from services.hitl_service import handle_human_confirmation_message
+from services.hitl_service import (
+    build_pending_upload_status,
+    count_pending_uploads,
+    handle_human_confirmation_message,
+    parse_hitl_command,
+)
 from services.conversation_policy import (
     is_off_topic_message,
     off_topic_response,
+)
+from services.whatsapp_copy import (
+    build_help_message,
+    is_help_message,
+    is_status_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,7 +40,7 @@ logger = logging.getLogger(__name__)
 async def process_text_message(
     text_content: str,
     user_id: Optional[Union[str, UUID]] = None,
-    conversation_history: Optional[List[Dict[str, Any]]] = None
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Process a text message by classifying intent and routing to the appropriate workflow.
@@ -47,6 +60,31 @@ async def process_text_message(
     history_for_processing = conversation_history or []
 
     logger.info(f"Conversation history length: {len(history_for_processing)}")
+
+    if parse_hitl_command(text_content):
+        hitl_response = await handle_human_confirmation_message(
+            text_content,
+            user_id,
+            history_for_processing,
+        )
+        if hitl_response:
+            logger.info("Message handled by exact human-in-the-loop command")
+            return hitl_response
+
+    if is_status_message(text_content):
+        logger.info("Message handled by deterministic pending-upload status command")
+        return build_pending_upload_status(user_id)
+
+    if is_help_message(text_content):
+        logger.info("Message handled by deterministic WhatsApp help copy")
+        return {
+            "content": build_help_message(count_pending_uploads(user_id)),
+            "confidence": 0.98,
+            "metadata": {
+                "intent": IntentType.HELP.value,
+                "scope": "deterministic_help",
+            },
+        }
 
     hitl_response = await handle_human_confirmation_message(
         text_content,
@@ -72,8 +110,8 @@ async def process_text_message(
     if history_for_processing:
         logger.debug("Conversation history:")
         for i, msg in enumerate(history_for_processing):
-            role = msg.get('role', 'unknown')
-            content = msg.get('content', '')
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
             logger.debug(f"  [{i}] {role}: {content[:50]}...")
 
     # Step 1: Classify the user's intent
@@ -92,20 +130,30 @@ async def process_text_message(
 
     elif intent == IntentType.GENERAL.value:
         logger.info("Routing to GENERAL RESPONSE workflow")
-        response = await process_general_response(text_content, intent, user_id, history_for_processing)
+        response = await process_general_response(
+            text_content, intent, user_id, history_for_processing
+        )
 
     elif intent == IntentType.INVOICE_QUERY.value:
         logger.info("Routing to INVOICE QUERY workflow")
-        response = await process_invoice_query(text_content, user_id, history_for_processing)
+        response = await process_invoice_query(
+            text_content, user_id, history_for_processing
+        )
 
     elif intent == IntentType.INVOICE_CREATOR.value:
         logger.info("Routing to INVOICE CREATOR workflow")
-        response = await process_invoice_creation(text_content, user_id, history_for_processing)
+        response = await process_invoice_creation(
+            text_content, user_id, history_for_processing
+        )
 
     else:
         # Default to general response for unrecognized intents
-        logger.warning(f"Unrecognized intent '{intent}', defaulting to GENERAL RESPONSE workflow")
-        response = await process_general_response(text_content, IntentType.GENERAL.value, user_id, history_for_processing)
+        logger.warning(
+            f"Unrecognized intent '{intent}', defaulting to GENERAL RESPONSE workflow"
+        )
+        response = await process_general_response(
+            text_content, IntentType.GENERAL.value, user_id, history_for_processing
+        )
 
     logger.info("=== TEXT PROCESSING WORKFLOW COMPLETED ===")
     logger.info(f"Response content length: {len(response.get('content', ''))}")
@@ -115,8 +163,7 @@ async def process_text_message(
 
 
 async def classify_intent(
-    text_content: str,
-    conversation_history: Optional[List[Dict[str, Any]]] = None
+    text_content: str, conversation_history: Optional[List[Dict[str, Any]]] = None
 ) -> str:
     """
     Classify the intent of a text message.
@@ -135,33 +182,41 @@ async def classify_intent(
     agent = TextIntentClassifierAgent(llm_factory=llm_factory)
     logger.debug("TextIntentClassifierAgent initialized")
 
-    user_input = UserInput(
-        content=text_content
-    )
+    user_input = UserInput(content=text_content)
     logger.debug(f"UserInput created with content length: {len(text_content)}")
 
     try:
         logger.info("Calling intent classification agent to process input")
-        result = await agent.process({
-            "content": text_content,
-            "conversation_history": conversation_history or []
-        })
+        result = await agent.process(
+            {
+                "content": text_content,
+                "conversation_history": conversation_history or [],
+            }
+        )
 
         # Handle AgentOutput object - content field contains the intent
-        if result and hasattr(result, 'content'):
+        if result and hasattr(result, "content"):
             # Always use default invoice type for invoice creation intent
             if result.content == IntentType.INVOICE_CREATOR.value:
-                logger.info(f"Intent classifier returned invoice creation intent, using default template")
+                logger.info(
+                    f"Intent classifier returned invoice creation intent, using default template"
+                )
             else:
-                logger.info(f"Intent classifier returned intent: {result.content} with confidence: {result.confidence}")
+                logger.info(
+                    f"Intent classifier returned intent: {result.content} with confidence: {result.confidence}"
+                )
             return result.content
 
         # Fallback if the result is a dict
         elif isinstance(result, dict) and "intent" in result:
-            logger.info(f"Intent classifier returned dict with intent: {result['intent']}")
+            logger.info(
+                f"Intent classifier returned dict with intent: {result['intent']}"
+            )
             return result["intent"]
 
-        logger.warning("Intent classifier returned invalid result, defaulting to GENERAL")
+        logger.warning(
+            "Intent classifier returned invalid result, defaulting to GENERAL"
+        )
         return IntentType.GENERAL.value
 
     except Exception as e:

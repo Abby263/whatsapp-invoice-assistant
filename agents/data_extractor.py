@@ -9,6 +9,8 @@ from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
 from constants.prompt_mappings import AgentType
 from schemas.llm_outputs import is_ledger_document, normalize_document_extraction
+from utils.extraction_checks import apply_extraction_checks
+from utils.image_preprocess import preprocess_image_bytes
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
@@ -33,9 +35,9 @@ class DataExtractorAgent(BaseAgent):
         self.agent_type_text = AgentType.INVOICE_DATA_EXTRACTION
         self.agent_type_image = AgentType.INVOICE_IMAGE_DATA_EXTRACTION
 
-    async def process(self,
-                     agent_input: AgentInput,
-                     context: Optional[AgentContext] = None) -> AgentOutput:
+    async def process(
+        self, agent_input: AgentInput, context: Optional[AgentContext] = None
+    ) -> AgentOutput:
         """
         Process a validated invoice file to extract structured data.
 
@@ -51,10 +53,10 @@ class DataExtractorAgent(BaseAgent):
             file_content = agent_input.content
             file_path = agent_input.file_path or ""
             file_type = (
-                agent_input.metadata.get('file_type')
-                or agent_input.metadata.get('input_type')
+                agent_input.metadata.get("file_type")
+                or agent_input.metadata.get("input_type")
                 or agent_input.content_type
-                or 'unknown'
+                or "unknown"
             )
             content_type = agent_input.content_type or file_type
             storage_metadata = agent_input.metadata.get("file_storage")
@@ -67,13 +69,12 @@ class DataExtractorAgent(BaseAgent):
                     confidence=0.0,
                     status="error",
                     error=f"Empty or invalid file content",
-                    metadata={
-                        "file_path": file_path,
-                        "file_type": file_type
-                    }
+                    metadata={"file_path": file_path, "file_type": file_type},
                 )
 
-            logger.info(f"Extracting data from invoice file: {file_path} (type: {file_type})")
+            logger.info(
+                f"Extracting data from invoice file: {file_path} (type: {file_type})"
+            )
 
             # Prepare content for LLM processing
             content_for_llm = None
@@ -81,55 +82,76 @@ class DataExtractorAgent(BaseAgent):
             # For binary content like images, we need special handling
             if isinstance(file_content, bytes):
                 # For images, encode as base64 for vision models
-                if content_type and ("image" in content_type.lower() or content_type.lower() in ["png", "jpg", "jpeg"]):
+                if content_type and (
+                    "image" in content_type.lower()
+                    or content_type.lower() in ["png", "jpg", "jpeg"]
+                ):
                     # Get additional file info
+                    preprocessed_image = preprocess_image_bytes(
+                        file_content, content_type
+                    )
+                    file_content = preprocessed_image.content
                     file_size = len(file_content)
 
                     # Try to get image dimensions if possible
-                    dimensions = "unknown"
-                    mime_type = "image/jpeg"  # Default to image/jpeg if unknown
+                    dimensions = preprocessed_image.dimensions
+                    mime_type = preprocessed_image.mime_type
 
-                    try:
-                        from PIL import Image
-                        import io
-                        img = Image.open(io.BytesIO(file_content))
-                        dimensions = f"{img.width}x{img.height}"
-                        logger.info(f"Image dimensions: {dimensions}")
+                    if dimensions == "unknown":
+                        try:
+                            from PIL import Image
+                            import io
 
-                        # Get the actual format from PIL and convert to MIME type
-                        img_format = img.format.lower() if img.format else "jpeg"
-                        if img_format == "jpeg" or img_format == "jpg":
-                            mime_type = "image/jpeg"
-                        elif img_format == "png":
-                            mime_type = "image/png"
-                        elif img_format == "gif":
-                            mime_type = "image/gif"
-                        elif img_format == "webp":
-                            mime_type = "image/webp"
-                        else:
-                            mime_type = f"image/{img_format}"
+                            img = Image.open(io.BytesIO(file_content))
+                            dimensions = f"{img.width}x{img.height}"
+                            logger.info(f"Image dimensions: {dimensions}")
 
-                        logger.info(f"Detected image format: {img_format}, using MIME type: {mime_type}")
-                    except Exception as e:
-                        logger.warning(f"Could not determine image dimensions or format: {str(e)}")
+                            # Get the actual format from PIL and convert to MIME type
+                            img_format = img.format.lower() if img.format else "jpeg"
+                            if img_format == "jpeg" or img_format == "jpg":
+                                mime_type = "image/jpeg"
+                            elif img_format == "png":
+                                mime_type = "image/png"
+                            elif img_format == "gif":
+                                mime_type = "image/gif"
+                            elif img_format == "webp":
+                                mime_type = "image/webp"
+                            else:
+                                mime_type = f"image/{img_format}"
 
-                        # Try to determine MIME type from content_type if possible
-                        if "jpeg" in content_type.lower() or "jpg" in content_type.lower():
-                            mime_type = "image/jpeg"
-                        elif "png" in content_type.lower():
-                            mime_type = "image/png"
-                        elif "gif" in content_type.lower():
-                            mime_type = "image/gif"
-                        elif "webp" in content_type.lower():
-                            mime_type = "image/webp"
+                            logger.info(
+                                f"Detected image format: {img_format}, using MIME type: {mime_type}"
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"Could not determine image dimensions or format: {str(e)}"
+                            )
 
+                            # Try to determine MIME type from content_type if possible
+                            if (
+                                "jpeg" in content_type.lower()
+                                or "jpg" in content_type.lower()
+                            ):
+                                mime_type = "image/jpeg"
+                            elif "png" in content_type.lower():
+                                mime_type = "image/png"
+                            elif "gif" in content_type.lower():
+                                mime_type = "image/gif"
+                            elif "webp" in content_type.lower():
+                                mime_type = "image/webp"
+                    else:
+                        logger.info(
+                            "Preprocessed image for extraction: %s, mime type: %s",
+                            dimensions,
+                            mime_type,
+                        )
                     # Encode image as base64 for GPT-4o-mini vision processing
-                    base64_image = base64.b64encode(file_content).decode('utf-8')
+                    base64_image = base64.b64encode(file_content).decode("utf-8")
                     content_for_llm = {
                         "type": "image",
                         "content": base64_image,
                         "mime_type": mime_type,
-                        "dimensions": dimensions
+                        "dimensions": dimensions,
                     }
                     logger.info(
                         "Prepared image for configured vision model: %s bytes, mime type: %s",
@@ -145,12 +167,16 @@ class DataExtractorAgent(BaseAgent):
 
             # Call LLM to extract data from the file
             logger.info("Calling configured model for invoice data extraction")
-            extraction_result = await self.llm_factory.extract_invoice_data(content_for_llm)
+            extraction_result = await self.llm_factory.extract_invoice_data(
+                content_for_llm
+            )
 
             # Parse the response - handle triple backtick JSON format
             try:
                 # Try to extract JSON from markdown code blocks if present
-                json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', extraction_result)
+                json_match = re.search(
+                    r"```(?:json)?\s*([\s\S]*?)\s*```", extraction_result
+                )
                 if json_match:
                     json_str = json_match.group(1).strip()
                     parsed_result = json.loads(json_str)
@@ -159,7 +185,9 @@ class DataExtractorAgent(BaseAgent):
 
                 logger.debug(f"Parsed data extraction result: {parsed_result}")
             except json.JSONDecodeError:
-                logger.warning(f"Failed to parse data extraction result as JSON: {extraction_result}")
+                logger.warning(
+                    f"Failed to parse data extraction result as JSON: {extraction_result}"
+                )
                 # Create a fallback result if parsing fails
                 parsed_result = {
                     "vendor": {},
@@ -168,7 +196,7 @@ class DataExtractorAgent(BaseAgent):
                     "financial": {},
                     "additional_info": {},
                     "confidence_score": 0.0,
-                    "error": "Failed to parse extraction response"
+                    "error": "Failed to parse extraction response",
                 }
 
             normalized_data = (
@@ -176,6 +204,8 @@ class DataExtractorAgent(BaseAgent):
                 if self._is_test_sample_data_format(parsed_result)
                 else normalize_document_extraction(parsed_result)
             )
+            if isinstance(normalized_data, dict):
+                normalized_data = apply_extraction_checks(normalized_data)
 
             # Extract confidence score and check for errors
             confidence = parsed_result.get("confidence_score", 0.0)
@@ -197,7 +227,9 @@ class DataExtractorAgent(BaseAgent):
                 "extraction_status": status,
                 "extraction_confidence": confidence,
             }
-            if isinstance(normalized_data, dict) and isinstance(normalized_data.get("extraction_quality"), dict):
+            if isinstance(normalized_data, dict) and isinstance(
+                normalized_data.get("extraction_quality"), dict
+            ):
                 metadata["extraction_quality"] = normalized_data["extraction_quality"]
             if error:
                 metadata["extraction_error"] = error
@@ -207,9 +239,13 @@ class DataExtractorAgent(BaseAgent):
 
             # Ensure items are properly included in the result - check both locations
             if "items" in normalized_data:
-                logger.info(f"Items found in normalized_data: {len(normalized_data['items'])} items")
+                logger.info(
+                    f"Items found in normalized_data: {len(normalized_data['items'])} items"
+                )
             elif "items" in parsed_result:
-                logger.info(f"Items found directly in parsed_result: {len(parsed_result['items'])} items")
+                logger.info(
+                    f"Items found directly in parsed_result: {len(parsed_result['items'])} items"
+                )
                 # Move items to the data section if they exist at the root level
                 if "data" not in parsed_result:
                     parsed_result["data"] = {}
@@ -224,7 +260,7 @@ class DataExtractorAgent(BaseAgent):
                 confidence=confidence,
                 status=status,
                 error=error,
-                metadata=metadata
+                metadata=metadata,
             )
 
         except Exception as e:
@@ -235,9 +271,9 @@ class DataExtractorAgent(BaseAgent):
                 status="error",
                 error=f"Data extraction failed: {str(e)}",
                 metadata={
-                    "file_path": agent_input.metadata.get('file_path', ''),
-                    "file_type": agent_input.metadata.get('file_type', 'unknown')
-                }
+                    "file_path": agent_input.metadata.get("file_path", ""),
+                    "file_type": agent_input.metadata.get("file_type", "unknown"),
+                },
             )
 
     def _is_test_sample_data_format(self, data: Dict[str, Any]) -> bool:
@@ -254,8 +290,17 @@ class DataExtractorAgent(BaseAgent):
             return False
 
         # Check for fields that exist in SAMPLE_INVOICE_DATA in the tests
-        test_format_keys = ["vendor", "date", "total_amount", "currency", "invoice_number", "items"]
-        has_test_format = all(key in data for key in test_format_keys[:3])  # At least main keys
+        test_format_keys = [
+            "vendor",
+            "date",
+            "total_amount",
+            "currency",
+            "invoice_number",
+            "items",
+        ]
+        has_test_format = all(
+            key in data for key in test_format_keys[:3]
+        )  # At least main keys
 
         # If it has items as a list, it's probably the test format
         if has_test_format and "items" in data and isinstance(data["items"], list):
@@ -277,8 +322,9 @@ class DataExtractorAgent(BaseAgent):
         if self._is_test_sample_data_format(data):
             # For test data format, we just need a vendor and some basic info
             return (
-                isinstance(data.get("vendor"), str) and data.get("vendor") and
-                isinstance(data.get("items", []), list)
+                isinstance(data.get("vendor"), str)
+                and data.get("vendor")
+                and isinstance(data.get("items", []), list)
             )
 
         # Check for required top-level sections
@@ -297,7 +343,11 @@ class DataExtractorAgent(BaseAgent):
 
         # Transaction section should have some basic info
         transaction = data.get("transaction", {})
-        if not is_ledger and not transaction.get("date") and not transaction.get("receipt_no"):
+        if (
+            not is_ledger
+            and not transaction.get("date")
+            and not transaction.get("receipt_no")
+        ):
             logger.warning("Missing key transaction details (date and receipt number)")
             return False
 
@@ -318,7 +368,10 @@ class DataExtractorAgent(BaseAgent):
                 return False
 
             # Either unit_price or total_price should be present
-            if not (item.get("unit_price") is not None or item.get("total_price") is not None):
+            if not (
+                item.get("unit_price") is not None
+                or item.get("total_price") is not None
+            ):
                 logger.warning(f"Item {i} missing price information")
                 return False
 

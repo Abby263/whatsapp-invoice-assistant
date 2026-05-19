@@ -25,6 +25,7 @@ from constants.fallback_messages import FILE_PROCESSING_FALLBACKS
 from storage import StorageConfigurationError, record_media_upload, store_user_upload
 from schemas.llm_outputs import is_ledger_document
 from schemas.llm_outputs.document_extraction import coerce_number
+from utils.extraction_checks import apply_extraction_checks
 
 logger = logging.getLogger(__name__)
 
@@ -83,14 +84,18 @@ async def process_file_message(
     validation_result = await validate_file(file_path, normalized_file_type)
 
     if not validation_result.get("is_valid", False):
-        logger.warning(f"Invalid file: {validation_result.get('reason', 'Unknown reason')}")
+        logger.warning(
+            f"Invalid file: {validation_result.get('reason', 'Unknown reason')}"
+        )
         _update_media_status(
             user_id=user_id,
             file_metadata=prepared_file_metadata,
             status="error",
             processing_metadata={"validation_result": validation_result},
         )
-        return await format_invalid_file_response(validation_result, file_name or file_path)
+        return await format_invalid_file_response(
+            validation_result, file_name or file_path
+        )
 
     # Extract data if it's a valid invoice
     if validation_result.get("is_invoice", False):
@@ -132,15 +137,15 @@ async def process_file_message(
         user_id=user_id,
         file_metadata=prepared_file_metadata,
         status="error",
-        processing_metadata={"validation_result": validation_result, "reason": "non_financial_document"},
+        processing_metadata={
+            "validation_result": validation_result,
+            "reason": "non_financial_document",
+        },
     )
     return await format_invalid_file_response(validation_result, file_name or file_path)
 
 
-async def validate_file(
-    file_path: str,
-    file_type: str
-) -> Dict[str, Any]:
+async def validate_file(file_path: str, file_type: str) -> Dict[str, Any]:
     """
     Validate a file to determine if it's a valid invoice.
 
@@ -161,7 +166,7 @@ async def validate_file(
                 "is_valid": False,
                 "is_invoice": False,
                 "reason": "File not found",
-                "file_type": file_type
+                "file_type": file_type,
             }
 
         # Validate file type first
@@ -169,7 +174,7 @@ async def validate_file(
             FileType.PDF.value,
             FileType.IMAGE.value,
             FileType.EXCEL.value,
-            FileType.CSV.value
+            FileType.CSV.value,
         ]
 
         detected_type = detect_file_type(file_path, file_type)
@@ -179,11 +184,11 @@ async def validate_file(
                 "is_valid": False,
                 "is_invoice": False,
                 "reason": f"Unsupported file type: {detected_type}",
-                "file_type": detected_type
+                "file_type": detected_type,
             }
 
         # Read file content
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             file_content = f.read()
 
         # Use agent to validate if it's an invoice - create an AgentInput object
@@ -192,7 +197,7 @@ async def validate_file(
             file_path=file_path,
             file_name=os.path.basename(file_path),
             content_type=detected_type,
-            metadata={"file_type": detected_type}
+            metadata={"file_type": detected_type},
         )
 
         # Process with the properly constructed AgentInput object
@@ -203,7 +208,7 @@ async def validate_file(
                 "is_valid": True,
                 "is_invoice": False,
                 "reason": "Could not determine if file is an invoice",
-                "file_type": detected_type
+                "file_type": detected_type,
             }
 
         return {
@@ -211,7 +216,7 @@ async def validate_file(
             "is_invoice": result.content,  # The content field contains the boolean is_invoice result
             "confidence": result.confidence,
             "file_type": detected_type,
-            "reason": result.metadata.get("reasons", "")
+            "reason": result.metadata.get("reasons", ""),
         }
 
     except Exception as e:
@@ -220,7 +225,7 @@ async def validate_file(
             "is_valid": False,
             "is_invoice": False,
             "reason": f"Error during validation: {str(e)}",
-            "file_type": file_type
+            "file_type": file_type,
         }
 
 
@@ -239,25 +244,30 @@ def detect_file_type(file_path: str, mime_type: str) -> str:
     extension = Path(file_path).suffix.lower()
 
     # Check based on extension
-    if extension in ['.pdf']:
+    if extension in [".pdf"]:
         return FileType.PDF.value
-    elif extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp']:
+    elif extension in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"]:
         return FileType.IMAGE.value
-    elif extension in ['.xls', '.xlsx']:
+    elif extension in [".xls", ".xlsx"]:
         return FileType.EXCEL.value
-    elif extension in ['.csv']:
+    elif extension in [".csv"]:
         return FileType.CSV.value
 
     # Check based on MIME type
     if mime_type:
         mime_lower = mime_type.lower()
-        if 'pdf' in mime_lower:
+        if "pdf" in mime_lower:
             return FileType.PDF.value
-        elif any(img_type in mime_lower for img_type in ['jpeg', 'jpg', 'png', 'image']):
+        elif any(
+            img_type in mime_lower for img_type in ["jpeg", "jpg", "png", "image"]
+        ):
             return FileType.IMAGE.value
-        elif any(excel_type in mime_lower for excel_type in ['excel', 'spreadsheet', 'xlsx', 'xls']):
+        elif any(
+            excel_type in mime_lower
+            for excel_type in ["excel", "spreadsheet", "xlsx", "xls"]
+        ):
             return FileType.EXCEL.value
-        elif 'csv' in mime_lower:
+        elif "csv" in mime_lower:
             return FileType.CSV.value
 
     sniffed_file_type = _sniff_file_type_from_content(file_path)
@@ -331,9 +341,9 @@ async def process_invoice_file(
             "metadata": {
                 "intent": IntentType.FILE_PROCESSING.value,
                 "file_type": file_type,
-                "error": extraction_result["error"]
+                "error": extraction_result["error"],
             },
-            "confidence": 0.4
+            "confidence": 0.4,
         }
 
     if user_id is not None and _hitl_required() and not hitl_confirmed:
@@ -344,7 +354,9 @@ async def process_invoice_file(
             validation_result=validation_result,
         )
         extraction_result.setdefault("metadata", {}).update(pending_metadata)
-        response = await format_extraction_response(extraction_result, file_name or file_path)
+        response = await format_extraction_response(
+            extraction_result, file_name or file_path
+        )
         return {
             "content": response.get("content", ""),
             "metadata": {
@@ -358,7 +370,9 @@ async def process_invoice_file(
                 "hitl_status": "awaiting_confirmation",
                 "hitl_action": "store_extraction",
                 "hitl_approval_command": pending_metadata.get("hitl_approval_command"),
-                "hitl_rejection_command": pending_metadata.get("hitl_rejection_command"),
+                "hitl_rejection_command": pending_metadata.get(
+                    "hitl_rejection_command"
+                ),
                 "media_id": pending_metadata.get("media_id"),
                 "best_effort_extraction": best_effort,
                 "validation_result": validation_result,
@@ -379,13 +393,15 @@ async def process_invoice_file(
         # Convert extraction_result to JSON string to satisfy AgentInput requirements
         extraction_result.setdefault("metadata", {})["hitl_confirmed"] = True
         extraction_result_json = json.dumps(extraction_result)
-        logger.info(f"Preparing to store invoice data for user_id: {user_id}, data size: {len(extraction_result_json)} bytes")
+        logger.info(
+            f"Preparing to store invoice data for user_id: {user_id}, data size: {len(extraction_result_json)} bytes"
+        )
 
         try:
             # Create agent input with the extraction result as JSON string
             agent_input = AgentInput(
                 content=extraction_result_json,
-                metadata={"user_id": user_id, "hitl_confirmed": True}
+                metadata={"user_id": user_id, "hitl_confirmed": True},
             )
 
             # Create agent context with the user_id
@@ -396,10 +412,16 @@ async def process_invoice_file(
             storage_result = await storage_agent.process(agent_input, agent_context)
 
             # Get the invoice_id from the result if successful
-            if storage_result and storage_result.status == "success" and isinstance(storage_result.content, dict):
+            if (
+                storage_result
+                and storage_result.status == "success"
+                and isinstance(storage_result.content, dict)
+            ):
                 invoice_id = storage_result.content.get("invoice_id")
                 item_ids = storage_result.content.get("item_ids", [])
-                logger.info(f"✅ Successfully stored invoice data in database with ID: {invoice_id}, items: {len(item_ids)}")
+                logger.info(
+                    f"✅ Successfully stored invoice data in database with ID: {invoice_id}, items: {len(item_ids)}"
+                )
 
                 # Add invoice ID to extraction result for reference
                 if "metadata" not in extraction_result:
@@ -409,21 +431,36 @@ async def process_invoice_file(
                 if storage_result.content.get("duplicate"):
                     extraction_result["metadata"]["duplicate"] = True
                 if storage_result.content.get("media_id"):
-                    extraction_result["metadata"]["media_id"] = storage_result.content.get("media_id")
+                    extraction_result["metadata"][
+                        "media_id"
+                    ] = storage_result.content.get("media_id")
             else:
-                error_message = storage_result.error if storage_result else "No result returned from storage agent"
+                error_message = (
+                    storage_result.error
+                    if storage_result
+                    else "No result returned from storage agent"
+                )
                 storage_error = error_message
                 logger.error(f"❌ Error storing invoice data: {error_message}")
                 if storage_result:
-                    logger.error(f"Storage result status: {storage_result.status}, content type: {type(storage_result.content)}")
-                    if isinstance(storage_result.content, dict) and "error" in storage_result.content:
-                        logger.error(f"Storage error details: {storage_result.content['error']}")
+                    logger.error(
+                        f"Storage result status: {storage_result.status}, content type: {type(storage_result.content)}"
+                    )
+                    if (
+                        isinstance(storage_result.content, dict)
+                        and "error" in storage_result.content
+                    ):
+                        logger.error(
+                            f"Storage error details: {storage_result.content['error']}"
+                        )
         except Exception as e:
             storage_error = str(e)
             logger.exception(f"❌ Exception in database storage: {str(e)}")
 
     # Format successful extraction response
-    response = await format_extraction_response(extraction_result, file_name or file_path)
+    response = await format_extraction_response(
+        extraction_result, file_name or file_path
+    )
 
     # Add file storage metadata if available
     file_storage = None
@@ -438,7 +475,11 @@ async def process_invoice_file(
         "invoice_data": extraction_result.get("data", {}),
         "stored_in_database": bool(invoice_id),
         "storage_status": (
-            "success" if invoice_id else "error" if user_id is not None else "not_attempted"
+            "success"
+            if invoice_id
+            else "error"
+            if user_id is not None
+            else "not_attempted"
         ),
         "best_effort_extraction": best_effort,
         "duplicate": bool(
@@ -464,7 +505,7 @@ async def process_invoice_file(
     return {
         "content": response.get("content", ""),
         "metadata": response_metadata,
-        "confidence": response.get("confidence", 0.7)
+        "confidence": response.get("confidence", 0.7),
     }
 
 
@@ -492,10 +533,12 @@ async def extract_invoice_data(
 
     try:
         # Read file content
-        with open(file_path, 'rb') as f:
+        with open(file_path, "rb") as f:
             file_content = f.read()
 
-        prepared_file_metadata = _prepare_file_metadata(file_path, file_metadata, file_content)
+        prepared_file_metadata = _prepare_file_metadata(
+            file_path, file_metadata, file_content
+        )
         file_storage = (
             prepared_file_metadata.get("file_storage")
             if isinstance(prepared_file_metadata.get("file_storage"), dict)
@@ -511,9 +554,9 @@ async def extract_invoice_data(
                     elif file_type == FileType.IMAGE.value:
                         # Determine image type from extension
                         ext = os.path.splitext(file_path)[1].lower()
-                        if ext == '.png':
+                        if ext == ".png":
                             file_mime_type = "image/png"
-                        elif ext in ['.jpg', '.jpeg']:
+                        elif ext in [".jpg", ".jpeg"]:
                             file_mime_type = "image/jpeg"
                         else:
                             file_mime_type = "image/unknown"
@@ -554,14 +597,15 @@ async def extract_invoice_data(
                 logger.warning("Supabase Storage is not configured: %s", storage_error)
             except Exception as e:
                 storage_error = str(e)
-                logger.exception("Error uploading file to Supabase Storage: %s", storage_error)
+                logger.exception(
+                    "Error uploading file to Supabase Storage: %s", storage_error
+                )
 
         # Create an agent context with user ID if available
         agent_context = None
         if user_id:
             agent_context = AgentContext(
-                user_id=str(user_id),
-                conversation_history=conversation_history or []
+                user_id=str(user_id), conversation_history=conversation_history or []
             )
 
         # Create an AgentInput object
@@ -575,7 +619,7 @@ async def extract_invoice_data(
                 "input_type": file_type,
                 "file_storage": file_storage,
                 "file_metadata": prepared_file_metadata,
-            }
+            },
         )
 
         # Process with the properly constructed AgentInput object
@@ -598,7 +642,9 @@ async def extract_invoice_data(
             return {"error": result.error}
 
         # The content field contains the extracted data
-        logger.info(f"Successfully extracted invoice data: {extracted_data.keys() if isinstance(extracted_data, dict) else 'not a dict'}")
+        logger.info(
+            f"Successfully extracted invoice data: {extracted_data.keys() if isinstance(extracted_data, dict) else 'not a dict'}"
+        )
 
         if file_storage:
             metadata["file_storage"] = file_storage
@@ -611,7 +657,7 @@ async def extract_invoice_data(
             "data": extracted_data,
             "file_type": file_type,
             "file_path": file_path,
-            "metadata": metadata
+            "metadata": metadata,
         }
 
     except Exception as e:
@@ -623,7 +669,9 @@ def _supports_best_effort_extraction(file_type: str) -> bool:
     return file_type in {FileType.IMAGE.value, FileType.PDF.value}
 
 
-def _should_try_best_effort_extraction(file_type: str, validation_result: Dict[str, Any]) -> bool:
+def _should_try_best_effort_extraction(
+    file_type: str, validation_result: Dict[str, Any]
+) -> bool:
     """Allow extraction only when validation was uncertain, not clearly negative."""
 
     if not _supports_best_effort_extraction(file_type):
@@ -649,9 +697,14 @@ def _should_try_best_effort_extraction(file_type: str, validation_result: Dict[s
         "could not determine",
         "not enough visible",
     }
-    if confidence_value >= 0.7 and not any(keyword in reason for keyword in uncertainty_keywords):
+    if confidence_value >= 0.7 and not any(
+        keyword in reason for keyword in uncertainty_keywords
+    ):
         return False
-    return any(keyword in reason for keyword in uncertainty_keywords) or confidence_value <= 0.35
+    return (
+        any(keyword in reason for keyword in uncertainty_keywords)
+        or confidence_value <= 0.35
+    )
 
 
 def _hitl_required() -> bool:
@@ -671,8 +724,16 @@ def _mark_media_awaiting_approval(
 ) -> Dict[str, Any]:
     """Persist only approval state for an extracted upload; do not store invoice/items."""
 
-    metadata = extraction_result.get("metadata") if isinstance(extraction_result.get("metadata"), dict) else {}
-    file_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
+    metadata = (
+        extraction_result.get("metadata")
+        if isinstance(extraction_result.get("metadata"), dict)
+        else {}
+    )
+    file_storage = (
+        metadata.get("file_storage")
+        if isinstance(metadata.get("file_storage"), dict)
+        else {}
+    )
     if file_storage and not isinstance(file_metadata.get("file_storage"), dict):
         file_metadata["file_storage"] = file_storage
     if not file_storage and not isinstance(file_metadata.get("file_storage"), dict):
@@ -733,7 +794,9 @@ def _mark_media_awaiting_approval(
         )
         file_metadata["file_storage"] = fallback_storage
         extraction_result.setdefault("metadata", {})["file_storage"] = fallback_storage
-        processing_metadata["pending_extraction_result"] = _pending_extraction_payload(extraction_result)
+        processing_metadata["pending_extraction_result"] = _pending_extraction_payload(
+            extraction_result
+        )
         media_record = _update_media_status(
             user_id=user_id,
             file_metadata=file_metadata,
@@ -758,7 +821,9 @@ def _mark_media_awaiting_approval(
             processing_metadata={
                 **processing_metadata,
                 **hitl_metadata,
-                "pending_extraction_result": _pending_extraction_payload(extraction_result),
+                "pending_extraction_result": _pending_extraction_payload(
+                    extraction_result
+                ),
             },
         )
     return hitl_metadata
@@ -771,10 +836,16 @@ def _build_pending_extraction_file_storage(
 ) -> Dict[str, Any]:
     """Build a registry-only file reference when private file storage failed."""
 
-    metadata = extraction_result.get("metadata") if isinstance(extraction_result, dict) else {}
+    metadata = (
+        extraction_result.get("metadata") if isinstance(extraction_result, dict) else {}
+    )
     if not isinstance(metadata, dict):
         metadata = {}
-    nested_file_metadata = metadata.get("file_metadata") if isinstance(metadata.get("file_metadata"), dict) else {}
+    nested_file_metadata = (
+        metadata.get("file_metadata")
+        if isinstance(metadata.get("file_metadata"), dict)
+        else {}
+    )
     checksum = (
         file_metadata.get("checksum_sha256")
         or metadata.get("checksum_sha256")
@@ -785,9 +856,12 @@ def _build_pending_extraction_file_storage(
         or nested_file_metadata.get("original_filename")
         or os.path.basename(str(extraction_result.get("file_path") or "pending_upload"))
     )
-    token = checksum or hashlib.sha256(
-        f"{user_id}:{filename}:{datetime.utcnow().isoformat()}".encode("utf-8")
-    ).hexdigest()
+    token = (
+        checksum
+        or hashlib.sha256(
+            f"{user_id}:{filename}:{datetime.utcnow().isoformat()}".encode("utf-8")
+        ).hexdigest()
+    )
     content_type = (
         file_metadata.get("content_type")
         or nested_file_metadata.get("content_type")
@@ -805,7 +879,8 @@ def _build_pending_extraction_file_storage(
         "path": f"pending://{user_id}/{token}",
         "url": "",
         "content_type": content_type,
-        "file_size": file_metadata.get("file_size") or nested_file_metadata.get("file_size"),
+        "file_size": file_metadata.get("file_size")
+        or nested_file_metadata.get("file_size"),
         "checksum_sha256": checksum,
         "original_filename": filename,
         "storage_class": "pending_extraction",
@@ -821,7 +896,9 @@ def _pending_extraction_payload(extraction_result: Dict[str, Any]) -> Dict[str, 
         return json.loads(json.dumps(extraction_result, default=str))
     except (TypeError, ValueError):
         return {
-            "data": extraction_result.get("data", {}) if isinstance(extraction_result, dict) else {},
+            "data": extraction_result.get("data", {})
+            if isinstance(extraction_result, dict)
+            else {},
             "metadata": {},
         }
 
@@ -840,7 +917,9 @@ def _pending_extraction_summary(extraction_result: Dict[str, Any]) -> Dict[str, 
         "currency": fields["currency"],
         "item_count": len(items),
         "item_label": "entries" if fields["is_ledger"] else "items",
-        "needs_review": bool((fields.get("extraction_quality") or {}).get("needs_review")),
+        "needs_review": bool(
+            (fields.get("extraction_quality") or {}).get("needs_review")
+        ),
         "sample_items": [
             _format_item_line(item, fields["currency"], fields["is_ledger"])
             for item in items[:4]
@@ -909,7 +988,9 @@ def _store_original_upload(
         )
     except StorageConfigurationError as exc:
         file_metadata["storage_error"] = str(exc)
-        logger.warning("Original upload skipped because storage is not configured: %s", exc)
+        logger.warning(
+            "Original upload skipped because storage is not configured: %s", exc
+        )
     except Exception as exc:
         file_metadata["storage_error"] = str(exc)
         logger.exception("Original upload could not be stored: %s", exc)
@@ -940,7 +1021,9 @@ def _update_media_status(
     return media_record
 
 
-def _calculate_file_checksum(file_path: str, file_content: Optional[bytes] = None) -> str:
+def _calculate_file_checksum(
+    file_path: str, file_content: Optional[bytes] = None
+) -> str:
     digest = hashlib.sha256()
     if file_content is not None:
         digest.update(file_content)
@@ -976,7 +1059,11 @@ def _find_existing_media_by_checksum(
                 .first()
             )
             if media:
-                metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
+                metadata = (
+                    media.processing_metadata
+                    if isinstance(media.processing_metadata, dict)
+                    else {}
+                )
                 return {
                     "id": media.id,
                     "invoice_id": media.invoice_id,
@@ -987,7 +1074,9 @@ def _find_existing_media_by_checksum(
                     "file_size": media.file_size,
                     "content_hash": media.content_hash,
                     "processing_metadata": metadata,
-                    "created_at": media.created_at.isoformat() if media.created_at else None,
+                    "created_at": media.created_at.isoformat()
+                    if media.created_at
+                    else None,
                 }
 
             invoice_candidates = (
@@ -1007,10 +1096,9 @@ def _find_existing_media_by_checksum(
                 file_metadata_value = extraction.get("file_metadata") or {}
                 if not isinstance(file_metadata_value, dict):
                     file_metadata_value = {}
-                stored_checksum = (
-                    extraction.get("checksum_sha256")
-                    or file_metadata_value.get("checksum_sha256")
-                )
+                stored_checksum = extraction.get(
+                    "checksum_sha256"
+                ) or file_metadata_value.get("checksum_sha256")
                 if stored_checksum == checksum:
                     return {
                         "id": None,
@@ -1022,7 +1110,9 @@ def _find_existing_media_by_checksum(
                         "file_size": None,
                         "content_hash": stored_checksum,
                         "processing_metadata": extraction,
-                        "created_at": invoice.created_at.isoformat() if invoice.created_at else None,
+                        "created_at": invoice.created_at.isoformat()
+                        if invoice.created_at
+                        else None,
                     }
         finally:
             session.close()
@@ -1039,8 +1129,14 @@ async def format_duplicate_file_response(
 ) -> Dict[str, Any]:
     invoice_id = media.get("invoice_id")
     media_id = media.get("id")
-    media_metadata = media.get("processing_metadata") if isinstance(media.get("processing_metadata"), dict) else {}
-    hitl_pending = media_metadata.get("hitl_status") == "awaiting_confirmation" and not invoice_id
+    media_metadata = (
+        media.get("processing_metadata")
+        if isinstance(media.get("processing_metadata"), dict)
+        else {}
+    )
+    hitl_pending = (
+        media_metadata.get("hitl_status") == "awaiting_confirmation" and not invoice_id
+    )
     if hitl_pending:
         approval_command = media_metadata.get("hitl_approval_command") or (
             f"APPROVE {media_id}" if media_id else None
@@ -1066,13 +1162,15 @@ async def format_duplicate_file_response(
         content = compact_whatsapp_message("\n".join(lines), max_chars=700)
     else:
         lines = [
-            "✅ *Document Already Processed*",
+            "*Duplicate Upload*",
             "",
             f"*File:* {file_name}",
         ]
         if invoice_id:
-            lines.append(f"*Receipt:* #{invoice_id}")
-        lines.append("*Status:* No duplicate rows were created.")
+            lines.append(f"*Duplicate of receipt:* #{invoice_id}")
+        if media_id:
+            lines.append(f"*Matched upload:* #{media_id}")
+        lines.append("Nothing new was saved.")
         content = compact_whatsapp_message("\n".join(lines), max_chars=700)
     return {
         "content": content,
@@ -1081,7 +1179,9 @@ async def format_duplicate_file_response(
             "file_type": file_type,
             "duplicate": True,
             "stored_in_database": bool(invoice_id),
-            "storage_status": "awaiting_human_confirmation" if hitl_pending else "duplicate",
+            "storage_status": "awaiting_human_confirmation"
+            if hitl_pending
+            else "duplicate",
             "hitl_status": "awaiting_confirmation" if hitl_pending else None,
             "hitl_approval_command": media_metadata.get("hitl_approval_command"),
             "hitl_rejection_command": media_metadata.get("hitl_rejection_command"),
@@ -1106,9 +1206,13 @@ def _has_storable_extraction_data(data: Any) -> bool:
     else:
         vendor_name = vendor
     vendor_text = str(vendor_name or "").strip().lower()
-    has_vendor = bool(vendor_text and vendor_text not in {"unknown", "unknown vendor", "n/a", "none"})
+    has_vendor = bool(
+        vendor_text and vendor_text not in {"unknown", "unknown vendor", "n/a", "none"}
+    )
 
-    transaction = data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
+    transaction = (
+        data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
+    )
     has_reference = bool(
         transaction.get("invoice_number")
         or transaction.get("receipt_no")
@@ -1119,7 +1223,9 @@ def _has_storable_extraction_data(data: Any) -> bool:
         or data.get("invoice_date")
     )
 
-    financial = data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
+    financial = (
+        data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
+    )
     total = _first_number(
         financial.get("total"),
         financial.get("total_amount"),
@@ -1135,7 +1241,10 @@ def _has_storable_extraction_data(data: Any) -> bool:
         isinstance(item, dict)
         and (
             str(item.get("description") or item.get("name") or "").strip()
-            or _first_number(item.get("total_price"), item.get("amount"), item.get("unit_price")) is not None
+            or _first_number(
+                item.get("total_price"), item.get("amount"), item.get("unit_price")
+            )
+            is not None
         )
         for item in items
     )
@@ -1159,15 +1268,29 @@ def _document_response_fields(data: Dict[str, Any]) -> Dict[str, Any]:
 
     if not isinstance(data, dict):
         data = {}
+    else:
+        data = apply_extraction_checks(data)
 
     vendor = data.get("vendor", {})
     vendor_name = vendor.get("name") if isinstance(vendor, dict) else vendor
     vendor_name = str(vendor_name or "").strip() or "Not visible"
 
-    transaction = data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
-    financial = data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
-    additional_info = data.get("additional_info", {}) if isinstance(data.get("additional_info"), dict) else {}
-    extraction_quality = data.get("extraction_quality", {}) if isinstance(data.get("extraction_quality"), dict) else {}
+    transaction = (
+        data.get("transaction", {}) if isinstance(data.get("transaction"), dict) else {}
+    )
+    financial = (
+        data.get("financial", {}) if isinstance(data.get("financial"), dict) else {}
+    )
+    additional_info = (
+        data.get("additional_info", {})
+        if isinstance(data.get("additional_info"), dict)
+        else {}
+    )
+    extraction_quality = (
+        data.get("extraction_quality", {})
+        if isinstance(data.get("extraction_quality"), dict)
+        else {}
+    )
 
     document_type = str(additional_info.get("document_type") or "").strip()
     if not document_type:
@@ -1186,7 +1309,9 @@ def _document_response_fields(data: Dict[str, Any]) -> Dict[str, Any]:
         or data.get("invoice_date")
         or "Not visible"
     )
-    invoice_number = transaction.get("invoice_number") or data.get("invoice_number") or None
+    invoice_number = (
+        transaction.get("invoice_number") or data.get("invoice_number") or None
+    )
     receipt_no = transaction.get("receipt_no") or data.get("receipt_no") or None
     total_amount = _first_number(
         financial.get("total"),
@@ -1245,9 +1370,13 @@ def _format_row_count(extraction_quality: Dict[str, Any]) -> Optional[str]:
 
 def _format_item_line(item: Dict[str, Any], currency: str, is_ledger: bool) -> str:
     description = str(item.get("description") or "Entry").strip()
-    amount = _first_number(item.get("total_price"), item.get("amount"), item.get("unit_price"))
+    amount = _first_number(
+        item.get("total_price"), item.get("amount"), item.get("unit_price")
+    )
     if is_ledger:
-        row_date = str(item.get("transaction_date") or item.get("raw_date") or "").strip()
+        row_date = str(
+            item.get("transaction_date") or item.get("raw_date") or ""
+        ).strip()
         amount_text = _format_money(amount, currency)
         if row_date:
             return f"{row_date}: {description} - {amount_text}"
@@ -1258,8 +1387,7 @@ def _format_item_line(item: Dict[str, Any], currency: str, is_ledger: bool) -> s
 
 
 async def format_extraction_response(
-    extraction_result: Dict[str, Any],
-    file_name: str
+    extraction_result: Dict[str, Any], file_name: str
 ) -> Dict[str, Any]:
     """
     Format the extraction results into a user-friendly response.
@@ -1279,7 +1407,11 @@ async def format_extraction_response(
     invoice_data = extraction_result.get("data", {})
 
     fields = _document_response_fields(invoice_data)
-    metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result.get("metadata"), dict) else {}
+    metadata = (
+        extraction_result.get("metadata", {})
+        if isinstance(extraction_result.get("metadata"), dict)
+        else {}
+    )
     hitl_pending = metadata.get("hitl_status") == "awaiting_confirmation"
     private_file_saved = _is_private_file_storage(file_storage)
     status = (
@@ -1293,6 +1425,9 @@ async def format_extraction_response(
     item_label = "entries" if fields["is_ledger"] else "items"
     extraction_quality = fields.get("extraction_quality") or {}
     needs_review = bool(extraction_quality.get("needs_review"))
+    media_id = metadata.get("media_id") or metadata.get("approved_media_id")
+    if not media_id and isinstance(file_storage, dict):
+        media_id = file_storage.get("media_id")
     status_label = (
         "Pending WhatsApp approval"
         if hitl_pending
@@ -1311,41 +1446,56 @@ async def format_extraction_response(
     )
     item_label_title = "Entries" if fields["is_ledger"] else "Items"
 
-    lines = [
-        title,
-        "",
-        f"*Status:* {status_label}",
-        f"*File:* {file_name}",
-        f"*Type:* {_business_label(fields['document_type'], 'Document')}",
-        f"*Vendor:* {fields['vendor_name']}",
-        f"*Date:* {fields['transaction_date']}",
-        f"*Total:* {_format_money(fields['total_amount'], fields['currency'])}",
-        f"*{item_label_title}:* {len(items)} extracted",
-    ]
+    quality_summary = _format_row_count(extraction_quality)
+    if not quality_summary and extraction_quality:
+        quality_summary = "Needs review" if needs_review else "Checked"
+
+    header_detail = f"{fields['vendor_name']} · {fields['transaction_date']}"
+    if media_id:
+        header_detail = f"Upload #{media_id} · {header_detail}"
+
+    lines = [title, "", header_detail, ""]
+    lines.extend(
+        [
+            f"*Status:* {status_label}",
+            f"*File:* {file_name}",
+            f"*Type:* {_business_label(fields['document_type'], 'Document')}",
+            f"*Date:* {fields['transaction_date']}",
+            f"*Total:* {_format_money(fields['total_amount'], fields['currency'])}",
+            f"*{item_label_title}:* {len(items)} extracted",
+        ]
+    )
+    if quality_summary:
+        lines.append(f"*Quality:* {quality_summary}")
     if fields["invoice_number"]:
         lines.append(f"*Invoice #:* {fields['invoice_number']}")
     if fields["receipt_no"]:
         lines.append(f"*Receipt #:* {fields['receipt_no']}")
 
     if extraction_quality:
-        quality_lines = []
-        row_count = _format_row_count(extraction_quality)
-        if row_count:
-            quality_lines.append(row_count)
         warnings = extraction_quality.get("warnings")
-        if isinstance(warnings, list) and warnings:
-            quality_lines.append(str(warnings[0]).strip()[:140])
-        if quality_lines:
+        warning_lines = (
+            [
+                str(warning).strip()[:150]
+                for warning in warnings or []
+                if str(warning).strip()
+            ]
+            if isinstance(warnings, list)
+            else []
+        )
+        if warning_lines:
             lines.append("")
-            lines.append("*Quality:*")
-            for quality_line in quality_lines[:2]:
-                lines.append(f"• {quality_line}")
+            lines.append("*Please verify before approving:*")
+            for warning in warning_lines[:2]:
+                lines.append(f"• {warning}")
 
     if items:
         lines.append("")
-        lines.append(f"*Sample {item_label}:*")
+        lines.append(f"*Top {item_label}:*")
         for index, item in enumerate(items[:4], start=1):
-            lines.append(f"{index}. {_format_item_line(item, fields['currency'], fields['is_ledger'])}")
+            lines.append(
+                f"{index}. {_format_item_line(item, fields['currency'], fields['is_ledger'])}"
+            )
         remaining = len(items) - 4
         if remaining > 0:
             item_state = "extracted" if hitl_pending else "saved"
@@ -1363,7 +1513,7 @@ async def format_extraction_response(
         else:
             lines.append("Approval id could not be created. Please resend this file.")
     else:
-        lines.append("*Next:* Ask \"What did I spend on printing?\"")
+        lines.append('*Next:* Ask "What did I spend on printing?"')
     response = compact_whatsapp_message("\n".join(lines), max_chars=1000)
     return {
         "content": response,
@@ -1384,20 +1534,23 @@ def _is_private_file_storage(file_storage: Optional[Dict[str, Any]]) -> bool:
 
 
 async def format_invalid_file_response(
-    validation_result: Dict[str, Any],
-    file_name: str
+    validation_result: Dict[str, Any], file_name: str
 ) -> Dict[str, Any]:
     """Return a deterministic rejection message for non-financial uploads."""
 
-    reason = str(validation_result.get("reason") or "").strip() or "This does not look like a receipt, invoice, or expense ledger."
+    raw_reason = str(validation_result.get("reason") or "").strip()
+    reason = (
+        raw_reason
+        or "I could not read this as a receipt, invoice, bill, or expense ledger."
+    )
     response = "\n".join(
         [
-            "⚠️ *Document Not Processed*",
+            "*Document Not Processed*",
             "",
             f"*File:* {file_name}",
             f"*Reason:* {reason}",
             "",
-            "Please send a receipt, invoice, bill, PDF, or handwritten expense ledger.",
+            "Try a clear photo/PDF of a receipt, invoice, bill, or handwritten expense page.",
         ]
     )
     return {
@@ -1412,8 +1565,7 @@ async def format_invalid_file_response(
 
 
 async def format_unsupported_format_response(
-    file_name: str,
-    file_type: str
+    file_name: str, file_type: str
 ) -> Dict[str, Any]:
     """
     Format response for valid but unsupported file formats.

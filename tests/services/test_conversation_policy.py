@@ -6,6 +6,7 @@ from services.conversation_policy import (
     media_processing_ack,
     off_topic_response,
 )
+from services.whatsapp_copy import build_help_message, build_pending_uploads_message
 
 
 def test_off_topic_message_is_steered_back_to_receipts():
@@ -17,6 +18,7 @@ def test_off_topic_message_is_steered_back_to_receipts():
 def test_invoice_and_greeting_messages_stay_in_scope():
     assert is_off_topic_message("Hey") is False
     assert is_off_topic_message("What did I spend on printing in March?") is False
+    assert is_off_topic_message("What is the pending status?") is False
 
 
 def test_compact_whatsapp_message_truncates_readably():
@@ -38,3 +40,30 @@ def test_media_processing_ack_mentions_attachment_count():
         "📎 *File Received*\n\n"
         "Received 2 files. I am processing them now and will send the result here."
     )
+
+
+def test_help_message_is_deterministic_and_mentions_status():
+    message = build_help_message(pending_count=2)
+
+    assert "Receipt Intelligence" in message
+    assert "APPROVE <id>" in message
+    assert "Pending uploads: 2" in message
+
+
+def test_pending_uploads_message_lists_approval_commands():
+    message = build_pending_uploads_message(
+        [
+            {
+                "media_id": "77",
+                "title": "Cafe receipt",
+                "transaction_date": "2026-05-18",
+                "total_amount": 450,
+                "currency": "INR",
+                "approval_command": "APPROVE 77",
+            }
+        ]
+    )
+
+    assert "Cafe receipt" in message
+    assert "450.00 INR" in message
+    assert "Reply APPROVE 77" in message
