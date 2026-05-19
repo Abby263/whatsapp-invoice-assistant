@@ -1,8 +1,4 @@
-"""
-State management for the WhatsApp Invoice Assistant LangGraph workflow.
-
-This module defines the state schema and helper functions for the LangGraph workflow.
-"""
+"""State schemas for WhatsApp Invoice Assistant workflows."""
 
 from enum import Enum, auto
 from typing import Dict, List, Optional, Union, Any
@@ -126,7 +122,7 @@ class ProcessingStage(str, Enum):
     
 
 class WorkflowState(BaseModel):
-    """State for the LangGraph workflow"""
+    """State shared by workflow orchestration helpers."""
     user_input: Optional[UserInput] = Field(default=None, description="Current user input being processed")
     input_type: InputType = Field(default=InputType.UNKNOWN, description="Detected input type")
     intent: IntentType = Field(default=IntentType.UNKNOWN, description="Classified intent")

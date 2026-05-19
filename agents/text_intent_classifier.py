@@ -3,7 +3,7 @@ import json
 from typing import Dict, Any, Optional, List, Tuple
 
 from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
-from langchain_app.state import IntentType
+from workflows.state import IntentType
 from constants.intent_types import INTENT_CONFIDENCE_THRESHOLDS
 from constants.prompt_mappings import AgentType, get_prompt_for_agent
 from services.llm_factory import LLMFactory

@@ -143,29 +143,15 @@ class TextToSQLConversionAgent(BaseAgent):
                 entity_info = "Extracted entities: " + json.dumps(entities)
                 logger.debug(f"Using extracted entities: {entity_info}")
 
-            # Get conversation history from context or memory system
+            # Get conversation history from the explicit workflow context.
             recent_messages = []
-            if context and context.conversation_id:
-                # Try to get history from memory system first
-                try:
-                    recent_messages = await self.get_conversation_history(context)
-                    if recent_messages:
-                        logger.info(f"Loaded {len(recent_messages)} messages from memory for conversation {context.conversation_id}")
-                    else:
-                        logger.debug("No messages found in memory, checking context history")
-                except Exception as e:
-                    logger.warning(f"Error getting conversation history from memory: {str(e)}")
+            conversation_history = context.conversation_history if context else []
+            if not conversation_history and isinstance(agent_input, dict):
+                conversation_history = agent_input.get("conversation_history", [])
 
-            # Fall back to context conversation history if memory retrieval failed or returned empty
-            if not recent_messages:
-                # Get history from context or input
-                conversation_history = context.conversation_history if context else []
-                if not conversation_history and isinstance(agent_input, dict):
-                    conversation_history = agent_input.get("conversation_history", [])
-
-                recent_messages = conversation_history[-self.max_history_messages:] if conversation_history else []
-                if recent_messages:
-                    logger.debug(f"Using {len(recent_messages)} messages from context history")
+            recent_messages = conversation_history[-self.max_history_messages:] if conversation_history else []
+            if recent_messages:
+                logger.debug(f"Using {len(recent_messages)} messages from context history")
 
             # Prepare history context
             history_context = ""

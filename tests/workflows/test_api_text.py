@@ -2,7 +2,7 @@
 
 import pytest
 
-from langchain_app import api
+from workflows import api
 
 
 @pytest.mark.asyncio

@@ -58,7 +58,7 @@ BASE_TEST_DIR = Path("tests")
 AGENT_TEST_DIR = BASE_TEST_DIR / "agents"
 SERVICE_TEST_DIR = BASE_TEST_DIR / "services"
 DATABASE_TEST_DIR = BASE_TEST_DIR / "database"
-WORKFLOW_TEST_DIR = BASE_TEST_DIR / "langchain_app"
+WORKFLOW_TEST_DIR = BASE_TEST_DIR / "workflows"
 
 
 def run_all_tests() -> int:

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from agents.text_intent_classifier import TextIntentClassifierAgent
 from services.llm_factory import LLMFactory
-from langchain_app.state import IntentType
+from workflows.state import IntentType
 from utils.base_agent import AgentInput, AgentContext
 from tests.fixtures.test_data import (
     GREETING_INPUTS,

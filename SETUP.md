@@ -102,15 +102,11 @@ Notes:
 Optional local-only variables:
 
 ```env
-USE_MONGODB=false
-MONGODB_URI=mongodb://localhost:27017/whatsapp_invoice_assistant
 DEBUG=false
 LOG_LEVEL=INFO
 PORT=8000
 HOST=0.0.0.0
 ```
-
-MongoDB is not required for the current Vercel real-time WhatsApp test path.
 
 ## Supabase Setup
 

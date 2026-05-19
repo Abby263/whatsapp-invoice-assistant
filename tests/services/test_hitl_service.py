@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from langchain_app import file_processing_workflow
+from workflows import file_processing_workflow
 from services import hitl_service
 
 

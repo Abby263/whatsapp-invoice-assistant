@@ -358,7 +358,7 @@ def resolve_request_user(
 
 
 def process_chat_message(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
-    from langchain_app.api import process_text_message
+    from workflows.api import process_text_message
 
     user, needs_link = resolve_request_user(auth_context, payload)
     if needs_link:
@@ -392,7 +392,7 @@ def process_chat_message(auth_context: Any, payload: Dict[str, Any]) -> Dict[str
 
 
 def process_upload(auth_context: Any, uploaded_file: Any, form: Dict[str, Any]) -> Dict[str, Any]:
-    from langchain_app.api import process_file_message
+    from workflows.api import process_file_message
 
     if not uploaded_file or not uploaded_file.filename:
         return {"status": "error", "message": "No file selected"}
@@ -438,7 +438,7 @@ def process_upload(auth_context: Any, uploaded_file: Any, form: Dict[str, Any]) 
 
 
 def process_twilio_webhook(form: Dict[str, Any]) -> Dict[str, Any]:
-    from langchain_app.api import process_whatsapp_message
+    from workflows.api import process_whatsapp_message
 
     return run_async(process_whatsapp_message(form))
 

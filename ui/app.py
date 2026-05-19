@@ -70,22 +70,11 @@ logging.basicConfig(
 
 logger = logging.getLogger("ui_test")
 
-# Apply patches before importing LangGraph
-try:
-    import patches
-    logging.info("Applied compatibility patches")
-except Exception as e:
-    logging.error(f"Error applying patches: {e}")
-
-# Import the interactive test module
-from tests.interactive_test import handle_message, handle_command, ensure_test_user_exists
-
 # Import constants
 from constants.ui_config import DEFAULT_WHATSAPP_NUMBER, DEFAULT_CONVERSATION_ID, MAX_CHAT_HISTORY, MAX_CONTENT_LENGTH, UPLOAD_FOLDER, VECTOR_EXTENSION_NAME, DEFAULT_VECTOR_DIMENSION
 
 # Import application modules
-from langchain_app.api import process_text_message, process_file_message
-from memory.memory_manager import get_memory, set_memory_config
+from workflows.api import process_text_message, process_file_message
 from database import database_utils
 from scripts.update_embeddings import run_embeddings_update
 
@@ -656,14 +645,14 @@ def api_message():
             for i, msg in enumerate(conversation_history):
                 logger.info(f"History item {i}: {msg['role']} - {msg['content'][:30]}...")
 
-        # Process message with history
         result = run_async(
-            handle_message,
-            message,
-            USER_ID,
-            conversation_id,
-            is_file=is_file,
-            conversation_history=conversation_history
+            process_text_message,
+            message=message,
+            sender=f"whatsapp:{WHATSAPP_NUMBER}",
+            conversation_history=conversation_history,
+            user_id=USER_ID,
+            conversation_id=conversation_id,
+            conversation_history_trusted=True,
         )
 
         # Update conversation history with the new exchange
@@ -739,10 +728,19 @@ def upload_file():
                         "image/png" if file_ext == ".png" else \
                         "application/octet-stream"
 
-            # Process the file using the /file command with improved async handling
-            command = f"/file {file_path}"
             conversation_id = _local_conversation_id(USER_ID, WHATSAPP_NUMBER)
-            response = run_async(handle_message, command, USER_ID, conversation_id)
+            conversation_history = _local_conversation_history(USER_ID, WHATSAPP_NUMBER)
+            response = run_async(
+                process_file_message,
+                file_path=file_path,
+                file_name=filename,
+                mime_type=mime_type,
+                sender=f"whatsapp:{WHATSAPP_NUMBER}",
+                user_id=USER_ID,
+                conversation_id=conversation_id,
+                conversation_history=conversation_history,
+                conversation_history_trusted=True,
+            )
 
             return jsonify({
                 'status': 'success',
@@ -1174,58 +1172,6 @@ def get_db_status():
             'message': f"Error: {str(e)}"
         }), 500
 
-@app.route('/api/memory/config', methods=['GET', 'POST'])
-def memory_config():
-    """
-    Get or update memory configuration settings.
-
-    GET: Retrieve current memory configuration
-    POST: Update memory configuration with provided values
-    """
-    try:
-        # Import memory management
-        from memory.langgraph_memory import LangGraphMemory
-        memory_manager = LangGraphMemory()
-
-        if request.method == 'GET':
-            # Get current configuration
-            config = memory_manager.get_config()
-            return jsonify({
-                'status': 'success',
-                'config': config
-            })
-        elif request.method == 'POST':
-            # Update configuration with provided values
-            data = request.json
-
-            # Extract configuration parameters from request
-            max_memory_age = data.get('max_memory_age')
-            max_messages = data.get('max_messages')
-            message_window = data.get('message_window')
-            enable_context_window = data.get('enable_context_window')
-            persist_memory = data.get('persist_memory')
-
-            # Update configuration
-            updated_config = memory_manager.update_config(
-                max_memory_age=max_memory_age,
-                max_messages=max_messages,
-                message_window=message_window,
-                enable_context_window=enable_context_window,
-                persist_memory=persist_memory
-            )
-
-            return jsonify({
-                'status': 'success',
-                'message': 'Memory configuration updated successfully',
-                'config': updated_config
-            })
-    except Exception as e:
-        logger.exception(f"Error managing memory configuration: {str(e)}")
-        return jsonify({
-            'status': 'error',
-            'message': f"Error: {str(e)}"
-        }), 500
-
 @app.route('/api/step-logs/<step_name>')
 def get_step_logs(step_name):
     """Return logs for a specific workflow step"""
@@ -1392,9 +1338,13 @@ def initialize():
         # Get user ID for this WhatsApp number, creating if needed
         USER_ID = linked_user.id if linked_user else run_async(lambda: get_user_id_from_whatsapp(WHATSAPP_NUMBER))
 
-        # Use our improved async handling
         if not linked_user:
-            run_async(ensure_test_user_exists)
+            async def ensure_local_test_user_exists():
+                from database.connection import ensure_test_user_exists
+
+                return await ensure_test_user_exists()
+
+            run_async(ensure_local_test_user_exists)
 
         CONVERSATION_ID = _reset_local_conversation(USER_ID, WHATSAPP_NUMBER)
 
@@ -2077,9 +2027,14 @@ if __name__ == '__main__':
     if unknown:
         logger.warning(f"Unknown arguments ignored: {unknown}")
 
-    # Ensure test user exists before starting the app using our improved async handling
+    # Ensure test user exists before starting the app using the local async runner.
     try:
-        run_async(ensure_test_user_exists)
+        async def ensure_local_test_user_exists():
+            from database.connection import ensure_test_user_exists
+
+            return await ensure_test_user_exists()
+
+        run_async(ensure_local_test_user_exists)
     except Exception as e:
         logger.warning(f"Could not ensure test user exists before startup: {str(e)}")
 

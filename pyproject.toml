@@ -22,7 +22,6 @@ pillow = "^11.0.0"
 python-dotenv = "^1.0.1"
 asyncpg = "^0.30.0"
 psycopg2-binary = "^2.9.10"
-langgraph = "^0.0.25"
 pyyaml = "^6.0.2"
 pgvector = "^0.3.6"
 numpy = "^1.26.0"
@@ -62,7 +61,7 @@ no_implicit_optional = true
 strict_optional = true
 
 [[tool.mypy.overrides]]
-module = ["twilio.*", "langgraph.*"]
+module = ["twilio.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

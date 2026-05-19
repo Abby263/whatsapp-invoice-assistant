@@ -6,8 +6,8 @@ import io
 import pytest
 from PIL import Image
 
-from langchain_app import api
-from langchain_app import file_processing_workflow
+from workflows import api
+from workflows import file_processing_workflow
 from storage.supabase_storage_handler import SupabaseStorageHandler
 
 

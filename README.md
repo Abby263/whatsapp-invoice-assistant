@@ -170,7 +170,7 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [app.py](app.py) | Vercel Flask entrypoint for the hosted UI, `/webhook`, auth APIs, upload/chat routes, generated invoices, and health checks. |
 | [ui/app.py](ui/app.py) | Local operator UI for development and workflow inspection. |
 | [services/live_backend.py](services/live_backend.py) | Production bridge from Flask routes to Supabase, Clerk identity, Twilio media, receipt processing, and invoice generation. |
-| [langchain_app/](langchain_app) | Text, file, query, and invoice-generation workflow routing. |
+| [workflows/](workflows) | Text, file, query, approval, RAG, and invoice-generation workflow routing. |
 | [agents/](agents) | LLM-backed intent classification, validation, extraction, SQL generation, RAG, and response formatting. |
 | [prompts/](prompts) | Prompt templates grouped by conversation, document processing, SQL, and storage tasks. |
 | [schemas/llm_outputs/](schemas/llm_outputs) | Canonical structured-output contracts for LLM parsing. |
@@ -179,9 +179,8 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [storage/user_uploads.py](storage/user_uploads.py) | User-scoped upload paths, media registry writes, and duplicate lookup metadata. |
 | [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
 | [services/history_service.py](services/history_service.py) | User-scoped listing and deletion of receipt history, generated invoices, messages, usage rows, and stored files. |
-| [services/conversation_memory.py](services/conversation_memory.py) | Supabase Postgres-backed active conversation memory for WhatsApp and web multi-turn context. |
+| [services/conversation_memory.py](services/conversation_memory.py) | Supabase Postgres-backed conversation memory for WhatsApp and web multi-turn context. |
 | [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
-| [memory/](memory) | Legacy in-memory and optional MongoDB checkpoint helpers for local experiments. |
 
 ## Data Model
 

@@ -1,5 +1,5 @@
 """
-API interface for the WhatsApp Invoice Assistant LangGraph workflow.
+API interface for the WhatsApp Invoice Assistant workflows.
 
 This module provides functions for interfacing between Flask routes and the
 agent workflows, handling request parsing and response formatting.
@@ -19,9 +19,9 @@ import mimetypes
 import httpx
 from sqlalchemy.orm import Session
 
-from langchain_app.text_processing_workflow import process_text_message as process_text
-from langchain_app.file_processing_workflow import process_file_message as process_file
-from langchain_app.state import IntentType
+from workflows.text_processing_workflow import process_text_message as process_text
+from workflows.file_processing_workflow import process_file_message as process_file
+from workflows.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS
 from services.conversation_policy import compact_whatsapp_message, media_processing_ack
 from services.conversation_memory import load_user_conversation_history, save_conversation_turn

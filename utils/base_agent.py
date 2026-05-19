@@ -95,113 +95,6 @@ class BaseAgent(ABC):
         """
         pass
     
-    async def get_conversation_history(self, context: AgentContext) -> List[Dict[str, Any]]:
-        """
-        Get conversation history for the current context.
-        
-        Args:
-            context: Agent context containing conversation_id
-            
-        Returns:
-            List of messages from the conversation history
-        """
-        if not context.conversation_id:
-            return []
-            
-        # Try to load history from memory
-        try:
-            # Import here to avoid circular import
-            from memory.agent_memory import agent_memory
-            
-            history = await agent_memory.get_recent_messages(
-                conversation_id=context.conversation_id,
-                max_messages=self.max_history_messages
-            )
-            
-            if history:
-                logger.debug(f"{self.name} loaded {len(history)} messages from memory")
-                return history
-        except Exception as e:
-            logger.warning(f"Error loading conversation history: {str(e)}")
-        
-        # Fallback to history in context
-        return context.conversation_history[-self.max_history_messages:] if context.conversation_history else []
-    
-    async def add_context_to_prompt(self, prompt: str, context: AgentContext) -> str:
-        """
-        Add conversation context to a prompt if conversation_id is available.
-        
-        Args:
-            prompt: Base prompt text
-            context: Agent context
-            
-        Returns:
-            Enhanced prompt with conversation context if available
-        """
-        if not context.conversation_id:
-            return prompt
-            
-        try:
-            # Import here to avoid circular import
-            from memory.agent_memory import agent_memory
-            
-            enhanced_prompt = await agent_memory.add_context_to_prompt(
-                prompt=prompt,
-                conversation_id=context.conversation_id,
-                max_messages=self.max_history_messages
-            )
-            
-            if enhanced_prompt != prompt:
-                logger.debug(f"{self.name} enhanced prompt with conversation history")
-                return enhanced_prompt
-        except Exception as e:
-            logger.warning(f"Error enhancing prompt with context: {str(e)}")
-        
-        return prompt
-    
-    async def store_interaction(self, 
-                              context: AgentContext, 
-                              user_input: str, 
-                              agent_output: str,
-                              metadata: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Store the current interaction in memory.
-        
-        Args:
-            context: Agent context
-            user_input: User input text
-            agent_output: Agent output text
-            metadata: Optional metadata about the interaction
-        """
-        if not context.conversation_id or not context.user_id:
-            return
-            
-        try:
-            # Import here to avoid circular import
-            from memory.agent_memory import agent_memory
-            
-            # Store user message if not already there
-            await agent_memory.update_memory_with_message(
-                conversation_id=context.conversation_id,
-                user_id=str(context.user_id),
-                role="user",
-                content=user_input,
-                metadata=metadata
-            )
-            
-            # Store agent response
-            await agent_memory.update_memory_with_message(
-                conversation_id=context.conversation_id,
-                user_id=str(context.user_id),
-                role="assistant",
-                content=agent_output,
-                metadata=metadata
-            )
-            
-            logger.debug(f"{self.name} stored interaction in memory")
-        except Exception as e:
-            logger.warning(f"Error storing interaction in memory: {str(e)}")
-    
     def process_sync(self, 
                    agent_input: Union[AgentInput, Dict[str, Any]], 
                    context: Optional[AgentContext] = None) -> AgentOutput:
@@ -319,15 +212,6 @@ class BaseAgent(ABC):
             output = await self.process(agent_input, context)
             self._log_input_output(agent_input, output)
             
-            # Store the interaction in memory if appropriate
-            if isinstance(agent_input.content, str) and isinstance(output.content, str):
-                await self.store_interaction(
-                    context=context,
-                    user_input=agent_input.content,
-                    agent_output=output.content,
-                    metadata=output.metadata
-                )
-            
             return output
         except Exception as e:
-            return self._handle_error(e, agent_input) 
+            return self._handle_error(e, agent_input)
