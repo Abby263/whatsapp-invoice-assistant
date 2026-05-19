@@ -541,7 +541,7 @@ async def test_approve_pending_extraction_uses_metadata_payload_when_file_is_not
 
 
 @pytest.mark.asyncio
-async def test_review_pending_upload_from_web_requires_whatsapp(monkeypatch):
+async def test_review_pending_upload_from_web_requires_step_up(monkeypatch):
     async def fake_approve(*_args, **_kwargs):
         raise AssertionError("web approval must not approve pending uploads")
 
@@ -554,7 +554,29 @@ async def test_review_pending_upload_from_web_requires_whatsapp(monkeypatch):
     result = await hitl_service.review_pending_upload_from_web("7", 77, "approve")
 
     assert result["status"] == "error"
-    assert result["metadata"]["hitl_status"] == "whatsapp_required"
+    assert result["metadata"]["hitl_status"] == "step_up_required"
     assert "APPROVE 77" in result["message"]
     assert "REJECT 77" in result["message"]
-    assert "WhatsApp Approval Required" in result["message"]
+    assert "Step-Up Approval Required" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_review_pending_upload_from_web_can_approve_after_step_up(monkeypatch):
+    async def fake_approve(user_id, media_id, conversation_history=None):
+        return {
+            "status": "success",
+            "message": "saved",
+            "metadata": {"hitl_status": "confirmed", "user_id": user_id, "media_id": media_id},
+        }
+
+    monkeypatch.setattr(hitl_service, "approve_pending_extraction", fake_approve)
+
+    result = await hitl_service.review_pending_upload_from_web(
+        "7",
+        77,
+        "approve",
+        allow_web_approval=True,
+    )
+
+    assert result["status"] == "success"
+    assert result["metadata"]["hitl_status"] == "confirmed"

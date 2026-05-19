@@ -26,9 +26,18 @@ from workflows.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS
 from services.conversation_policy import compact_whatsapp_message, media_processing_ack
 from services.conversation_memory import load_user_conversation_history, save_conversation_turn
+from services.job_queue import JOB_TYPE_TWILIO_MEDIA_BATCH, enqueue_job, queue_enabled_for_media_count
+from services.rate_limit_service import (
+    SCOPE_MEDIA_UPLOAD,
+    SCOPE_TEXT_TURN,
+    check_and_record,
+    record_token_usage,
+)
 from services.twilio_messaging import send_processing_ack, send_whatsapp_message
 from schemas.llm_outputs import is_ledger_document
+from utils import observability
 from utils.phone_numbers import normalize_whatsapp_number
+from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +88,7 @@ async def process_text_message(
     Returns:
         The formatted response
     """
-    logger.info(f"Processing text message from {sender}")
+    observability.log_event(logger, "text_message_started", sender=sender, user_id=user_id)
     
     try:
         if user_id is None:
@@ -88,6 +97,30 @@ async def process_text_message(
                 logger.info("Resolved missing text-message user_id from sender")
             else:
                 logger.warning("Could not resolve text-message user_id from sender %s", sender)
+
+        rate_limit = check_and_record(
+            user_id,
+            SCOPE_TEXT_TURN,
+            request_id=whatsapp_message_sid or observability.current_context().get("request_id"),
+            metadata={"sender": sender},
+        )
+        if not rate_limit.allowed:
+            observability.log_event(
+                logger,
+                "rate_limit_rejected",
+                level=logging.WARNING,
+                user_id=user_id,
+                scope=rate_limit.scope,
+                limit=rate_limit.limit,
+            )
+            return {
+                "message": rate_limit.message,
+                "metadata": {"rate_limit": rate_limit.to_metadata()},
+                "status": "error",
+                "type": "text",
+                "user_id": user_id,
+                "whatsapp_number": sender,
+            }
 
         active_history = await _resolve_user_scoped_history(
             user_id=user_id,
@@ -144,6 +177,20 @@ async def process_text_message(
             )
             if saved_conversation_id is not None:
                 response_payload["conversation_id"] = str(saved_conversation_id)
+            record_token_usage(
+                user_id,
+                metadata.get("token_usage"),
+                operation_type="text_turn",
+                request_id=whatsapp_message_sid or observability.current_context().get("request_id"),
+                metadata={"sender": sender},
+            )
+            observability.log_event(
+                logger,
+                "text_message_completed",
+                user_id=user_id,
+                status="success",
+                total_tokens=metadata.get("token_usage", {}).get("total_tokens"),
+            )
             return response_payload
         else:
             # Handle the case where content is missing
@@ -193,10 +240,29 @@ async def process_file_message(
     Returns:
         The formatted response
     """
-    logger.info(f"Processing file message from {sender}: {file_name} ({mime_type})")
-    logger.info(f"File path: {file_path}, user_id: {user_id}")
+    observability.log_event(
+        logger,
+        "file_message_started",
+        sender=sender,
+        user_id=user_id,
+        file_name=file_name,
+        mime_type=mime_type,
+    )
     
     try:
+        rate_limit = check_and_record(
+            user_id,
+            SCOPE_MEDIA_UPLOAD,
+            request_id=(file_metadata or {}).get("twilio_message_sid") or observability.current_context().get("request_id"),
+            metadata={"sender": sender, "file_name": file_name, "mime_type": mime_type},
+        )
+        if not rate_limit.allowed:
+            return {
+                "message": rate_limit.message,
+                "metadata": {"rate_limit": rate_limit.to_metadata(), "success": False},
+                "status": "error",
+            }
+
         # Process the file through the specialized workflow
         logger.info(f"Calling process_file with user_id: {user_id}")
         active_history = await _resolve_user_scoped_history(
@@ -253,6 +319,21 @@ async def process_file_message(
             )
             if saved_conversation_id is not None:
                 response_payload["conversation_id"] = str(saved_conversation_id)
+        record_token_usage(
+            user_id,
+            response_payload["metadata"].get("token_usage"),
+            operation_type="media_upload",
+            request_id=(file_metadata or {}).get("twilio_message_sid") or observability.current_context().get("request_id"),
+            metadata={"file_name": file_name, "mime_type": mime_type},
+        )
+        observability.log_event(
+            logger,
+            "file_message_completed",
+            user_id=user_id,
+            status=result.get("status", "success"),
+            file_name=file_name,
+            total_tokens=response_payload["metadata"].get("token_usage", {}).get("total_tokens"),
+        )
         return response_payload
     
     except Exception as e:
@@ -273,12 +354,39 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
     Returns:
         The formatted response
     """
-    logger.info("Processing WhatsApp message")
+    request_id = message_data.get("RequestId") or observability.current_context().get("request_id") or observability.new_request_id()
     message_sid = _message_sid_from_payload(message_data)
-    webhook_claim = _claim_webhook_event(message_sid)
-    if not webhook_claim.get("claimed", True):
-        return _duplicate_webhook_response(message_sid, webhook_claim)
-    
+    with observability.request_context(request_id=request_id, message_sid=message_sid):
+        observability.log_event(logger, "whatsapp_message_started")
+        webhook_claim = _claim_webhook_event(message_sid)
+        if not webhook_claim.get("claimed", True):
+            return _duplicate_webhook_response(message_sid, webhook_claim)
+        try:
+            return await _process_claimed_whatsapp_message(message_data, message_sid, allow_queue=True)
+        except Exception as e:
+            logger.exception(f"Error processing WhatsApp message: {str(e)}")
+            _mark_webhook_event_failed(message_sid, str(e))
+            return {
+                "status": "error",
+                "message": GENERAL_FALLBACKS["no_response"]
+            }
+
+
+async def process_queued_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Process a queued WhatsApp payload without claiming the webhook event again."""
+
+    message_sid = _message_sid_from_payload(message_data)
+    request_id = message_data.get("RequestId") or observability.new_request_id()
+    with observability.request_context(request_id=request_id, message_sid=message_sid):
+        return await _process_claimed_whatsapp_message(message_data, message_sid, allow_queue=False)
+
+
+async def _process_claimed_whatsapp_message(
+    message_data: Dict[str, Any],
+    message_sid: Optional[str],
+    *,
+    allow_queue: bool,
+) -> Dict[str, Any]:
     try:
         # Extract message information
         sender = message_data.get("From", "unknown")
@@ -289,12 +397,32 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             send_processing_ack(
                 to_number=sender,
                 from_number=(
-                    message_data.get("To") or os.environ.get("TWILIO_PHONE_NUMBER")
+                    message_data.get("To") or get_settings().twilio_phone_number
                 ),
                 body=media_processing_ack(media_count),
             )
 
         user_id = extract_user_id_from_sender(sender)
+        observability.bind_context(user_id=user_id)
+
+        if has_media and allow_queue and queue_enabled_for_media_count(media_count):
+            job = enqueue_job(
+                JOB_TYPE_TWILIO_MEDIA_BATCH,
+                {**message_data, "RequestId": observability.current_context().get("request_id")},
+                user_id=user_id,
+                idempotency_key=f"twilio:{message_sid}:media_batch" if message_sid else None,
+            )
+            result = {
+                "status": "queued",
+                "message": "Received your files. They are queued for processing and I will send the final status when processing finishes.",
+                "metadata": {
+                    "queued": True,
+                    "job": job,
+                    "media_count": media_count,
+                },
+            }
+            _mark_webhook_event_processed(message_sid, result)
+            return result
         
         # Check if this is a text or media message
         if "Body" in message_data and not has_media:
@@ -431,7 +559,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 if _send_media_final_reply(
                     result=combined_result,
                     to_number=sender,
-                    from_number=message_data.get("To") or os.environ.get("TWILIO_PHONE_NUMBER"),
+                    from_number=message_data.get("To") or get_settings().twilio_phone_number,
                 ):
                     combined_result["suppress_twiml_response"] = True
                     combined_result.setdefault("metadata", {})["twilio_final_reply_sent"] = True
@@ -452,13 +580,8 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             _mark_webhook_event_processed(message_sid, result)
             return result
     
-    except Exception as e:
-        logger.exception(f"Error processing WhatsApp message: {str(e)}")
-        _mark_webhook_event_failed(message_sid, str(e))
-        return {
-            "status": "error",
-            "message": GENERAL_FALLBACKS["no_response"]
-        }
+    except Exception:
+        raise
 
 
 def _twilio_media_auth(media_url: str):
@@ -466,8 +589,8 @@ def _twilio_media_auth(media_url: str):
 
     if "api.twilio.com" not in (media_url or ""):
         return None
-    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    account_sid = get_settings().twilio_account_sid
+    auth_token = get_settings().twilio_auth_token
     if not account_sid or not auth_token:
         return None
     return (account_sid, auth_token)
@@ -842,7 +965,7 @@ def _send_media_final_reply(
 ) -> bool:
     """Send the media processing result out-of-band when possible."""
 
-    if os.environ.get("TWILIO_MEDIA_FINAL_REPLY_ENABLED", "true").lower() not in {"1", "true", "yes"}:
+    if not get_settings().twilio_media_final_reply_enabled:
         return False
 
     message = result.get("message") or result.get("content") or ""

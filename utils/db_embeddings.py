@@ -11,11 +11,14 @@ from sqlalchemy.orm import Session
 
 from database.schemas import Item
 from database.connection import SessionLocal
-from utils.vector_utils import get_embedding_generator, generate_embedding_for_text
+from utils.vector_utils import generate_embedding_for_text
 
 logger = logging.getLogger(__name__)
 
-async def update_item_embeddings(session: Optional[Session] = None) -> Dict[str, Any]:
+async def update_item_embeddings(
+    session: Optional[Session] = None,
+    user_id: Optional[int] = None,
+) -> Dict[str, Any]:
     """
     Update embeddings for all items in the database that don't have embeddings.
 
@@ -32,10 +35,15 @@ async def update_item_embeddings(session: Optional[Session] = None) -> Dict[str,
 
     try:
         # Get items without embeddings
-        items_without_embeddings = session.query(Item).filter(
+        query = session.query(Item).filter(
             Item.description_embedding.is_(None),
             Item.description.isnot(None)
-        ).all()
+        )
+        if user_id is not None:
+            from database.schemas import Invoice
+
+            query = query.join(Invoice, Item.invoice_id == Invoice.id).filter(Invoice.user_id == int(user_id))
+        items_without_embeddings = query.all()
 
         if not items_without_embeddings:
             logger.info("No items without embeddings found")
@@ -47,8 +55,9 @@ async def update_item_embeddings(session: Optional[Session] = None) -> Dict[str,
         descriptions = [item.description for item in items_without_embeddings]
 
         # Generate embeddings in batch
-        embedding_generator = get_embedding_generator()
-        embeddings = embedding_generator.generate_batch_embeddings(descriptions)
+        from utils.vector_utils import generate_batch_embeddings_for_texts
+
+        embeddings = generate_batch_embeddings_for_texts(descriptions, user_id=user_id)
 
         # Update items with embeddings
         updated_count = 0

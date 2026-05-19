@@ -86,6 +86,8 @@ class User(Base):
     media_files = relationship("Media", back_populates="user")
     invoice_embeddings = relationship("InvoiceEmbedding", back_populates="user")
     generated_invoices = relationship("GeneratedInvoice", back_populates="user")
+    rate_limit_events = relationship("RateLimitEvent", back_populates="user")
+    async_jobs = relationship("AsyncJob", back_populates="user")
 
 
 class Invoice(Base):
@@ -329,7 +331,49 @@ class Usage(Base):
     tokens_in = Column(Integer, default=0)
     tokens_out = Column(Integer, default=0)
     cost = Column(Float, default=0.0)
+    operation_type = Column(String(80), nullable=True, index=True)
+    request_id = Column(String(80), nullable=True, index=True)
+    usage_metadata = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
     user = relationship("User", back_populates="usage")
+
+
+class RateLimitEvent(Base):
+    """Persisted per-user rate-limit accounting event."""
+    __tablename__ = "rate_limit_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    scope = Column(String(80), nullable=False, index=True)
+    request_id = Column(String(80), nullable=True, index=True)
+    units = Column(Integer, nullable=False, default=1)
+    status = Column(String(30), nullable=False, default="allowed", index=True)
+    event_metadata = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User", back_populates="rate_limit_events")
+
+
+class AsyncJob(Base):
+    """Durable background job record for deferred serverless work."""
+    __tablename__ = "async_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_type = Column(String(80), nullable=False, index=True)
+    idempotency_key = Column(String(160), unique=True, nullable=True, index=True)
+    status = Column(String(30), nullable=False, default="queued", index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    payload = Column(JSON, nullable=False, default=dict)
+    result = Column(JSON, nullable=True)
+    attempts = Column(Integer, nullable=False, default=0)
+    max_attempts = Column(Integer, nullable=False, default=3)
+    error_message = Column(Text, nullable=True)
+    available_at = Column(DateTime, default=datetime.utcnow, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="async_jobs")

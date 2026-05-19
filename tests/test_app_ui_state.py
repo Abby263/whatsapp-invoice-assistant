@@ -135,6 +135,7 @@ def test_twilio_webhook_can_suppress_twiml_after_outbound_reply(monkeypatch):
     assert response.status_code == 200
     assert b"<Response></Response>" in response.data
     assert b"<Message>" not in response.data
+    assert response.headers["X-Request-ID"]
 
 
 def test_twilio_validation_is_optional_in_demo_mode_when_env_missing(monkeypatch):
@@ -197,6 +198,7 @@ def test_twilio_webhook_hides_internal_exception_details(monkeypatch):
     assert response.status_code == 500
     assert b"Something went wrong. Please try again." in response.data
     assert b"database password leaked" not in response.data
+    assert response.headers["X-Request-ID"]
 
 
 def test_agent_flow_requires_auth_when_auth_required(monkeypatch):

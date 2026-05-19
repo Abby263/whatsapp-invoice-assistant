@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from xml.sax.saxutils import escape
 
 from flask import Response, jsonify, request
 
+from config.settings import get_settings
 from demo import DEMO_LINKS
 from services import live_backend
 from services.conversation_policy import compact_whatsapp_message
@@ -89,7 +89,7 @@ def _mask_number(value: str | None) -> str:
 
 
 def _twilio_request_is_valid() -> bool:
-    raw_setting = os.environ.get("TWILIO_VALIDATE_REQUESTS")
+    raw_setting = get_settings().twilio_validate_requests
     live_backend_enabled = _live_backend_enabled()
     if raw_setting is None or raw_setting.strip() == "":
         should_validate = live_backend_enabled
@@ -107,7 +107,7 @@ def _twilio_request_is_valid() -> bool:
     try:
         from twilio.request_validator import RequestValidator
 
-        token = os.environ.get("TWILIO_AUTH_TOKEN")
+        token = get_settings().twilio_auth_token
         signature = request.headers.get("X-Twilio-Signature", "")
         if not token or not signature:
             return False
@@ -122,7 +122,7 @@ def _twilio_request_is_valid() -> bool:
 
 
 def _warn_if_twilio_validation_disabled_at_startup() -> None:
-    raw_setting = os.environ.get("TWILIO_VALIDATE_REQUESTS")
+    raw_setting = get_settings().twilio_validate_requests
     if raw_setting is None or raw_setting.strip().lower() not in {"0", "false", "no", "off"}:
         return
     if _live_backend_enabled():

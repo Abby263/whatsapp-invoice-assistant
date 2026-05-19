@@ -524,7 +524,7 @@ async def execute_query(
         try:
             from utils.vector_utils import generate_embedding_for_text
 
-            embedding = generate_embedding_for_text(query_text)
+            embedding = generate_embedding_for_text(query_text, user_id=scoped_user_id)
             if embedding:
                 params["query_embedding"] = embedding
                 logger.info(f"Generated embedding for query (length: {len(embedding)})")

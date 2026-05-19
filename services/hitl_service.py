@@ -16,7 +16,9 @@ from workflows.state import IntentType
 from services.conversation_policy import compact_whatsapp_message
 from services.history_service import delete_user_history
 from services.llm_factory import LLMFactory
+from services.rate_limit_service import SCOPE_APPROVAL, check_and_record
 from storage import StorageConfigurationError, SupabaseStorageHandler
+from utils import observability
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +134,24 @@ async def approve_pending_extraction(
     conversation_history: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Reprocess a pending upload and store extracted rows after WhatsApp approval."""
+
+    rate_limit = check_and_record(
+        user_id,
+        SCOPE_APPROVAL,
+        request_id=observability.current_context().get("request_id"),
+        metadata={"media_id": media_id},
+    )
+    if not rate_limit.allowed:
+        return _response(
+            rate_limit.message or "Daily approval limit reached for this account.",
+            {
+                "intent": IntentType.FILE_PROCESSING.value,
+                "hitl_status": "rate_limited",
+                "media_id": str(media_id),
+                "rate_limit": rate_limit.to_metadata(),
+            },
+            confidence=0.5,
+        )
 
     media_info = _load_user_media(user_id, media_id)
     if media_info.get("status") != "success":
@@ -511,25 +531,33 @@ async def review_pending_upload_from_web(
     user_id: Union[str, UUID, int],
     media_id: int,
     action: str,
+    *,
+    allow_web_approval: bool = False,
 ) -> Dict[str, Any]:
-    """Reject website approval attempts; receipt approval is WhatsApp-only."""
+    """Optionally approve/reject a pending upload from web after step-up auth."""
 
-    del user_id
+    normalized_action = str(action or "").strip().lower()
     media_id_text = str(media_id)
+    if allow_web_approval and normalized_action in {"approve", "approved"}:
+        return await approve_pending_extraction(user_id, media_id)
+    if allow_web_approval and normalized_action in {"reject", "rejected"}:
+        return reject_pending_upload(user_id, media_id)
+
     return {
         "status": "error",
         "message": (
-            "🔐 *WhatsApp Approval Required*\n\n"
+            "🔐 *Step-Up Approval Required*\n\n"
+            "Use WhatsApp approval, or refresh your web sign-in session before approving in the browser.\n\n"
             f"Reply *APPROVE {media_id_text}* to save this document.\n"
             f"Reply *REJECT {media_id_text}* to discard it."
         ),
         "metadata": {
-            "hitl_status": "whatsapp_required",
+            "hitl_status": "step_up_required",
             "media_id": media_id_text,
             "action": action,
         },
         "media_id": media_id_text,
-        "action": str(action or "").strip().lower(),
+        "action": normalized_action,
     }
 
 

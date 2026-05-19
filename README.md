@@ -182,7 +182,10 @@ Every uploaded file follows the same contract before it reaches analytics:
 | [services/generated_invoice_service.py](services/generated_invoice_service.py) | Generated invoice defaults, line items, document creation, storage, and analytics. |
 | [services/hitl_service.py](services/hitl_service.py) | WhatsApp approval, rejection, and destructive-action confirmation handling. |
 | [services/history_service.py](services/history_service.py) | User-scoped listing and deletion of receipt history, generated invoices, messages, usage rows, and stored files. |
+| [services/rate_limit_service.py](services/rate_limit_service.py) | Per-user rolling-window limits and usage accounting for text, media, approval, and embeddings. |
+| [services/job_queue.py](services/job_queue.py) | Durable async job queue for long-running serverless work. |
 | [services/conversation_memory.py](services/conversation_memory.py) | Supabase Postgres-backed conversation memory for WhatsApp and web multi-turn context. |
+| [config/settings.py](config/settings.py) | Typed environment-backed settings for runtime, auth, rate limits, queues, and smoke checks. |
 | [utils/clerk_auth.py](utils/clerk_auth.py) | Clerk JWT verification and auth enforcement. |
 
 ### Repository Boundaries
@@ -203,6 +206,8 @@ The application stores user-scoped operational data in Supabase Postgres:
 - `media`: uploaded receipt metadata, content hashes, storage paths, and duplicate detection fields.
 - `generated_invoices` and `generated_invoice_items`: outgoing invoices created from WhatsApp or the web app.
 - `conversations`, `messages`, and `whatsapp_messages`: chat history and delivery metadata.
+- `rate_limit_events` and `usage`: per-user request limits, token usage, and cost metadata.
+- `async_jobs`: idempotent durable jobs for long-running media batches.
 - pgvector embedding columns: semantic search over invoice and item content.
 
 Uploaded receipt files and generated invoice documents are stored in the private Supabase Storage bucket configured by `SUPABASE_STORAGE_BUCKET`, defaulting to `receipts`. The database stores metadata and storage paths; the app generates signed URLs when users need to view a file.
@@ -219,6 +224,7 @@ The website uses Clerk phone-number OTP sign-in. The verified Clerk phone number
 
 - WhatsApp uploads are not retrieval data when first received. They start as pending media records with validation, extraction, duplicate, and quality metadata.
 - Approval is the finalization step. After `APPROVE <upload_id>`, the app writes from the cached checked extraction when it is still valid, or reprocesses the private upload when the cache is missing or stale, then writes user-scoped invoice rows, item rows, embeddings, and analytics metadata.
+- Optional browser approval requires a fresh Clerk session token and still uses the same pending extraction gate. WhatsApp approval remains the primary approval path.
 - Rejected, unsupported, duplicate, blank, non-financial, or still-pending uploads are excluded from SQL analytics and agentic RAG.
 - RAG retrieval only reads approved data for the resolved `users.id`, combining invoice embeddings, line-item embeddings, finalized receipt keywords, and keyword fallback when embeddings are unavailable.
 

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import base64
 import logging
-import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
+from config.settings import get_settings
 from utils.phone_numbers import normalize_whatsapp_number
 
 
@@ -52,16 +53,13 @@ def _truthy(value: Optional[str]) -> bool:
 def get_clerk_publishable_key() -> Optional[str]:
     """Return the configured Clerk publishable key for the browser."""
 
-    return (
-        os.getenv("CLERK_PUBLISHABLE_KEY")
-        or os.getenv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY")
-    )
+    return get_settings().effective_clerk_publishable_key
 
 
 def get_clerk_secret_key() -> Optional[str]:
     """Return the configured Clerk secret key, if available."""
 
-    return os.getenv("CLERK_SECRET_KEY")
+    return get_settings().clerk_secret_key
 
 
 def is_clerk_enabled() -> bool:
@@ -73,18 +71,18 @@ def is_clerk_enabled() -> bool:
 def is_auth_required() -> bool:
     """Whether authenticated API access is required."""
 
-    configured = os.getenv("CLERK_REQUIRE_AUTH")
+    configured = get_settings().clerk_require_auth
     if configured is not None:
-        return _truthy(configured)
+        return bool(configured)
     return is_clerk_enabled()
 
 
 def is_verified_phone_required() -> bool:
     """Whether web accounts must have a verified Clerk phone number."""
 
-    configured = os.getenv("CLERK_REQUIRE_VERIFIED_PHONE")
+    configured = get_settings().clerk_require_verified_phone
     if configured is not None:
-        return _truthy(configured)
+        return bool(configured)
     return is_auth_required()
 
 
@@ -116,13 +114,13 @@ def derive_clerk_issuer_from_publishable_key(
 def get_clerk_issuer() -> Optional[str]:
     """Return the allowed Clerk issuer for JWT verification."""
 
-    return os.getenv("CLERK_JWT_ISSUER") or derive_clerk_issuer_from_publishable_key()
+    return get_settings().clerk_jwt_issuer or derive_clerk_issuer_from_publishable_key()
 
 
 def get_clerk_jwks_url(issuer: Optional[str] = None) -> Optional[str]:
     """Return the JWKS URL used to verify Clerk session tokens."""
 
-    configured = os.getenv("CLERK_JWKS_URL")
+    configured = get_settings().clerk_jwks_url
     if configured:
         return configured
     issuer = issuer or get_clerk_issuer()
@@ -134,7 +132,7 @@ def get_clerk_jwks_url(issuer: Optional[str] = None) -> Optional[str]:
 def get_authorized_parties() -> Iterable[str]:
     """Return optional allowed `azp` values for Clerk tokens."""
 
-    parties = os.getenv("CLERK_AUTHORIZED_PARTIES", "")
+    parties = get_settings().clerk_authorized_parties
     return [party.strip() for party in parties.split(",") if party.strip()]
 
 
@@ -229,7 +227,33 @@ def verify_clerk_request(flask_request: Any) -> ClerkAuthContext:
 
 
 def _clerk_api_base_url() -> str:
-    return os.getenv("CLERK_API_URL", "https://api.clerk.com/v1").rstrip("/")
+    return get_settings().clerk_api_url.rstrip("/")
+
+
+def require_fresh_session(
+    auth_context: ClerkAuthContext,
+    *,
+    max_age_seconds: Optional[int] = None,
+) -> None:
+    """Require a recently issued Clerk session token for sensitive actions."""
+
+    max_age_seconds = (
+        get_settings().clerk_step_up_max_age_seconds
+        if max_age_seconds is None
+        else int(max_age_seconds)
+    )
+    if max_age_seconds <= 0:
+        return
+
+    issued_at = auth_context.claims.get("auth_time") or auth_context.claims.get("iat")
+    try:
+        issued_timestamp = int(issued_at)
+    except (TypeError, ValueError) as exc:
+        raise ClerkAuthError("Refresh your sign-in session before approving this upload.") from exc
+
+    now_timestamp = int(datetime.now(timezone.utc).timestamp())
+    if now_timestamp - issued_timestamp > max_age_seconds:
+        raise ClerkAuthError("Refresh your sign-in session before approving this upload.")
 
 
 def fetch_clerk_user(clerk_user_id: str) -> Dict[str, Any]:

@@ -5,11 +5,13 @@ This module provides utilities for generating and managing vector embeddings
 for item descriptions, enabling semantic search capabilities.
 """
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 import numpy as np
 import hashlib
 import functools
-import os
+
+from config.settings import get_settings
+from services.rate_limit_service import SCOPE_EMBEDDING, check_and_record
 
 # Get settings
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -51,15 +53,16 @@ class EmbeddingGenerator:
         self.use_openai = False
         self.openai_client = None
 
-        if OPENAI_AVAILABLE and os.environ.get("OPENAI_API_KEY"):
+        settings = get_settings()
+        if OPENAI_AVAILABLE and settings.openai_api_key:
             try:
-                self.openai_client = OpenAI()
+                self.openai_client = OpenAI(api_key=settings.openai_api_key)
                 self.use_openai = True
                 logger.info(f"Using OpenAI for embeddings generation with model: {EMBEDDING_MODEL}")
             except Exception as e:
                 logger.error(f"Failed to initialize OpenAI client: {str(e)}")
                 self.use_openai = False
-        elif not os.environ.get("OPENAI_API_KEY"):
+        elif not settings.openai_api_key:
             logger.warning("OPENAI_API_KEY is not set; embeddings will not be generated")
 
     def generate_embedding(self, text: str) -> Optional[List[float]]:
@@ -189,7 +192,7 @@ def get_embedding_generator() -> EmbeddingGenerator:
     return _embedding_generator
 
 @functools.lru_cache(maxsize=100)
-def generate_embedding_for_text(text: str) -> Optional[List[float]]:
+def generate_embedding_for_text(text: str, user_id: Optional[Any] = None) -> Optional[List[float]]:
     """
     Generate an embedding for text.
 
@@ -202,6 +205,12 @@ def generate_embedding_for_text(text: str) -> Optional[List[float]]:
     if not text or len(text.strip()) == 0:
         logger.warning("Empty text provided for embedding generation")
         return None
+
+    if user_id is not None:
+        decision = check_and_record(user_id, SCOPE_EMBEDDING, metadata={"text_length": len(text)})
+        if not decision.allowed:
+            logger.warning("Embedding rate limit reached for user=%s", user_id)
+            return None
 
     # Check cache first
     cache_key = _cache_key(text)
@@ -220,7 +229,10 @@ def generate_embedding_for_text(text: str) -> Optional[List[float]]:
 
     return embedding
 
-def generate_batch_embeddings_for_texts(texts: List[str]) -> List[Optional[List[float]]]:
+def generate_batch_embeddings_for_texts(
+    texts: List[str],
+    user_id: Optional[Any] = None,
+) -> List[Optional[List[float]]]:
     """
     Generate embeddings for a batch of texts.
 
@@ -230,6 +242,17 @@ def generate_batch_embeddings_for_texts(texts: List[str]) -> List[Optional[List[
     Returns:
         A list of embeddings, one for each input text
     """
+    if user_id is not None:
+        units = len([text for text in texts if text and len(text.strip()) > 0])
+        decision = check_and_record(
+            user_id,
+            SCOPE_EMBEDDING,
+            units=units,
+            metadata={"batch_size": len(texts)},
+        )
+        if not decision.allowed:
+            logger.warning("Batch embedding rate limit reached for user=%s", user_id)
+            return [None for _ in texts]
     generator = get_embedding_generator()
     return generator.generate_batch_embeddings(texts)
 
