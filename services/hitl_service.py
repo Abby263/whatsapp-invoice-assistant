@@ -157,21 +157,39 @@ async def approve_pending_extraction(
 
     file_storage = dict(media_info.get("file_storage") or {})
     pending_extraction_result = _pending_extraction_from_media(media_info)
-    if _is_metadata_only_pending(file_storage) and pending_extraction_result:
-        return await _approve_pending_extraction_payload(
-            user_id=user_id,
-            media_id=media_id,
-            extraction_result=pending_extraction_result,
-        )
-
-    file_key = file_storage.get("file_key") or file_storage.get("path") or media_info.get("file_path")
-    if not file_key:
-        if pending_extraction_result:
+    cache_check: Optional[Dict[str, Any]] = None
+    if pending_extraction_result:
+        cache_check = _pending_extraction_cache_check(media_info, pending_extraction_result)
+        if cache_check["valid"]:
             return await _approve_pending_extraction_payload(
                 user_id=user_id,
                 media_id=media_id,
                 extraction_result=pending_extraction_result,
+                approved_from_cache=True,
             )
+        if _is_metadata_only_pending(file_storage):
+            return _response(
+                "\n".join(
+                    [
+                        "⚠️ *Approval Failed*",
+                        "",
+                        f"*Upload:* #{media_id}",
+                        "*Reason:* The pending extraction no longer matches the uploaded file metadata.",
+                        "",
+                        "Please resend the file.",
+                    ]
+                ),
+                {
+                    "intent": IntentType.FILE_PROCESSING.value,
+                    "hitl_status": "cache_mismatch",
+                    "media_id": str(media_id),
+                    "cache_check": cache_check,
+                },
+                confidence=0.5,
+            )
+
+    file_key = file_storage.get("file_key") or file_storage.get("path") or media_info.get("file_path")
+    if not file_key:
         return _response(
             "\n".join(
                 [
@@ -183,7 +201,12 @@ async def approve_pending_extraction(
                     "Please resend the file.",
                 ]
             ),
-            {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "missing_storage", "media_id": str(media_id)},
+            {
+                "intent": IntentType.FILE_PROCESSING.value,
+                "hitl_status": "missing_storage",
+                "media_id": str(media_id),
+                "cache_check": cache_check,
+            },
         )
 
     try:
@@ -196,15 +219,14 @@ async def approve_pending_extraction(
         )
     except Exception as exc:
         logger.exception("Could not download pending upload %s for approval: %s", media_id, exc)
-        if pending_extraction_result:
-            return await _approve_pending_extraction_payload(
-                user_id=user_id,
-                media_id=media_id,
-                extraction_result=pending_extraction_result,
-            )
         return _response(
             f"⚠️ *Approval Failed*\n\n*Upload:* #{media_id}\n*Reason:* The stored file could not be reopened.\n\nPlease resend the file.",
-            {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "download_failed", "media_id": str(media_id)},
+            {
+                "intent": IntentType.FILE_PROCESSING.value,
+                "hitl_status": "download_failed",
+                "media_id": str(media_id),
+                "cache_check": cache_check,
+            },
         )
 
     file_name = media_info.get("original_filename") or media_info.get("filename") or f"upload_{media_id}"
@@ -258,6 +280,7 @@ async def _approve_pending_extraction_payload(
     user_id: Union[str, UUID, int],
     media_id: int,
     extraction_result: Dict[str, Any],
+    approved_from_cache: bool = False,
 ) -> Dict[str, Any]:
     """Finalize a pending extraction saved in media metadata."""
 
@@ -274,6 +297,8 @@ async def _approve_pending_extraction_payload(
         "hitl_action": "store_extraction",
         "approved_media_id": str(media_id),
     })
+    if approved_from_cache:
+        payload["metadata"]["approved_from_cache"] = True
     file_storage = payload["metadata"].get("file_storage")
     if isinstance(file_storage, dict):
         file_storage["media_id"] = str(media_id)
@@ -290,6 +315,8 @@ async def _approve_pending_extraction_payload(
     if storage_result.status == "success" and content.get("status") in {"success", "duplicate"}:
         invoice_id = content.get("invoice_id")
         item_count = len(content.get("item_ids") or [])
+        if approved_from_cache:
+            _mark_media_approved_from_cache(user_id, content.get("media_id") or media_id)
         lines = [
             "✅ *Document Saved*",
             "",
@@ -309,6 +336,7 @@ async def _approve_pending_extraction_payload(
                 "item_ids": content.get("item_ids") or [],
                 "media_id": str(content.get("media_id") or media_id),
                 "stored_from_pending_extraction": True,
+                "approved_from_cache": approved_from_cache,
             },
         )
 
@@ -329,6 +357,137 @@ def _pending_extraction_from_media(media_info: Dict[str, Any]) -> Optional[Dict[
     metadata = media_info.get("metadata") if isinstance(media_info.get("metadata"), dict) else {}
     value = metadata.get("pending_extraction_result")
     return value if isinstance(value, dict) else None
+
+
+def _pending_extraction_cache_check(
+    media_info: Dict[str, Any],
+    extraction_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Validate that cached extraction metadata still points at the current media row."""
+
+    metadata = extraction_result.get("metadata") if isinstance(extraction_result.get("metadata"), dict) else {}
+    file_metadata = metadata.get("file_metadata") if isinstance(metadata.get("file_metadata"), dict) else {}
+    cached_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
+    nested_storage = file_metadata.get("file_storage") if isinstance(file_metadata.get("file_storage"), dict) else {}
+    media_storage = media_info.get("file_storage") if isinstance(media_info.get("file_storage"), dict) else {}
+
+    checks: List[str] = []
+    mismatches: Dict[str, Dict[str, str]] = {}
+
+    def compare(name: str, current: Any, cached: Any) -> None:
+        current_text = _non_empty_text(current)
+        cached_text = _non_empty_text(cached)
+        if not current_text or not cached_text:
+            return
+        checks.append(name)
+        if current_text != cached_text:
+            mismatches[name] = {"current": current_text, "cached": cached_text}
+
+    current_hash = media_info.get("content_hash") or media_storage.get("checksum_sha256")
+    cached_hash = (
+        metadata.get("checksum_sha256")
+        or file_metadata.get("checksum_sha256")
+        or cached_storage.get("checksum_sha256")
+        or nested_storage.get("checksum_sha256")
+    )
+    compare("checksum_sha256", current_hash, cached_hash)
+
+    current_media_id = media_info.get("media_id")
+    cached_media_id = (
+        cached_storage.get("media_id")
+        or nested_storage.get("media_id")
+        or (file_metadata.get("media_record") or {}).get("media_id")
+        or metadata.get("media_id")
+    )
+    compare("media_id", current_media_id, cached_media_id)
+
+    current_file_key = (
+        media_storage.get("file_key")
+        or media_storage.get("path")
+        or media_info.get("file_path")
+    )
+    cached_file_key = (
+        cached_storage.get("file_key")
+        or cached_storage.get("path")
+        or nested_storage.get("file_key")
+        or nested_storage.get("path")
+    )
+    compare("file_key", current_file_key, cached_file_key)
+
+    current_filename = (
+        media_info.get("original_filename")
+        or media_info.get("filename")
+        or media_storage.get("original_filename")
+    )
+    cached_filename = (
+        cached_storage.get("original_filename")
+        or nested_storage.get("original_filename")
+        or file_metadata.get("original_filename")
+    )
+    compare("original_filename", current_filename, cached_filename)
+
+    current_content_type = media_info.get("content_type") or media_storage.get("content_type")
+    cached_content_type = (
+        cached_storage.get("content_type")
+        or nested_storage.get("content_type")
+        or file_metadata.get("content_type")
+    )
+    compare("content_type", current_content_type, cached_content_type)
+
+    if mismatches:
+        return {
+            "valid": False,
+            "reason": "metadata_mismatch",
+            "checks": checks,
+            "mismatches": mismatches,
+        }
+    if not checks:
+        return {"valid": False, "reason": "insufficient_metadata", "checks": checks}
+    return {"valid": True, "reason": "metadata_match", "checks": checks}
+
+
+def _mark_media_approved_from_cache(
+    user_id: Union[str, UUID, int],
+    media_id: Union[str, int],
+) -> None:
+    try:
+        user_id_value = int(str(user_id))
+        media_id_value = int(str(media_id))
+    except (TypeError, ValueError):
+        return
+
+    try:
+        from database.connection import ensure_application_schema, get_db_session
+        from database.schemas import Media
+
+        ensure_application_schema()
+        session = get_db_session()
+        try:
+            media = (
+                session.query(Media)
+                .filter(Media.id == media_id_value, Media.user_id == user_id_value)
+                .first()
+            )
+            if media is None:
+                return
+            metadata = media.processing_metadata if isinstance(media.processing_metadata, dict) else {}
+            media.processing_metadata = {
+                **metadata,
+                "approved_from_cache": True,
+                "processing_status": "processed",
+            }
+            session.commit()
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning("Could not mark media %s approved from cache: %s", media_id, exc)
+
+
+def _non_empty_text(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _is_metadata_only_pending(file_storage: Dict[str, Any]) -> bool:
