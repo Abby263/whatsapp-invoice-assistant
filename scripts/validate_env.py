@@ -70,7 +70,16 @@ def _status(ok: bool, message: str) -> str:
     return f"{'OK' if ok else 'MISSING'} {message}"
 
 
-def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
+def _present_or_real(value: str, allow_placeholders: bool) -> bool:
+    if allow_placeholders:
+        return bool(value)
+    return not _is_placeholder(value)
+
+
+def validate(
+    values: dict[str, str],
+    allow_placeholders: bool = False,
+) -> list[tuple[bool, str]]:
     checks: list[tuple[bool, str]] = []
 
     supabase_url = _first(values, "NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL")
@@ -85,14 +94,14 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
         "SUPABASE_ANON_KEY",
         "NEXT_PUBLIC_SUPABASE_ANON_KEY",
     )
-    checks.append((not _is_placeholder(publishable), "Supabase publishable key is set"))
+    checks.append((_present_or_real(publishable, allow_placeholders), "Supabase publishable key is set"))
 
     server_key = _first(values, "SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY")
     server_key_ref = _project_ref_from_jwt(server_key)
     key_matches = not server_key_ref or server_key_ref == supabase_ref
     checks.append(
         (
-            not _is_placeholder(server_key) and key_matches,
+            _present_or_real(server_key, allow_placeholders) and (allow_placeholders or key_matches),
             "Supabase server key is set for the configured project",
         )
     )
@@ -102,7 +111,7 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     db_matches = not supabase_ref or supabase_ref in database_host
     checks.append(
         (
-            not _is_placeholder(database_url) and db_matches,
+            _present_or_real(database_url, allow_placeholders) and (allow_placeholders or db_matches),
             "Supabase database URL is set for the configured project",
         )
     )
@@ -112,7 +121,7 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     direct_matches = not supabase_ref or supabase_ref in direct_host
     checks.append(
         (
-            not _is_placeholder(direct_url) and direct_matches,
+            _present_or_real(direct_url, allow_placeholders) and (allow_placeholders or direct_matches),
             "Supabase direct/session URL is set for migrations",
         )
     )
@@ -121,7 +130,12 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     checks.append((storage_bucket == "receipts" or bool(storage_bucket), "Supabase storage bucket is set"))
 
     openai_key = _first(values, "OPENAI_API_KEY")
-    checks.append((not _is_placeholder(openai_key) and openai_key.startswith("sk-"), "OpenAI API key is set"))
+    checks.append(
+        (
+            _present_or_real(openai_key, allow_placeholders) and openai_key.startswith("sk-"),
+            "OpenAI API key is set",
+        )
+    )
 
     openai_model = _first(values, "OPENAI_API_MODEL")
     checks.append((openai_model == "gpt-5.4-mini", "OpenAI model is gpt-5.4-mini"))
@@ -129,18 +143,27 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     twilio_sid = _first(values, "TWILIO_ACCOUNT_SID")
     checks.append(
         (
-            not _is_placeholder(twilio_sid) and twilio_sid.startswith("AC") and len(twilio_sid) >= 34,
+            _present_or_real(twilio_sid, allow_placeholders)
+            and twilio_sid.startswith("AC")
+            and len(twilio_sid) >= 34,
             "Twilio Account SID is set",
         )
     )
 
     twilio_token = _first(values, "TWILIO_AUTH_TOKEN")
-    checks.append((not _is_placeholder(twilio_token) and len(twilio_token) >= 16, "Twilio Auth Token is set"))
+    checks.append(
+        (
+            _present_or_real(twilio_token, allow_placeholders) and len(twilio_token) >= 16,
+            "Twilio Auth Token is set",
+        )
+    )
 
     twilio_phone = _first(values, "TWILIO_PHONE_NUMBER")
     checks.append(
         (
-            not _is_placeholder(twilio_phone) and twilio_phone.startswith("whatsapp:+") and len(twilio_phone) >= 13,
+            _present_or_real(twilio_phone, allow_placeholders)
+            and twilio_phone.startswith("whatsapp:+")
+            and len(twilio_phone) >= 13,
             "Twilio WhatsApp sender uses whatsapp:+ format",
         )
     )
@@ -148,13 +171,18 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
     clerk_publishable = _first(values, "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "CLERK_PUBLISHABLE_KEY")
     checks.append(
         (
-            not _is_placeholder(clerk_publishable) and clerk_publishable.startswith("pk_"),
+            _present_or_real(clerk_publishable, allow_placeholders) and clerk_publishable.startswith("pk_"),
             "Clerk publishable key is set",
         )
     )
 
     clerk_secret = _first(values, "CLERK_SECRET_KEY")
-    checks.append((not _is_placeholder(clerk_secret) and clerk_secret.startswith("sk_"), "Clerk secret key is set"))
+    checks.append(
+        (
+            _present_or_real(clerk_secret, allow_placeholders) and clerk_secret.startswith("sk_"),
+            "Clerk secret key is set",
+        )
+    )
 
     auth_required = _first(values, "CLERK_REQUIRE_AUTH").lower()
     checks.append((auth_required == "true", "Clerk auth is required in production"))
@@ -165,10 +193,17 @@ def validate(values: dict[str, str]) -> list[tuple[bool, str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", default=".env", help="Env file to validate")
+    parser.add_argument(
+        "--allow-placeholders",
+        action="store_true",
+        help="Accept placeholder values when validating a template env file",
+    )
     args = parser.parse_args()
 
-    values = _load_env_file(Path(args.env_file))
-    checks = validate(values)
+    env_path = Path(args.env_file)
+    values = _load_env_file(env_path)
+    allow_placeholders = args.allow_placeholders or env_path.name.endswith(".example")
+    checks = validate(values, allow_placeholders=allow_placeholders)
     for ok, message in checks:
         print(_status(ok, message))
 

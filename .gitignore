@@ -153,9 +153,6 @@ ui_users.json
 # Local compose overrides
 docker-compose.override.yml
 
-# Pre-commit hooks
-.pre-commit-config.yaml
-
 # Local backup files
 *.bak
 *.backup
