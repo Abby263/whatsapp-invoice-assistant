@@ -52,6 +52,32 @@ def test_hosted_ui_uses_single_connections_entrypoint(monkeypatch):
     assert "No WhatsApp linked" in html
 
 
+def test_hosted_ui_sidebar_uses_addressable_routes(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+
+    client = hosted_app.app.test_client()
+    response = client.get("/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'href="/chat" class="nav-item" data-view="chat"' in html
+    assert 'href="/receipts" class="nav-item" data-view="receipts"' in html
+    assert 'aria-current="page"' in html
+
+
+def test_hosted_ui_supports_direct_sidebar_routes(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
+    monkeypatch.setattr(hosted_app, "is_clerk_enabled", lambda: False)
+
+    client = hosted_app.app.test_client()
+
+    for route in ["/chat", "/receipts", "/inspector", "/connections", "/settings"]:
+        response = client.get(route)
+        assert response.status_code == 200
+        assert 'data-view="overview"' in response.get_data(as_text=True)
+
+
 def test_demo_link_whatsapp_requires_explicit_number(monkeypatch):
     monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: False)
     monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: _AuthContext())

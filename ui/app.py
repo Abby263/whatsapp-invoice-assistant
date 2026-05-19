@@ -476,6 +476,18 @@ def home():
     """Render the home page"""
     return render_template('index.html')
 
+
+@app.route('/overview')
+@app.route('/chat')
+@app.route('/receipts')
+@app.route('/inspector')
+@app.route('/connections')
+@app.route('/settings')
+def workspace_route():
+    """Render the workspace for direct navigation to a sidebar view."""
+    return render_template('index.html')
+
+
 @app.route('/favicon.ico')
 def favicon():
     """Serve the site icon for browsers that request /favicon.ico."""

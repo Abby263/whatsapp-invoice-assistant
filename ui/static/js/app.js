@@ -89,6 +89,22 @@ const VIEW_META = {
     }
 };
 
+const VIEW_ROUTES = {
+    overview: '/',
+    chat: '/chat',
+    receipts: '/receipts',
+    inspector: '/inspector',
+    connections: '/connections',
+    settings: '/settings'
+};
+
+const ROUTE_VIEWS = Object.entries(VIEW_ROUTES).reduce((routes, [view, route]) => {
+    routes[route] = view;
+    return routes;
+}, {
+    '/overview': 'overview'
+});
+
 // Global variables
 let isProcessing = false;
 let conversationId = generateUUID();
@@ -623,15 +639,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 function setupNavigation() {
     const navItems = document.querySelectorAll('.nav-item[data-view]');
     navItems.forEach(item => {
-        item.addEventListener('click', () => {
-            switchView(item.dataset.view);
+        item.addEventListener('click', (event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+                return;
+            }
+
+            event.preventDefault();
+            navigateToView(item.dataset.view);
             if (sidebar) sidebar.classList.remove('is-open');
         });
     });
 
     document.querySelectorAll('[data-goto]').forEach(btn => {
         btn.addEventListener('click', () => {
-            switchView(btn.dataset.goto);
+            navigateToView(btn.dataset.goto);
         });
     });
 
@@ -640,23 +661,56 @@ function setupNavigation() {
             sidebar.classList.toggle('is-open');
         });
     }
+
+    window.addEventListener('popstate', () => {
+        switchView(viewFromLocation());
+    });
+
+    switchView(viewFromLocation(), {replaceUrl: true});
 }
 
-function switchView(viewName) {
+function normalizeRoutePath(pathname) {
+    const normalized = (pathname || '/').replace(/\/+$/, '');
+    return normalized || '/';
+}
+
+function viewFromLocation() {
+    return ROUTE_VIEWS[normalizeRoutePath(window.location.pathname)] || 'overview';
+}
+
+function routeForView(viewName) {
+    return VIEW_ROUTES[viewName] || VIEW_ROUTES.overview;
+}
+
+function navigateToView(viewName, options = {}) {
+    switchView(viewName, {replaceUrl: options.replace === true});
+}
+
+function switchView(viewName, options = {}) {
     if (!viewName) return;
+    if (!VIEW_META[viewName]) {
+        viewName = 'overview';
+    }
 
     document.querySelectorAll('.view').forEach(view => {
         view.classList.toggle('is-active', view.dataset.view === viewName);
     });
 
     document.querySelectorAll('.nav-item[data-view]').forEach(item => {
-        item.classList.toggle('is-active', item.dataset.view === viewName);
+        const isActive = item.dataset.view === viewName;
+        item.classList.toggle('is-active', isActive);
+        if (isActive) {
+            item.setAttribute('aria-current', 'page');
+        } else {
+            item.removeAttribute('aria-current');
+        }
     });
 
     const meta = VIEW_META[viewName];
     if (meta) {
         if (topbarTitle) topbarTitle.textContent = meta.title;
         if (topbarSubtitle) topbarSubtitle.textContent = meta.subtitle;
+        document.title = `${meta.title} — WhatsApp Invoice Assistant`;
     }
 
     if (viewName === 'chat' && messageInput) {
@@ -666,6 +720,22 @@ function switchView(viewName) {
     if (viewName === 'connections') {
         loadUsers();
     }
+
+    updateBrowserRoute(viewName, options.replaceUrl === true);
+}
+
+function updateBrowserRoute(viewName, replace = false) {
+    if (!window.history || !window.history.pushState) {
+        return;
+    }
+
+    const nextPath = routeForView(viewName);
+    if (normalizeRoutePath(window.location.pathname) === normalizeRoutePath(nextPath)) {
+        return;
+    }
+
+    const method = replace ? 'replaceState' : 'pushState';
+    window.history[method]({view: viewName}, '', nextPath);
 }
 
 function setupTheme() {

@@ -17,7 +17,7 @@
             document.documentElement.dataset.theme = savedTheme;
         }
     </script>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260518-review') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260519-routes') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,30 +37,30 @@
             </div>
 
             <nav class="sidebar-nav" aria-label="Workspace sections">
-                <button type="button" class="nav-item is-active" data-view="overview">
+                <a href="/" class="nav-item is-active" data-view="overview" aria-current="page">
                     <i class="fas fa-compass"></i>
                     <span>Overview</span>
-                </button>
-                <button type="button" class="nav-item" data-view="chat">
+                </a>
+                <a href="/chat" class="nav-item" data-view="chat">
                     <i class="fas fa-comments"></i>
                     <span>Chat</span>
-                </button>
-                <button type="button" class="nav-item" data-view="receipts">
+                </a>
+                <a href="/receipts" class="nav-item" data-view="receipts">
                     <i class="fas fa-file-invoice"></i>
                     <span>Receipts</span>
-                </button>
-                <button type="button" class="nav-item" data-view="inspector">
+                </a>
+                <a href="/inspector" class="nav-item" data-view="inspector">
                     <i class="fas fa-diagram-project"></i>
                     <span>Inspector</span>
-                </button>
-                <button type="button" class="nav-item" data-view="connections">
+                </a>
+                <a href="/connections" class="nav-item" data-view="connections">
                     <i class="fas fa-link"></i>
                     <span>Connections</span>
-                </button>
-                <button type="button" class="nav-item" data-view="settings">
+                </a>
+                <a href="/settings" class="nav-item" data-view="settings">
                     <i class="fas fa-sliders"></i>
                     <span>Settings</span>
-                </button>
+                </a>
             </nav>
 
             <div class="sidebar-footer">

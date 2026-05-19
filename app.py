@@ -270,6 +270,16 @@ def home():
     return render_template("index.html")
 
 
+@app.get("/overview")
+@app.get("/chat")
+@app.get("/receipts")
+@app.get("/inspector")
+@app.get("/connections")
+@app.get("/settings")
+def workspace_route():
+    return render_template("index.html")
+
+
 @app.get("/favicon.ico")
 def favicon():
     return app.send_static_file("favicon.ico")
