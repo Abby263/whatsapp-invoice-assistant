@@ -4,11 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import Any, Dict
+import os
+import sys
+from pathlib import Path
+from typing import Any, Dict, Tuple
 
 import httpx
 
-from config.settings import get_settings
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def _get_json(client: httpx.Client, path: str) -> Dict[str, Any]:
@@ -57,13 +62,29 @@ def run_smoke(base_url: str, timeout: float) -> Dict[str, Any]:
     }
 
 
+def _default_options() -> Tuple[str, float]:
+    try:
+        from config.settings import get_settings
+
+        settings = get_settings()
+        return (
+            settings.deployment_smoke_base_url,
+            settings.deployment_smoke_timeout_seconds,
+        )
+    except Exception:
+        base_url = os.environ.get(
+            "DEPLOYMENT_SMOKE_BASE_URL",
+            "https://whatsapp-invoice-assistant.vercel.app",
+        )
+        timeout = float(os.environ.get("DEPLOYMENT_SMOKE_TIMEOUT_SECONDS", "10"))
+        return base_url, timeout
+
+
 def main() -> int:
-    settings = get_settings()
+    default_base_url, default_timeout = _default_options()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default=settings.deployment_smoke_base_url)
-    parser.add_argument(
-        "--timeout", type=float, default=settings.deployment_smoke_timeout_seconds
-    )
+    parser.add_argument("--base-url", default=default_base_url)
+    parser.add_argument("--timeout", type=float, default=default_timeout)
     args = parser.parse_args()
 
     result = run_smoke(args.base_url, args.timeout)
