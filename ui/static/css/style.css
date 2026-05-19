@@ -398,6 +398,10 @@ input, select, textarea {
 }
 
 .auth-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     height: 38px;
     border: 1px solid var(--brand);
     border-radius: 999px;
@@ -407,6 +411,11 @@ input, select, textarea {
     font-size: 13px;
     font-weight: 700;
     white-space: nowrap;
+    cursor: pointer;
+}
+
+.auth-action-btn i {
+    font-size: 14px;
 }
 
 .auth-action-btn.is-secondary {
@@ -420,8 +429,10 @@ input, select, textarea {
 }
 
 .topbar-auth[data-auth-state="signed-out"] #clerkUserButton,
+.topbar-auth[data-auth-state="signed-out"] .auth-status,
 .topbar-auth[data-auth-state="disabled"] #signInBtn,
 .topbar-auth[data-auth-state="disabled"] #clerkUserButton,
+.topbar-auth[data-auth-state="signed-in"] .auth-status,
 .topbar-auth[data-auth-state="signed-in"] #signInBtn,
 .topbar-auth[data-auth-state="needs-link"] #signInBtn {
     display: none;
@@ -498,7 +509,7 @@ input, select, textarea {
 }
 
 .topbar-user[data-link-state="unlinked"] {
-    color: var(--muted);
+    display: none;
 }
 
 .topbar-user[data-link-state="unlinked"] .topbar-user-select {
