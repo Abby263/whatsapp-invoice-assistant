@@ -2,15 +2,38 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, Optional
 
 
-HELP_COMMANDS = {"hi", "hey", "hello", "help", "start", "menu"}
+HELP_COMMANDS = {
+    "good afternoon",
+    "good evening",
+    "good morning",
+    "hello",
+    "hello there",
+    "help",
+    "hey",
+    "hi",
+    "how are u",
+    "how are you",
+    "how do you work",
+    "how does this work",
+    "hows it going",
+    "menu",
+    "start",
+    "what can you do",
+    "what do you do",
+    "whats up",
+}
 STATUS_COMMANDS = {"status", "pending", "uploads"}
 
 
 def normalize_command(text: str) -> str:
-    return " ".join((text or "").strip().lower().split())
+    normalized = (text or "").strip().lower().replace("’", "'")
+    normalized = normalized.replace("'", "")
+    normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+    return " ".join(normalized.split())
 
 
 def is_help_message(text: str) -> bool:

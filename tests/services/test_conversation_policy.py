@@ -6,7 +6,11 @@ from services.conversation_policy import (
     media_processing_ack,
     off_topic_response,
 )
-from services.whatsapp_copy import build_help_message, build_pending_uploads_message
+from services.whatsapp_copy import (
+    build_help_message,
+    build_pending_uploads_message,
+    is_help_message,
+)
 
 
 def test_off_topic_message_is_steered_back_to_receipts():
@@ -17,8 +21,17 @@ def test_off_topic_message_is_steered_back_to_receipts():
 
 def test_invoice_and_greeting_messages_stay_in_scope():
     assert is_off_topic_message("Hey") is False
+    assert is_off_topic_message("How are you?") is False
     assert is_off_topic_message("What did I spend on printing in March?") is False
     assert is_off_topic_message("What is the pending status?") is False
+
+
+def test_casual_greetings_are_deterministic_help_messages():
+    assert is_help_message("How are you") is True
+    assert is_help_message("How are you?") is True
+    assert is_help_message("What's up?") is True
+    assert is_help_message("What can you do?") is True
+    assert is_help_message("How much did I spend?") is False
 
 
 def test_compact_whatsapp_message_truncates_readably():
