@@ -969,6 +969,9 @@ def db_status():
 
 @app.get("/api/agent-flow")
 def agent_flow():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
     return jsonify(
         {
             "status": "success",
@@ -1024,6 +1027,16 @@ def file_storage_info():
 
 @app.post("/api/embeddings/update")
 def embeddings_update():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    if _live_backend_enabled():
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Embedding maintenance is disabled on the hosted live backend.",
+            }
+        ), 403
     return jsonify(
         {
             "status": "success",

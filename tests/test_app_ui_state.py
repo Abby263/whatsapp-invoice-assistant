@@ -196,3 +196,26 @@ def test_twilio_webhook_hides_internal_exception_details(monkeypatch):
     assert response.status_code == 500
     assert b"Something went wrong. Please try again." in response.data
     assert b"database password leaked" not in response.data
+
+
+def test_agent_flow_requires_auth_when_auth_required(monkeypatch):
+    def auth_response():
+        return hosted_app.jsonify({"status": "error", "message": "auth required"}), 401
+
+    monkeypatch.setattr(hosted_app, "_require_demo_auth", auth_response)
+
+    client = hosted_app.app.test_client()
+    response = client.get("/api/agent-flow")
+
+    assert response.status_code == 401
+
+
+def test_embeddings_update_disabled_on_live_backend(monkeypatch):
+    monkeypatch.setattr(hosted_app, "_require_demo_auth", lambda: None)
+    monkeypatch.setattr(hosted_app, "_live_backend_enabled", lambda: True)
+
+    client = hosted_app.app.test_client()
+    response = client.post("/api/embeddings/update", json={"force": True})
+
+    assert response.status_code == 403
+    assert response.get_json()["status"] == "error"

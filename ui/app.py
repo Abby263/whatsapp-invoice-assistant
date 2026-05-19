@@ -764,6 +764,10 @@ def upload_file():
 def get_agent_flow():
     """Return the agent flow data for visualization based on logs analysis"""
     try:
+        _auth_context, _linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
         # Get the last processed intent from logs
         import re
         import os
@@ -1887,6 +1891,10 @@ def update_embeddings():
                       If false, will only update embeddings for records without them.
     """
     try:
+        _auth_context, _linked_user, auth_response = require_linked_user()
+        if auth_response:
+            return auth_response
+
         # Get parameters from request
         data = request.json
         force = data.get('force', False)
