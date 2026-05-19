@@ -99,7 +99,14 @@ async def approve_pending_extraction(
 
     if media_info.get("invoice_id"):
         return _response(
-            f"Upload #{media_id} is already saved as receipt #{media_info['invoice_id']}.",
+            "\n".join(
+                [
+                    "✅ *Document Already Saved*",
+                    "",
+                    f"*Upload:* #{media_id}",
+                    f"*Receipt:* #{media_info['invoice_id']}",
+                ]
+            ),
             {
                 "intent": IntentType.FILE_PROCESSING.value,
                 "hitl_status": "already_confirmed",
@@ -126,7 +133,16 @@ async def approve_pending_extraction(
                 extraction_result=pending_extraction_result,
             )
         return _response(
-            f"I could not find the stored file path for upload #{media_id}. Please upload it again.",
+            "\n".join(
+                [
+                    "⚠️ *Approval Failed*",
+                    "",
+                    f"*Upload:* #{media_id}",
+                    "*Reason:* Stored file could not be found.",
+                    "",
+                    "Please resend the file.",
+                ]
+            ),
             {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "missing_storage", "media_id": str(media_id)},
         )
 
@@ -135,7 +151,7 @@ async def approve_pending_extraction(
     except StorageConfigurationError as exc:
         logger.warning("Storage is not configured for HITL approval: %s", exc)
         return _response(
-            "Storage is not configured, so I cannot approve this upload yet.",
+            "⚠️ *Approval Failed*\n\n*Reason:* Storage is not configured, so this upload cannot be approved yet.",
             {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "storage_not_configured", "media_id": str(media_id)},
         )
     except Exception as exc:
@@ -147,7 +163,7 @@ async def approve_pending_extraction(
                 extraction_result=pending_extraction_result,
             )
         return _response(
-            f"I could not reopen upload #{media_id}. Please resend the file.",
+            f"⚠️ *Approval Failed*\n\n*Upload:* #{media_id}\n*Reason:* The stored file could not be reopened.\n\nPlease resend the file.",
             {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "download_failed", "media_id": str(media_id)},
         )
 
@@ -235,10 +251,12 @@ async def _approve_pending_extraction_payload(
         invoice_id = content.get("invoice_id")
         item_count = len(content.get("item_ids") or [])
         lines = [
-            f"Upload #{media_id} approved and saved.",
-            f"receipt.id: {invoice_id or 'existing'}",
-            f"items.count: {item_count}",
-            "analytics: updated",
+            "✅ *Document Saved*",
+            "",
+            f"*Upload:* #{media_id}",
+            f"*Receipt:* #{invoice_id or 'existing'}",
+            f"*Items:* {item_count}",
+            "*Status:* Analytics updated.",
         ]
         return _response(
             "\n".join(lines),
@@ -256,7 +274,7 @@ async def _approve_pending_extraction_payload(
 
     error_message = storage_result.error or content.get("error") or "Could not save the pending extraction."
     return _response(
-        f"I could not approve upload #{media_id}: {error_message}",
+        f"⚠️ *Approval Failed*\n\n*Upload:* #{media_id}\n*Reason:* {error_message}",
         {
             "intent": IntentType.FILE_PROCESSING.value,
             "hitl_status": "store_failed",
@@ -302,8 +320,9 @@ async def review_pending_upload_from_web(
     return {
         "status": "error",
         "message": (
-            "Pending upload approval is handled in WhatsApp. "
-            f"Reply APPROVE {media_id_text} to save, or REJECT {media_id_text} to discard."
+            "🔐 *WhatsApp Approval Required*\n\n"
+            f"Reply *APPROVE {media_id_text}* to save this document.\n"
+            f"Reply *REJECT {media_id_text}* to discard it."
         ),
         "metadata": {
             "hitl_status": "whatsapp_required",
@@ -323,7 +342,15 @@ def reject_pending_upload(user_id: Union[str, UUID, int], media_id: int) -> Dict
         return _response(media_info["message"], media_info.get("metadata"))
     if media_info.get("invoice_id"):
         return _response(
-            f"Upload #{media_id} is already saved as receipt #{media_info['invoice_id']}. Use CONFIRM DELETE RECEIPT {media_info['invoice_id']} if you want it removed.",
+            "\n".join(
+                [
+                    "✅ *Document Already Saved*",
+                    "",
+                    f"*Upload:* #{media_id}",
+                    f"*Receipt:* #{media_info['invoice_id']}",
+                    f"*To remove it:* CONFIRM DELETE RECEIPT {media_info['invoice_id']}",
+                ]
+            ),
             {
                 "intent": IntentType.FILE_PROCESSING.value,
                 "hitl_status": "already_confirmed",
@@ -338,7 +365,7 @@ def reject_pending_upload(user_id: Union[str, UUID, int], media_id: int) -> Dict
     )
     if result.get("status") == "success":
         return _response(
-            f"Upload #{media_id} was discarded. No invoice or analytics rows were created.",
+            f"🗑️ *Upload Discarded*\n\n*Upload:* #{media_id}\n*Status:* No invoice or analytics rows were created.",
             {
                 "intent": IntentType.FILE_PROCESSING.value,
                 "hitl_status": "rejected",
@@ -368,11 +395,12 @@ def execute_confirmed_delete(user_id: Union[str, UUID, int], payload: Dict[str, 
         return _response(
             "\n".join(
                 [
-                    "Deletion confirmed.",
-                    f"receipts.deleted: {deleted.get('documents', 0)}",
-                    f"uploads.deleted: {deleted.get('media', 0)}",
-                    f"generated_invoices.deleted: {deleted.get('generated_invoices', 0)}",
-                    f"stored_files.deleted: {deleted.get('storage_files', 0)}",
+                    "✅ *Deletion Confirmed*",
+                    "",
+                    f"*Receipts deleted:* {deleted.get('documents', 0)}",
+                    f"*Uploads deleted:* {deleted.get('media', 0)}",
+                    f"*Generated invoices deleted:* {deleted.get('generated_invoices', 0)}",
+                    f"*Stored files deleted:* {deleted.get('storage_files', 0)}",
                 ]
             ),
             {
@@ -400,7 +428,8 @@ def build_delete_confirmation_prompt(hitl_intent: Dict[str, Any]) -> Dict[str, A
         return _response(
             "\n".join(
                 [
-                    "Deletion needs confirmation.",
+                    "⚠️ *Deletion Needs Confirmation*",
+                    "",
                     "Reply with one exact command:",
                     "CONFIRM DELETE ALL",
                     "CONFIRM DELETE RECEIPT <id>",
@@ -418,9 +447,10 @@ def build_delete_confirmation_prompt(hitl_intent: Dict[str, Any]) -> Dict[str, A
     return _response(
         "\n".join(
             [
-                "Deletion needs WhatsApp confirmation.",
-                f"target: {label}",
-                f"Reply exactly: {command}",
+                "⚠️ *Deletion Needs WhatsApp Confirmation*",
+                "",
+                f"*Target:* {label}",
+                f"*Reply exactly:* {command}",
             ]
         ),
         {

@@ -48,7 +48,7 @@ Example WhatsApp prompts:
 
 WhatsApp media behavior:
 
-- Each uploaded image/PDF gets a final `Document extraction result` or `Document not processed` status.
+- Each uploaded image/PDF gets a short processing acknowledgement first, followed by a professional business summary such as `Document Review`, `Document Saved`, or `Document Not Processed`.
 - Pending uploads must show an `APPROVE <upload_id>` / `REJECT <upload_id>` command in WhatsApp. Saved history can show the pending upload and commands for reference, but it is not an approval surface.
 - If private file storage is temporarily unavailable but the database is available, the app still creates a metadata-only pending upload id so WhatsApp approval can finalize the checked extraction without adding analytics rows early.
 - If a pending upload cannot get an upload id, the assistant asks the user to resend the file instead of pointing them to an approval flow that cannot work.
@@ -155,7 +155,7 @@ Every uploaded file follows the same contract before it reaches analytics:
 4. Valid files are uploaded to Supabase Storage under a user-scoped path and registered in `media`.
 5. The extractor returns the canonical schema from [schemas/llm_outputs/document_extraction.py](schemas/llm_outputs/document_extraction.py).
 6. The normalizer fixes row-level ledger dates, computes ledger totals from extracted rows, and records `extraction_quality` warnings when review is needed.
-7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands, and the same pending upload appears under Saved history on the website for tracking.
+7. The user gets a business-formatted WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands, and the same pending upload appears under Saved history on the website for tracking.
 8. The linked user approves or rejects by replying on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`.
 9. Only after approval does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
 10. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
@@ -288,7 +288,7 @@ make test                # Run the pytest suite
 4. Sign in with Clerk on the website.
 5. Use **Link WhatsApp** and enter the WhatsApp number that will message the Twilio sender.
 6. Send `Hi` on WhatsApp and confirm the assistant responds.
-7. Send a receipt image or PDF and confirm WhatsApp returns `APPROVE <upload_id>` / `REJECT <upload_id>` commands and Saved history shows the upload as pending.
+7. Send a receipt image or PDF and confirm WhatsApp returns a `Document Review` message with `APPROVE <upload_id>` / `REJECT <upload_id>` commands and Saved history shows the upload as pending.
 8. Reply `APPROVE <upload_id>` in WhatsApp and confirm the receipt moves into saved analytics.
 9. Ask a question over the stored data, such as `What did I spend this month?`.
 10. Generate an outgoing invoice and confirm it appears in generated invoices and analytics.

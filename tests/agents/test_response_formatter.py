@@ -5,7 +5,6 @@ Tests for the ResponseFormatterAgent.
 import pytest
 import json
 import logging
-from typing import Dict, Any, Optional
 
 from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
@@ -14,7 +13,6 @@ from tests.fixtures.test_data import (
     SAMPLE_CONVERSATION_HISTORY,
     SAMPLE_INVOICE_DATA,
     SAMPLE_QUERY_RESULTS,
-    EXPECTED_RESPONSE_FORMATS
 )
 
 logger = logging.getLogger(__name__)
@@ -126,7 +124,37 @@ async def test_format_agentic_rag_query_result(response_formatter_agent):
     assert "Acme Office" in result.content
     assert "Printer ink cartridge" in result.content
     assert "33 USD" in result.content
+    assert "*Receipt Matches*" in result.content
     assert "approved saved receipts" in result.content
+    assert "item_vector" not in result.content
+    assert "keyword" not in result.content
+    assert "|" not in result.content
+
+
+@pytest.mark.asyncio
+async def test_llm_formatter_removes_internal_fields(response_formatter_agent, monkeypatch):
+    """LLM formatted output should not leak technical metadata."""
+
+    async def fake_format_response(content, format_type="default"):
+        return (
+            "📊 *Expense Summary*\n\n"
+            "*Total:* 100 USD\n"
+            "sql_query: SELECT * FROM invoices\n"
+            "confidence: 0.93\n"
+            "metadata: {'source': 'test'}"
+        )
+
+    monkeypatch.setattr(response_formatter_agent.llm_factory, "format_response", fake_format_response)
+
+    result = await response_formatter_agent.process(
+        AgentInput(content="Show expense summary", metadata={"format_type": "general"})
+    )
+
+    assert "*Expense Summary*" in result.content
+    assert "*Total:* 100 USD" in result.content
+    assert "sql_query" not in result.content
+    assert "confidence:" not in result.content
+    assert "metadata:" not in result.content
 
 @pytest.mark.asyncio
 async def test_format_invoice_creation_response(response_formatter_agent):

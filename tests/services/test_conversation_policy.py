@@ -11,6 +11,7 @@ from services.conversation_policy import (
 def test_off_topic_message_is_steered_back_to_receipts():
     assert is_off_topic_message("Who was president in 1960?") is True
     assert "receipts" in off_topic_response().lower()
+    assert "*Business Assistant*" in off_topic_response()
 
 
 def test_invoice_and_greeting_messages_stay_in_scope():
@@ -29,9 +30,11 @@ def test_compact_whatsapp_message_truncates_readably():
 
 def test_media_processing_ack_mentions_attachment_count():
     assert media_processing_ack(1) == (
-        "Received a file. I am processing it now and will send a final status for this file."
+        "📎 *File Received*\n\n"
+        "Received a file. I am processing it now and will send the result here."
     )
     assert "forwarded multiple images" not in media_processing_ack(1)
     assert media_processing_ack(2) == (
-        "Received 2 files. I am processing them now and will send a final status when all files are done."
+        "📎 *File Received*\n\n"
+        "Received 2 files. I am processing them now and will send the result here."
     )

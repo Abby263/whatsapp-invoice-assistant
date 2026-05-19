@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from langchain_app.text_processing_workflow import process_text_message as process_text
 from langchain_app.file_processing_workflow import process_file_message as process_file
 from langchain_app.state import IntentType
-from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS, FILE_PROCESSING_FALLBACKS
+from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS
 from services.conversation_policy import compact_whatsapp_message, media_processing_ack
 from services.conversation_memory import load_user_conversation_history, save_conversation_turn
 from services.twilio_messaging import send_processing_ack, send_whatsapp_message
@@ -146,9 +146,6 @@ async def process_text_message(
             return response_payload
         else:
             # Handle the case where content is missing
-            error_msg = "An unexpected error occurred while processing your request."
-            if result:
-                error_msg = f"Processing error: {str(result)}"
             return {
                 "message": "I apologize, but an error occurred while processing your message.",
                 "metadata": {"error": str(result) if result else "No response data"},
@@ -585,24 +582,20 @@ def _combine_media_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         return results[0]
 
     lines = [
-        "Batch processing result",
-        "scope: this WhatsApp webhook only",
-        f"attachments.received: {len(results)}",
-        f"attachments.saved: {len(stored)}",
-        f"attachments.awaiting_approval: {len(pending)}",
-        f"attachments.duplicates: {len(duplicates)}",
-        f"attachments.failed: {len(errors)}",
+        "📎 *Batch Processing Result*",
         "",
-        "files:",
+        f"*Attachments received:* {len(results)}",
+        f"*Saved:* {len(stored)}",
+        f"*Pending approval:* {len(pending)}",
+        f"*Duplicates:* {len(duplicates)}",
+        f"*Failed:* {len(errors)}",
+        "",
+        "*Files:*",
     ]
     for result in results[:8]:
         lines.append(_media_result_summary_line(result))
     if len(results) > 8:
-        lines.append(f"... {len(results) - 8} more attachments processed")
-    lines.extend([
-        "",
-        "If you forwarded more images and WhatsApp split them, more file-status messages may arrive separately.",
-    ])
+        lines.append(f"+ {len(results) - 8} more attachments processed")
 
     return {
         "status": "success" if successes else "error",
@@ -642,7 +635,7 @@ def _media_result_summary_line(result: Dict[str, Any]) -> str:
     state = _media_result_state(result)
     invoice_data = metadata.get("invoice_data") if isinstance(metadata.get("invoice_data"), dict) else {}
 
-    document_type = "unknown"
+    document_type = "Unknown"
     transaction_date = "Not visible"
     total = "Not visible"
     item_count = 0
@@ -650,7 +643,10 @@ def _media_result_summary_line(result: Dict[str, Any]) -> str:
         additional_info = invoice_data.get("additional_info", {}) if isinstance(invoice_data.get("additional_info"), dict) else {}
         transaction = invoice_data.get("transaction", {}) if isinstance(invoice_data.get("transaction"), dict) else {}
         financial = invoice_data.get("financial", {}) if isinstance(invoice_data.get("financial"), dict) else {}
-        document_type = additional_info.get("document_type") or ("handwritten_ledger" if is_ledger_document(invoice_data) else "financial_document")
+        document_type = _business_summary_label(
+            additional_info.get("document_type")
+            or ("handwritten_ledger" if is_ledger_document(invoice_data) else "financial_document")
+        )
         transaction_date = transaction.get("date") or invoice_data.get("date") or invoice_data.get("invoice_date") or "Not visible"
         currency = financial.get("currency") or invoice_data.get("currency") or ("INR" if is_ledger_document(invoice_data) else "USD")
         amount = (
@@ -659,7 +655,7 @@ def _media_result_summary_line(result: Dict[str, Any]) -> str:
             or invoice_data.get("total_amount")
             or invoice_data.get("total")
         )
-        total = f"{amount} {currency}" if amount not in (None, "") else "Not visible"
+        total = _format_summary_money(amount, currency) if amount not in (None, "") else "Not visible"
         items = invoice_data.get("items") if isinstance(invoice_data.get("items"), list) else []
         item_count = len(items)
 
@@ -669,12 +665,25 @@ def _media_result_summary_line(result: Dict[str, Any]) -> str:
             if isinstance(metadata.get("validation_result"), dict)
             else None
         ) or result.get("message") or "Could not process this attachment"
-        return f"{attachment_number}. status: {state} | file: {file_name} | reason: {str(reason)[:120]}"
+        return f"{attachment_number}. *{_business_summary_label(state)}* - {file_name}\n   Reason: {str(reason)[:120]}"
     return (
-        f"{attachment_number}. status: {state} | file: {file_name} | "
-        f"document_type: {document_type} | transaction.date: {transaction_date} | "
-        f"financial.total: {total} | items.count: {item_count}"
+        f"{attachment_number}. *{_business_summary_label(state)}* - {file_name}\n"
+        f"   Type: {document_type}\n"
+        f"   Date: {transaction_date}\n"
+        f"   Total: {total}\n"
+        f"   Items: {item_count}"
     )
+
+
+def _business_summary_label(value: Any) -> str:
+    return str(value or "").replace("_", " ").replace("-", " ").title()
+
+
+def _format_summary_money(amount: Any, currency: str) -> str:
+    try:
+        return f"{float(amount):,.2f} {currency}".strip()
+    except (TypeError, ValueError):
+        return f"{amount} {currency}".strip()
 
 
 def _send_media_final_reply(

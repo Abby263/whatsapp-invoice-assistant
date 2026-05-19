@@ -7,9 +7,7 @@ correctly and integrate properly with each other.
 
 import pytest
 import os
-import asyncio
 import io
-from typing import Dict, Any, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 import tempfile
 import logging
@@ -21,16 +19,14 @@ from langchain_app.general_response_workflow import process_general_response, pr
 from langchain_app.invoice_query_workflow import (
     process_invoice_query,
     convert_to_sql,
-    execute_query,
     post_process_sql_for_vector,
 )
-from langchain_app.invoice_creator_workflow import process_invoice_creation, extract_invoice_entities
+from langchain_app.invoice_creator_workflow import process_invoice_creation
 from langchain_app.file_processing_workflow import (
     _has_storable_extraction_data,
     _should_try_best_effort_extraction,
     detect_file_type,
     process_file_message,
-    validate_file,
 )
 from langchain_app.state import IntentType, FileType
 
@@ -519,5 +515,5 @@ async def test_non_financial_supported_image_is_rejected_without_extraction(tmp_
         None,
     )
 
-    assert "Document not processed" in result["content"]
-    assert "status: rejected" in result["content"]
+    assert "Document Not Processed" in result["content"]
+    assert "*Reason:* Random image with no financial transaction information" in result["content"]

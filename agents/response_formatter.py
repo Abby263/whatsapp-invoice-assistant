@@ -46,7 +46,7 @@ class ResponseFormatterAgent(BaseAgent):
             return obj.isoformat()
 
         # Handle Decimal objects (commonly returned by database queries)
-        if hasattr(obj, '__class__') and obj.__class__.__name__ == 'Decimal':
+        if isinstance(obj, Decimal):
             return float(obj)
 
         if isinstance(obj, dict):
@@ -111,7 +111,7 @@ class ResponseFormatterAgent(BaseAgent):
                 if format_type == 'query_result':
                     # Serialize content for JSON compatibility
                     content_for_llm = self._serialize_for_json(content)
-                    logger.debug(f"Using structured content for query_result formatting")
+                    logger.debug("Using structured content for query_result formatting")
                 else:
                     # For other types, convert to JSON string
                     # Use custom serialization for datetime objects
@@ -151,7 +151,7 @@ class ResponseFormatterAgent(BaseAgent):
                 )
 
             # Call LLM to format the response
-            logger.info(f"Calling LLM for response formatting")
+            logger.info("Calling LLM for response formatting")
             try:
                 formatted_response = await self.llm_factory.format_response(
                     content=content_for_llm,
@@ -261,22 +261,40 @@ class ResponseFormatterAgent(BaseAgent):
         """
         logger.debug("Applying WhatsApp-specific formatting adjustments")
 
-        # This could include:
-        # - Enforcing character limits
-        # - Breaking up long messages
-        # - Ensuring proper emoji rendering
-        # - Formatting lists properly
-
-        # Example: Ensure proper spacing after emojis
-        # This regex would be more sophisticated in a real implementation
-        import re
         original_length = len(text)
-        text = re.sub(r'([\U00010000-\U0010ffff])', r'\1 ', text)
+        text = self._remove_internal_detail_lines(text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"([\U00010000-\U0010ffff])\s*", r"\1 ", text)
+        text = re.sub(r"[ \t]+\n", "\n", text).strip()
 
         if len(text) != original_length:
             logger.debug(f"Adjusted emoji spacing (original: {original_length}, new: {len(text)})")
 
         return compact_whatsapp_message(text)
+
+    def _remove_internal_detail_lines(self, text: str) -> str:
+        """Drop technical fields that should not be shown in business replies."""
+
+        internal_key_pattern = re.compile(
+            r"^\s*(sql(_query)?|metadata|raw(_response)?|debug|"
+            r"confidence|user_id|file_storage|match_types?|result_type)\s*[:=]",
+            re.IGNORECASE,
+        )
+        cleaned_lines = []
+        previous_blank = False
+        for raw_line in str(text or "").splitlines():
+            line = raw_line.strip()
+            if not line:
+                if cleaned_lines and not previous_blank:
+                    cleaned_lines.append("")
+                previous_blank = True
+                continue
+            if internal_key_pattern.match(line):
+                continue
+            cleaned_lines.append(line)
+            previous_blank = False
+        return "\n".join(cleaned_lines).strip()
 
     def _count_emojis(self, text: str) -> int:
         """
@@ -342,32 +360,56 @@ class ResponseFormatterAgent(BaseAgent):
 
         if format_type == "invoice_query" and isinstance(parsed, list):
             if not parsed:
-                return "I could not find matching invoices."
+                return "🔍 *Invoice Results*\n\nNo matching invoices were found."
             lines = []
-            for row in parsed:
+            for index, row in enumerate(parsed[:5], start=1):
                 vendor = row.get("vendor", "Unknown vendor")
                 amount = row.get("total_amount", row.get("amount", ""))
+                currency = str(row.get("currency") or "USD").upper()
                 date = row.get("date", row.get("invoice_date", ""))
-                lines.append(f"{vendor}: ${amount} {date}".strip())
-            return "Invoice results:\n" + "\n".join(lines)
+                invoice_number = row.get("invoice_number") or row.get("receipt_no")
+                lines.append(f"{index}. *{vendor}*")
+                if date:
+                    lines.append(f"   Date: {str(date).split('T')[0]}")
+                if amount not in (None, ""):
+                    lines.append(f"   Amount: {self._format_amount(amount, currency)}")
+                if invoice_number:
+                    lines.append(f"   Reference: {invoice_number}")
+            if len(parsed) > 5:
+                lines.append(f"+ {len(parsed) - 5} more matching invoices")
+            return "🔍 *Invoice Results*\n\n" + "\n".join(lines)
 
         if format_type == "invoice_creation" and isinstance(parsed, dict):
             vendor = parsed.get("vendor", "Unknown vendor")
             amount = parsed.get("total_amount", parsed.get("amount", 0))
-            return f"Invoice created for {vendor} totaling ${amount}."
+            currency = str(parsed.get("currency") or "USD").upper()
+            invoice_number = parsed.get("invoice_number") or parsed.get("receipt_no")
+            lines = [
+                "✅ *Invoice Created*",
+                "",
+                f"*Vendor:* {vendor}",
+                f"*Total:* {self._format_amount(amount, currency)}",
+            ]
+            if invoice_number:
+                lines.append(f"*Reference:* {invoice_number}")
+            return "\n".join(lines)
 
         if format_type == "summary" and isinstance(parsed, dict):
             invoices = parsed.get("invoices", [])
             total = parsed.get("total_spent")
-            vendor_lines = [
-                f"{invoice.get('vendor', 'Unknown')}: ${invoice.get('amount', '')}"
-                for invoice in invoices
-            ]
-            summary = "Summary"
+            currency = str(parsed.get("currency") or "USD").upper()
+            vendor_lines = []
+            for index, invoice in enumerate(invoices[:5], start=1):
+                vendor = invoice.get("vendor", "Unknown")
+                amount = invoice.get("amount", invoice.get("total_amount", ""))
+                vendor_lines.append(f"{index}. *{vendor}* - {self._format_amount(amount, currency)}")
+            summary = "📊 *Expense Summary*"
             if total is not None:
-                summary += f" total: ${total}"
+                summary += f"\n\n*Total:* {self._format_amount(total, currency)}"
             if vendor_lines:
-                summary += "\n" + "\n".join(vendor_lines)
+                summary += "\n\n*Top records:*\n" + "\n".join(vendor_lines)
+            if len(invoices) > 5:
+                summary += f"\n+ {len(invoices) - 5} more records"
             return summary
 
         if format_type == "query_result" and isinstance(parsed, dict):
@@ -380,10 +422,13 @@ class ResponseFormatterAgent(BaseAgent):
     def _format_rag_query_result(self, payload: Dict[str, Any]) -> str:
         results = payload.get("results") if isinstance(payload.get("results"), list) else []
         if not results:
-            return "I could not find matching approved receipt data."
+            return "🔎 *Receipt Matches*\n\nNo matching approved receipt data was found."
 
         lines = [
-            f"I found {len(results)} relevant approved receipt record{'s' if len(results) != 1 else ''}:"
+            "🔎 *Receipt Matches*",
+            "",
+            f"I found {len(results)} approved receipt record{'s' if len(results) != 1 else ''}.",
+            "",
         ]
         for index, row in enumerate(results[:5], start=1):
             if not isinstance(row, dict):
@@ -396,13 +441,14 @@ class ResponseFormatterAgent(BaseAgent):
             if amount in (None, ""):
                 amount = row.get("total_amount")
             amount_text = self._format_amount(amount, currency)
-            match_type = ", ".join(row.get("match_types") or [row.get("result_type") or "match"])
-            lines.append(
-                f"{index}. {vendor} | {date} | {description[:90]} | {amount_text} | {match_type}"
-            )
+            lines.append(f"{index}. *{vendor}*")
+            lines.append(f"   Date: {date}")
+            lines.append(f"   Detail: {description[:90]}")
+            lines.append(f"   Amount: {amount_text}")
 
         if len(results) > 5:
-            lines.append(f"... {len(results) - 5} more matching records")
+            lines.append(f"+ {len(results) - 5} more matching records")
+        lines.append("")
         lines.append("Source: approved saved receipts only.")
         return "\n".join(lines)
 
