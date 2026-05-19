@@ -50,6 +50,7 @@ WhatsApp media behavior:
 
 - Each uploaded image/PDF gets a final `Document extraction result` or `Document not processed` status.
 - Pending uploads must show an `APPROVE <upload_id>` / `REJECT <upload_id>` command in WhatsApp. Saved history can show the pending upload and commands for reference, but it is not an approval surface.
+- If private file storage is temporarily unavailable but the database is available, the app still creates a metadata-only pending upload id so WhatsApp approval can finalize the checked extraction without adding analytics rows early.
 - If a pending upload cannot get an upload id, the assistant asks the user to resend the file instead of pointing them to an approval flow that cannot work.
 - If WhatsApp/Twilio splits a multi-image forward into separate webhooks, the summaries arrive one per image. Six forwarded images should produce six final file-status messages.
 - If Twilio sends several media attachments in one webhook, the bot returns a `Batch processing result` with saved, duplicate, and failed counts.

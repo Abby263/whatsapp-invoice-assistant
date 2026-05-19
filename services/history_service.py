@@ -430,7 +430,7 @@ def _clean_storage_paths(paths: Iterable[Any]) -> List[str]:
     seen = set()
     for path in paths:
         value = str(path or "").strip().lstrip("/")
-        if not value or value.startswith(("http://", "https://")) or value in seen:
+        if not value or value.startswith(("http://", "https://", "pending://")) or value in seen:
             continue
         seen.add(value)
         cleaned.append(value)
@@ -448,6 +448,8 @@ def _media_access_url(media: Any) -> Optional[str]:
         return file_url
 
     file_path = str(getattr(media, "file_path", "") or "").strip().lstrip("/")
+    if file_path.startswith("pending://"):
+        return None
     if not file_path:
         if file_url.startswith(("http://", "https://")):
             return file_url

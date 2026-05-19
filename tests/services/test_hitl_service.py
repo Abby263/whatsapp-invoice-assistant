@@ -171,6 +171,90 @@ async def test_approve_pending_extraction_downloads_and_reprocesses(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_approve_pending_extraction_uses_metadata_payload_when_file_is_not_stored(monkeypatch):
+    captured = {}
+
+    class FakeStorage:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+        def download_file(self, file_key):
+            raise AssertionError("metadata-only approval must not download a file")
+
+    class FakeStorageAgent:
+        async def process(self, agent_input, context):
+            captured["payload"] = agent_input.content
+            captured["metadata"] = agent_input.metadata
+            captured["user_id"] = context.user_id
+
+            class Output:
+                status = "success"
+                error = None
+                content = {
+                    "status": "success",
+                    "invoice_id": "101",
+                    "item_ids": ["1", "2"],
+                    "media_id": "77",
+                }
+
+            return Output()
+
+    monkeypatch.setattr(hitl_service, "SupabaseStorageHandler", FakeStorage)
+    monkeypatch.setattr("agents.database_storage_agent.DatabaseStorageAgent", FakeStorageAgent)
+    monkeypatch.setattr(
+        hitl_service,
+        "_load_user_media",
+        lambda user_id, media_id: {
+            "status": "success",
+            "media_id": media_id,
+            "invoice_id": None,
+            "filename": "ledger.jpg",
+            "original_filename": "ledger.jpg",
+            "file_path": "pending://1/checksum",
+            "content_type": "image/jpeg",
+            "content_hash": "checksum",
+            "file_storage": {
+                "provider": "metadata",
+                "file_key": "pending://1/checksum",
+                "content_type": "image/jpeg",
+                "media_id": "77",
+                "storage_class": "pending_extraction",
+                "access_scope": "metadata_only",
+            },
+            "metadata": {
+                "pending_extraction_result": {
+                    "data": {
+                        "vendor": {"name": "Handwritten ledger"},
+                        "financial": {"total": 100, "currency": "INR"},
+                        "items": [
+                            {"description": "Printing", "total_price": 60},
+                            {"description": "Seeds", "total_price": 40},
+                        ],
+                    },
+                    "metadata": {
+                        "file_storage": {
+                            "provider": "metadata",
+                            "file_key": "pending://1/checksum",
+                            "storage_class": "pending_extraction",
+                        }
+                    },
+                }
+            },
+        },
+    )
+
+    result = await hitl_service.approve_pending_extraction("1", 77)
+
+    assert result["metadata"]["hitl_status"] == "confirmed"
+    assert result["metadata"]["stored_from_pending_extraction"] is True
+    assert result["metadata"]["invoice_id"] == "101"
+    assert "Upload #77 approved and saved" in result["content"]
+    assert '"hitl_confirmed": true' in captured["payload"]
+    assert captured["metadata"]["hitl_confirmed"] is True
+    assert captured["user_id"] == "1"
+
+
+@pytest.mark.asyncio
 async def test_review_pending_upload_from_web_requires_whatsapp(monkeypatch):
     async def fake_approve(*_args, **_kwargs):
         raise AssertionError("web approval must not approve pending uploads")

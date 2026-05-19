@@ -341,6 +341,36 @@ async def test_format_extraction_response_requests_whatsapp_approval():
 
 
 @pytest.mark.asyncio
+async def test_format_extraction_response_does_not_claim_metadata_only_storage_is_private():
+    result = await file_processing_workflow.format_extraction_response(
+        {
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "financial": {"total": 100.0, "currency": "INR"},
+                "additional_info": {"document_type": "handwritten_ledger"},
+                "items": [{"description": "Printing", "total_price": 100.0}],
+            },
+            "metadata": {
+                "hitl_status": "awaiting_confirmation",
+                "hitl_approval_command": "APPROVE 321",
+                "hitl_rejection_command": "REJECT 321",
+                "file_storage": {
+                    "provider": "metadata",
+                    "file_key": "pending://1/checksum",
+                    "storage_class": "pending_extraction",
+                    "access_scope": "metadata_only",
+                },
+            },
+        },
+        "ledger.jpg",
+    )
+
+    content = result["content"]
+    assert "APPROVE 321" in content
+    assert "storage: original file saved privately" not in content
+
+
+@pytest.mark.asyncio
 async def test_format_extraction_response_does_not_call_pending_entries_saved():
     result = await file_processing_workflow.format_extraction_response(
         {
@@ -404,6 +434,84 @@ def test_mark_media_awaiting_approval_backfills_late_media_id(monkeypatch):
     assert pending_metadata["hitl_rejection_command"] == "REJECT 123"
     assert file_metadata["file_storage"]["media_id"] == "123"
     assert calls[-1]["processing_metadata"]["hitl_approval_command"] == "APPROVE 123"
+
+
+def test_mark_media_awaiting_approval_creates_metadata_only_pending_record(monkeypatch):
+    calls = []
+
+    def fake_record_media_upload(**kwargs):
+        calls.append(kwargs)
+        return {"media_id": "321", "status": kwargs["status"]}
+
+    monkeypatch.setattr(file_processing_workflow, "record_media_upload", fake_record_media_upload)
+
+    pending_metadata = file_processing_workflow._mark_media_awaiting_approval(
+        user_id="1",
+        file_metadata={
+            "checksum_sha256": "checksum",
+            "original_filename": "ledger.jpg",
+            "storage_error": "storage unavailable",
+        },
+        extraction_result={
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "financial": {"total": 100, "currency": "INR"},
+                "items": [{"description": "Printing", "total_price": 100}],
+            },
+            "metadata": {"storage_error": "storage unavailable"},
+        },
+    )
+
+    first_call = calls[0]
+    assert first_call["file_storage"]["file_key"].startswith("pending://1/")
+    assert first_call["file_storage"]["storage_class"] == "pending_extraction"
+    assert first_call["processing_metadata"]["pending_extraction_result"]["data"]["items"][0]["description"] == "Printing"
+    assert pending_metadata["hitl_approval_command"] == "APPROVE 321"
+    assert pending_metadata["hitl_rejection_command"] == "REJECT 321"
+
+
+def test_mark_media_awaiting_approval_falls_back_when_private_registry_fails(monkeypatch):
+    calls = []
+
+    def fake_record_media_upload(**kwargs):
+        calls.append(kwargs)
+        if kwargs["file_storage"].get("provider") == "metadata":
+            return {"media_id": "654", "status": kwargs["status"]}
+        return None
+
+    monkeypatch.setattr(file_processing_workflow, "record_media_upload", fake_record_media_upload)
+
+    file_metadata = {
+        "checksum_sha256": "checksum",
+        "original_filename": "ledger.jpg",
+        "file_storage": {
+            "provider": "supabase",
+            "file_key": "users/1/invoices/aa/checksum",
+            "content_type": "image/jpeg",
+            "checksum_sha256": "checksum",
+            "original_filename": "ledger.jpg",
+        },
+    }
+
+    pending_metadata = file_processing_workflow._mark_media_awaiting_approval(
+        user_id="1",
+        file_metadata=file_metadata,
+        extraction_result={
+            "data": {
+                "vendor": {"name": "Handwritten ledger"},
+                "financial": {"total": 100, "currency": "INR"},
+                "items": [{"description": "Printing", "total_price": 100}],
+            },
+            "metadata": {
+                "file_storage": file_metadata["file_storage"],
+            },
+        },
+    )
+
+    assert calls[0]["file_storage"]["provider"] == "supabase"
+    assert any(call["file_storage"].get("provider") == "metadata" for call in calls)
+    assert pending_metadata["hitl_approval_command"] == "APPROVE 654"
+    assert file_metadata["file_storage"]["file_key"].startswith("pending://1/")
 
 
 @pytest.mark.asyncio
