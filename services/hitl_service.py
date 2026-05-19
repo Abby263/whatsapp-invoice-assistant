@@ -6,6 +6,7 @@ import logging
 import json
 import mimetypes
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -33,7 +34,9 @@ async def handle_human_confirmation_message(
     if user_id is None:
         return None
 
-    hitl_intent = await classify_hitl_intent(text, conversation_history or [])
+    hitl_intent = parse_hitl_command(text)
+    if hitl_intent is None:
+        hitl_intent = await classify_hitl_intent(text, conversation_history or [])
     action = hitl_intent.get("action")
     target_id = _coerce_optional_int(hitl_intent.get("target_id"))
 
@@ -51,6 +54,43 @@ async def handle_human_confirmation_message(
 
     if action in {"request_delete", "select_delete_scope"}:
         return build_delete_confirmation_prompt(hitl_intent)
+
+    return None
+
+
+def parse_hitl_command(text_content: str) -> Optional[Dict[str, Any]]:
+    """Parse exact WhatsApp HITL commands before falling back to LLM intent classification."""
+
+    text = (text_content or "").strip()
+    if not text:
+        return None
+
+    simple_commands = [
+        (r"^APPROVE\s+(\d+)$", "approve_upload", "upload"),
+        (r"^REJECT\s+(\d+)$", "reject_upload", "upload"),
+        (r"^CONFIRM\s+DELETE\s+RECEIPT\s+(\d+)$", "confirm_delete", "receipt"),
+        (r"^CONFIRM\s+DELETE\s+UPLOAD\s+(\d+)$", "confirm_delete", "upload"),
+        (r"^CONFIRM\s+DELETE\s+GENERATED\s+(\d+)$", "confirm_delete", "generated_invoice"),
+    ]
+    for pattern, action, target_scope in simple_commands:
+        match = re.fullmatch(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return {
+                "action": action,
+                "target_scope": target_scope,
+                "target_id": int(match.group(1)),
+                "confidence": 1.0,
+                "reason": "exact_hitl_command",
+            }
+
+    if re.fullmatch(r"^CONFIRM\s+DELETE\s+ALL$", text, flags=re.IGNORECASE):
+        return {
+            "action": "confirm_delete",
+            "target_scope": "all",
+            "target_id": None,
+            "confidence": 1.0,
+            "reason": "exact_hitl_command",
+        }
 
     return None
 
