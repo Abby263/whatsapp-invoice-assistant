@@ -78,11 +78,11 @@ const VIEW_META = {
     },
     inspector: {
         title: 'Workflow inspector',
-        subtitle: 'LangGraph steps, intent, and token usage for the most recent message.'
+        subtitle: 'Workflow stages, intent, and token usage for the most recent message.'
     },
     settings: {
         title: 'Settings',
-        subtitle: 'Account, memory, embeddings, and database health.'
+        subtitle: 'Account, embeddings, and database health.'
     }
 };
 
@@ -625,10 +625,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (deleteAllHistoryBtn) {
         deleteAllHistoryBtn.addEventListener('click', deleteAllHistory);
     }
-
-    // Initialize memory configuration
-    setupMemoryConfigControls();
-    updateMemoryConfig();
 
     // Initialize vector embeddings controls
     setupVectorEmbeddingsControls();
@@ -1870,8 +1866,6 @@ function updateDatabaseCounts() {
         .then(data => {
             // Add connection status message to UI
             const pgConnection = document.getElementById('pg-connection');
-            const mongoConnection = document.getElementById('mongo-connection');
-
             // Check for connection status information
             if (data.connection_status) {
                 const status = data.connection_status;
@@ -1957,15 +1951,6 @@ function updateDatabaseCounts() {
                     if (data.size_info.tables_size) {
                         if (tablesSize) tablesSize.textContent = data.size_info.tables_size;
                         if (document.getElementById('tablesSize')) document.getElementById('tablesSize').textContent = data.size_info.tables_size;
-                    }
-                }
-
-                // Update connection info
-                if (data.connection_info) {
-                    // Format MongoDB connection info
-                    if (mongoConnection && data.connection_info.mongodb) {
-                        const mongo = data.connection_info.mongodb;
-                        mongoConnection.textContent = `${mongo.host}:${mongo.port}/${mongo.database}`;
                     }
                 }
 
@@ -2508,139 +2493,6 @@ function escapeHtml(value) {
 
 function escapeAttribute(value) {
     return escapeHtml(value).replace(/"/g, '&quot;');
-}
-
-// Memory Configuration Management
-function updateMemoryConfig() {
-    fetch('/api/memory/config')
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                // Update UI with current memory configuration
-                const config = data.config;
-
-                // Update max messages
-                const maxMessagesValue = document.getElementById('maxMessagesValue');
-                maxMessagesValue.textContent = config.max_messages;
-
-                // Update message window (context size)
-                const messageWindowValue = document.getElementById('messageWindowValue');
-                messageWindowValue.textContent = config.message_window;
-
-                // Update max memory age
-                const maxMemoryAgeValue = document.getElementById('maxMemoryAgeValue');
-                maxMemoryAgeValue.textContent = config.max_memory_age;
-
-                // Update enable context window toggle
-                const enableContextWindowValue = document.getElementById('enableContextWindowValue');
-                enableContextWindowValue.textContent = config.enable_context_window ? 'Enabled' : 'Disabled';
-
-                // Update persist memory toggle
-                const persistMemoryValue = document.getElementById('persistMemoryValue');
-                persistMemoryValue.textContent = config.persist_memory ? 'Enabled' : 'Disabled';
-
-                // Update MongoDB usage status
-                const useMongoDBValue = document.getElementById('useMongoDBValue');
-                useMongoDBValue.textContent = config.use_mongodb ? 'Yes' : 'No';
-
-                // Update toggle button icons
-                const toggleContextWindow = document.getElementById('toggleContextWindow');
-                toggleContextWindow.innerHTML = config.enable_context_window ?
-                    '<i class="fas fa-toggle-on"></i>' :
-                    '<i class="fas fa-toggle-off"></i>';
-
-                const togglePersistMemory = document.getElementById('togglePersistMemory');
-                togglePersistMemory.innerHTML = config.persist_memory ?
-                    '<i class="fas fa-toggle-on"></i>' :
-                    '<i class="fas fa-toggle-off"></i>';
-            }
-        })
-        .catch(error => {
-            console.error('Error fetching memory configuration:', error);
-        });
-}
-
-// Function to update a specific memory configuration setting
-function updateMemorySetting(setting, value) {
-    // Create payload with only the setting to update
-    const payload = {};
-    payload[setting] = value;
-
-    fetch('/api/memory/config', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            // Show success message
-            addSystemMessage(`Memory setting '${setting}' updated to: ${value}`);
-
-            // Update UI with new configuration
-            updateMemoryConfig();
-        } else {
-            // Show error message
-            addSystemMessage(`Error updating memory setting: ${data.message}`);
-        }
-    })
-    .catch(error => {
-        console.error('Error updating memory setting:', error);
-        addSystemMessage('An error occurred while updating memory settings.');
-    });
-}
-
-// Setup memory configuration UI controls
-function setupMemoryConfigControls() {
-    // Refresh button
-    const refreshMemoryConfig = document.getElementById('refreshMemoryConfig');
-    refreshMemoryConfig.addEventListener('click', updateMemoryConfig);
-
-    // Edit max messages
-    const editMaxMessages = document.getElementById('editMaxMessages');
-    editMaxMessages.addEventListener('click', () => {
-        const currentValue = document.getElementById('maxMessagesValue').textContent;
-        const newValue = prompt('Enter maximum number of messages to store per conversation:', currentValue);
-        if (newValue !== null && !isNaN(newValue) && newValue.trim() !== '') {
-            updateMemorySetting('max_messages', parseInt(newValue));
-        }
-    });
-
-    // Edit message window
-    const editMessageWindow = document.getElementById('editMessageWindow');
-    editMessageWindow.addEventListener('click', () => {
-        const currentValue = document.getElementById('messageWindowValue').textContent;
-        const newValue = prompt('Enter number of recent messages to use for context:', currentValue);
-        if (newValue !== null && !isNaN(newValue) && newValue.trim() !== '') {
-            updateMemorySetting('message_window', parseInt(newValue));
-        }
-    });
-
-    // Edit max memory age
-    const editMaxMemoryAge = document.getElementById('editMaxMemoryAge');
-    editMaxMemoryAge.addEventListener('click', () => {
-        const currentValue = document.getElementById('maxMemoryAgeValue').textContent;
-        const newValue = prompt('Enter maximum age of memory in seconds:', currentValue);
-        if (newValue !== null && !isNaN(newValue) && newValue.trim() !== '') {
-            updateMemorySetting('max_memory_age', parseInt(newValue));
-        }
-    });
-
-    // Toggle context window
-    const toggleContextWindow = document.getElementById('toggleContextWindow');
-    toggleContextWindow.addEventListener('click', () => {
-        const currentValue = document.getElementById('enableContextWindowValue').textContent === 'Enabled';
-        updateMemorySetting('enable_context_window', !currentValue);
-    });
-
-    // Toggle persist memory
-    const togglePersistMemory = document.getElementById('togglePersistMemory');
-    togglePersistMemory.addEventListener('click', () => {
-        const currentValue = document.getElementById('persistMemoryValue').textContent === 'Enabled';
-        updateMemorySetting('persist_memory', !currentValue);
-    });
 }
 
 // Function to set up vector embeddings controls

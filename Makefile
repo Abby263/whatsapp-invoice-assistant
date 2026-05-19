@@ -1,4 +1,4 @@
-.PHONY: all install poetry-update test test-db lint format db-clean db-status db-migrate db-revision db-downgrade db-history db-seed ui-run ui-test test-sql update-embeddings memory-cleanup memory-cleanup-dry validate-env
+.PHONY: all install poetry-update test test-db lint format db-clean db-status db-migrate db-revision db-downgrade db-history db-seed ui-run test-sql update-embeddings validate-env
 
 # Dependency management
 install:
@@ -50,11 +50,7 @@ db-seed:
 # Local UI
 ui-run:
 	@echo "Starting local UI on http://localhost:5001 ..."
-	PYTHONPATH=. USE_MONGODB=false poetry run python ui/app.py --port 5001
-
-ui-test:
-	@echo "Running the interactive test from the command line..."
-	@PYTHONPATH=. poetry run python -m tests.interactive_test
+	PYTHONPATH=. poetry run python ui/app.py --port 5001
 
 # Tests and code quality
 test:
@@ -78,17 +74,9 @@ format:
 	@echo "Formatting code..."
 	poetry run black .
 
-# Vector and memory operations
+# Vector operations
 update-embeddings:
 	@echo "Updating vector embeddings for all items..."
 	PYTHONPATH=. poetry run python scripts/update_embeddings.py
-
-memory-cleanup:
-	@echo "Cleaning up old memory entries..."
-	@PYTHONPATH=. poetry run python scripts/cleanup_memory.py --sync-db
-
-memory-cleanup-dry:
-	@echo "Dry run - checking which memory entries would be cleaned up..."
-	@PYTHONPATH=. poetry run python scripts/cleanup_memory.py --sync-db --dry-run
 
 all: install lint test

@@ -493,7 +493,7 @@
                             <div class="card-head">
                                 <div>
                                     <h3>Workflow steps</h3>
-                                    <p>LangGraph nodes that processed the most recent message. Click a step for logs.</p>
+                                    <p>Processing stages that handled the most recent message. Click a step for logs.</p>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -629,63 +629,8 @@
                         <section class="card card-span-2">
                             <div class="card-head">
                                 <div>
-                                    <h3>Memory configuration</h3>
-                                    <p>LangGraph conversation memory. Click an editable value to change it.</p>
-                                </div>
-                                <button id="refreshMemoryConfig" class="icon-btn" type="button" title="Refresh">
-                                    <i class="fas fa-rotate"></i>
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <dl class="kv-list">
-                                    <div class="kv-row">
-                                        <dt>Max messages</dt>
-                                        <dd>
-                                            <span id="maxMessagesValue">50</span>
-                                            <button class="adjust-btn" id="editMaxMessages" type="button" title="Edit"><i class="fas fa-pen"></i></button>
-                                        </dd>
-                                    </div>
-                                    <div class="kv-row">
-                                        <dt>Context window</dt>
-                                        <dd>
-                                            <span id="messageWindowValue">10</span>
-                                            <button class="adjust-btn" id="editMessageWindow" type="button" title="Edit"><i class="fas fa-pen"></i></button>
-                                        </dd>
-                                    </div>
-                                    <div class="kv-row">
-                                        <dt>Memory age (s)</dt>
-                                        <dd>
-                                            <span id="maxMemoryAgeValue">3600</span>
-                                            <button class="adjust-btn" id="editMaxMemoryAge" type="button" title="Edit"><i class="fas fa-pen"></i></button>
-                                        </dd>
-                                    </div>
-                                    <div class="kv-row">
-                                        <dt>Use context window</dt>
-                                        <dd>
-                                            <span id="enableContextWindowValue" class="pill">Enabled</span>
-                                            <button class="toggle-btn" id="toggleContextWindow" type="button" title="Toggle"><i class="fas fa-toggle-on"></i></button>
-                                        </dd>
-                                    </div>
-                                    <div class="kv-row">
-                                        <dt>Persist memory</dt>
-                                        <dd>
-                                            <span id="persistMemoryValue" class="pill">Enabled</span>
-                                            <button class="toggle-btn" id="togglePersistMemory" type="button" title="Toggle"><i class="fas fa-toggle-on"></i></button>
-                                        </dd>
-                                    </div>
-                                    <div class="kv-row">
-                                        <dt>Using MongoDB</dt>
-                                        <dd id="useMongoDBValue">Yes</dd>
-                                    </div>
-                                </dl>
-                            </div>
-                        </section>
-
-                        <section class="card card-span-2">
-                            <div class="card-head">
-                                <div>
                                     <h3>Database status</h3>
-                                    <p>Postgres + MongoDB health and counts.</p>
+                                    <p>Postgres health and user-scoped counts.</p>
                                 </div>
                             </div>
                             <div class="card-body">
@@ -720,10 +665,6 @@
                                     <div class="kv-row">
                                         <dt>PostgreSQL</dt>
                                         <dd id="pg-connection" class="pill">—</dd>
-                                    </div>
-                                    <div class="kv-row">
-                                        <dt>MongoDB</dt>
-                                        <dd id="mongo-connection" class="kv-mono">—</dd>
                                     </div>
                                 </dl>
                             </div>

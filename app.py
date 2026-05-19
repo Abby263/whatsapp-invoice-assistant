@@ -39,14 +39,6 @@ DEFAULT_USER = {
     "email": "demo@example.com",
     "whatsapp_number": DEFAULT_WHATSAPP_NUMBER,
 }
-MEMORY_CONFIG = {
-    "max_messages": 50,
-    "message_window": 10,
-    "max_memory_age": 3600,
-    "enable_context_window": True,
-    "persist_memory": False,
-    "use_mongodb": False,
-}
 DEMO_LINKS: dict[str, dict] = {}
 DEMO_GENERATED_INVOICES: list[dict] = []
 
@@ -90,13 +82,7 @@ def _demo_db_status() -> dict:
             "total_size": "Demo mode",
             "tables_size": "Demo mode",
         },
-        "connection_info": {
-            "mongodb": {
-                "host": "disabled",
-                "port": "n/a",
-                "database": "demo",
-            }
-        },
+        "connection_info": {"database": {"provider": "demo"}},
         "vector_info": {
             "installed": False,
             "with_embeddings": 0,
@@ -983,17 +969,6 @@ def step_logs(step_name: str):
             "file_storage": {},
         }
     )
-
-
-@app.route("/api/memory/config", methods=["GET", "POST"])
-def memory_config():
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        MEMORY_CONFIG.update(
-            {key: value for key, value in data.items() if key in MEMORY_CONFIG}
-        )
-
-    return jsonify({"status": "success", "config": MEMORY_CONFIG, "degraded": True})
 
 
 @app.get("/api/file-storage-info")

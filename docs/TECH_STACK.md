@@ -21,7 +21,7 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 | Object storage | Supabase Storage | Private original receipt files and generated invoice documents. |
 | Authentication | Clerk | Web sign-in and WhatsApp number linking for user-scoped data. |
 | Messaging | Twilio WhatsApp | Incoming text/media webhook delivery and assistant replies. |
-| Memory | Supabase Postgres conversations/messages | Durable user-scoped short-term context for WhatsApp and web multi-turn conversations. |
+| Conversation memory | Supabase Postgres conversations/messages | Durable user-scoped short-term context for WhatsApp and web multi-turn conversations. |
 | Testing | pytest | Agent, workflow, service, database, and UI-adjacent coverage. |
 
 ## Repository Map
@@ -29,14 +29,12 @@ Clerk web user -> Vercel Flask UI -> Supabase-backed APIs -> same user-scoped da
 ```text
 .
 ├── agents/                 # Intent, validation, extraction, RAG, SQL, and response agents
-├── compat/                 # Narrow compatibility shims for third-party package differences
 ├── constants/              # Prompt, intent, UI, LLM, vector, and invoice-template constants
 ├── database/               # SQLAlchemy models, CRUD helpers, connection setup, and Alembic migrations
 ├── docs/                   # Architecture and operational documentation
 ├── workflows/              # Active workflow routing and orchestration
-├── memory/                 # Legacy in-memory and optional MongoDB checkpoint helpers
 ├── prompts/                # Prompt templates used by agents and LLM services
-├── scripts/                # Env validation, embeddings, categories, memory, and DB cleanup scripts
+├── scripts/                # Env validation, embeddings, categories, and DB cleanup scripts
 ├── services/               # Live backend, LLM, generated invoice, user profile, and template services
 ├── storage/                # Supabase Storage integration
 ├── template/               # Source invoice document templates used by generated invoices

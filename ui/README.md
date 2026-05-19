@@ -7,7 +7,7 @@
 - Receipt upload and chat simulation.
 - Clerk-aware user and WhatsApp linking controls when auth env vars are configured.
 - Generated invoice creation and analytics views.
-- Workflow inspector, storage status, database status, vector status, and memory settings.
+- Workflow inspector, storage status, database status, and vector status.
 - Light and dark mode through the shared UI assets in `ui/static/`.
 
 ## Run Locally
@@ -24,7 +24,7 @@ Open:
 http://localhost:5001
 ```
 
-The command starts the UI with `USE_MONGODB=false` so local setup does not require MongoDB.
+The command starts the UI against the same workflow API used by the hosted app.
 
 ## Useful API Checks
 
