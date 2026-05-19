@@ -1219,7 +1219,6 @@ async def format_extraction_response(
         lines.append("No invoice or line-item rows have been added to analytics yet.")
         if approval_command and rejection_command:
             lines.append(f"Reply {approval_command} to save, or {rejection_command} to discard.")
-            lines.append("You can also review this pending upload from Saved history on the website.")
         else:
             lines.append("I could not create an upload id for approval. Please resend this file.")
     else:

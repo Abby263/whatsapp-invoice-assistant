@@ -1995,8 +1995,18 @@ function renderHistory(records) {
             : (record.title || record.filename || `Receipt #${record.id}`);
         const pendingApproval = record.hitl_status === 'awaiting_confirmation';
         const recordStatus = pendingApproval
-            ? `Awaiting WhatsApp approval${record.approval_command ? ` (${record.approval_command})` : ''}`
+            ? 'Awaiting WhatsApp approval'
             : record.status;
+        const pendingMediaId = record.media_id || record.id;
+        const approvalCommand = record.approval_command || (pendingApproval && pendingMediaId ? `APPROVE ${pendingMediaId}` : '');
+        const rejectionCommand = record.rejection_command || (pendingApproval && pendingMediaId ? `REJECT ${pendingMediaId}` : '');
+        const whatsappApprovalText = pendingApproval
+            ? (
+                approvalCommand && rejectionCommand
+                    ? `Reply in WhatsApp: ${approvalCommand} or ${rejectionCommand}`
+                    : 'Reply in WhatsApp to approve or reject this upload'
+            )
+            : '';
         const itemLabel = reviewSummary.item_label || (record.item_count === 1 ? 'item' : 'items');
         const subtitle = isGenerated
             ? (record.client_name || record.client_company || 'Generated invoice')
@@ -2025,18 +2035,6 @@ function renderHistory(records) {
         const viewMarkup = fileUrl
             ? `<a href="${escapeAttribute(fileUrl)}" target="_blank" rel="noopener" title="Open uploaded file"><i class="fas fa-arrow-up-right-from-square"></i><span>View</span></a>`
             : '';
-        const approvalMarkup = pendingApproval
-            ? `
-                <button type="button" class="btn btn-primary btn-small history-approve-btn" title="Approve this upload">
-                    <i class="fas fa-check"></i>
-                    <span>Approve</span>
-                </button>
-                <button type="button" class="btn btn-secondary btn-small history-reject-btn" title="Reject this upload">
-                    <i class="fas fa-xmark"></i>
-                    <span>Reject</span>
-                </button>
-            `
-            : '';
 
         row.innerHTML = `
             <div class="history-main">
@@ -2045,6 +2043,7 @@ function renderHistory(records) {
                     <div>
                         <strong>${escapeHtml(title)}</strong>
                         <span>${escapeHtml(subtitle || record.kind || 'Saved record')}</span>
+                        ${whatsappApprovalText ? `<span class="history-approval-note">${escapeHtml(whatsappApprovalText)}</span>` : ''}
                     </div>
                 </div>
             </div>
@@ -2053,66 +2052,18 @@ function renderHistory(records) {
                 <span>${escapeHtml(created)}</span>
             </div>
             <div class="history-actions">
-                ${approvalMarkup}
                 ${viewMarkup}
                 <button type="button" class="icon-btn danger history-delete-btn" title="Delete" aria-label="Delete saved history">
                     <i class="fas fa-trash-can"></i>
                 </button>
             </div>
         `;
-        const approveButton = row.querySelector('.history-approve-btn');
-        if (approveButton) {
-            approveButton.addEventListener('click', () => reviewPendingUpload(record, 'approve'));
-        }
-        const rejectButton = row.querySelector('.history-reject-btn');
-        if (rejectButton) {
-            rejectButton.addEventListener('click', () => reviewPendingUpload(record, 'reject'));
-        }
         const deleteButton = row.querySelector('.history-delete-btn');
         if (deleteButton) {
             deleteButton.addEventListener('click', () => deleteHistoryRecord(record));
         }
         historyList.appendChild(row);
     });
-}
-
-function reviewPendingUpload(record, action) {
-    const mediaId = record.media_id || record.id;
-    if (!mediaId) {
-        addSystemMessage('Could not find the upload id for this pending file.');
-        return;
-    }
-    if (action === 'reject' && !confirm(`Reject ${record.filename || `upload #${mediaId}`}? No analytics rows will be created.`)) {
-        return;
-    }
-
-    showLoading(action === 'approve' ? 'Approving upload...' : 'Rejecting upload...');
-    fetch('/api/history/approval', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            user_id: userId,
-            media_id: mediaId,
-            action
-        })
-    })
-        .then(response => response.json().then(data => ({ok: response.ok, data})))
-        .then(({ok, data}) => {
-            if (!ok || data.status !== 'success') {
-                throw new Error(data.message || 'Upload review failed');
-            }
-            addSystemMessage(escapeHtml(data.message || 'Upload review completed.'));
-            loadHistory();
-            loadGeneratedInvoices();
-            updateDatabaseCounts();
-        })
-        .catch(error => {
-            console.error('Error reviewing upload:', error);
-            addSystemMessage(`Could not review upload: ${escapeHtml(error.message)}`);
-        })
-        .finally(() => {
-            hideLoading();
-        });
 }
 
 function deleteHistoryRecord(record) {

@@ -35,7 +35,7 @@ If production environment variables are missing, the hosted app falls back to de
 - Answers user-scoped finance questions from approved extracted data using SQL, full-document retrieval, line-item retrieval, and keyword fallback.
 - Generates outgoing invoices from WhatsApp or the website using saved seller/client defaults.
 - Shows parsing quality signals, row counts, and review warnings for handwritten or low-confidence uploads.
-- Lets signed-in users approve or reject pending WhatsApp uploads from Saved history, or use WhatsApp `APPROVE <upload_id>` / `REJECT <upload_id>` commands.
+- Requires pending WhatsApp uploads to be approved or rejected in WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>` commands before analytics rows are created.
 - Lets signed-in users delete one saved upload, one generated invoice, or all historical data from the web app.
 - Shows receipt, invoice, workflow, storage, database, and vector status in the UI.
 
@@ -49,7 +49,7 @@ Example WhatsApp prompts:
 WhatsApp media behavior:
 
 - Each uploaded image/PDF gets a final `Document extraction result` or `Document not processed` status.
-- Pending uploads must show an `APPROVE <upload_id>` / `REJECT <upload_id>` command in WhatsApp and Approve / Reject actions in Saved history on the website.
+- Pending uploads must show an `APPROVE <upload_id>` / `REJECT <upload_id>` command in WhatsApp. Saved history can show the pending upload and commands for reference, but it is not an approval surface.
 - If a pending upload cannot get an upload id, the assistant asks the user to resend the file instead of pointing them to an approval flow that cannot work.
 - If WhatsApp/Twilio splits a multi-image forward into separate webhooks, the summaries arrive one per image. Six forwarded images should produce six final file-status messages.
 - If Twilio sends several media attachments in one webhook, the bot returns a `Batch processing result` with saved, duplicate, and failed counts.
@@ -112,8 +112,8 @@ flowchart TB
     EXTRACTOR --> CHAT
     EXTRACTOR --> STORAGE
     EXTRACTOR --> HITL
-    HITL -->|"APPROVE upload_id or web approve"| STORE
-    HITL -->|"REJECT upload_id or web reject"| STORAGE
+    HITL -->|"WhatsApp APPROVE upload_id"| STORE
+    HITL -->|"WhatsApp REJECT upload_id"| STORAGE
     STORE --> DB
     STORE --> EMBED
     EMBED --> VECTOR
@@ -154,8 +154,8 @@ Every uploaded file follows the same contract before it reaches analytics:
 4. Valid files are uploaded to Supabase Storage under a user-scoped path and registered in `media`.
 5. The extractor returns the canonical schema from [schemas/llm_outputs/document_extraction.py](schemas/llm_outputs/document_extraction.py).
 6. The normalizer fixes row-level ledger dates, computes ledger totals from extracted rows, and records `extraction_quality` warnings when review is needed.
-7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands, and the same pending upload appears under Saved history on the website.
-8. The linked user can approve or reject from Saved history, or reply on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`.
+7. The user gets a fixed-schema WhatsApp summary plus `APPROVE <upload_id>` and `REJECT <upload_id>` commands, and the same pending upload appears under Saved history on the website for tracking.
+8. The linked user approves or rejects by replying on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`.
 9. Only after approval does the app re-open the private file, re-run extraction, and write invoice rows, item rows, embeddings, and processing metadata with the same `user_id`.
 10. WhatsApp receives one final file-status response per delivered media item, or a batch summary when Twilio sends multiple attachments in one webhook.
 11. Text turns load recent Supabase-backed conversation memory so short follow-ups stay attached to the same user context across WhatsApp and the website.
@@ -198,7 +198,7 @@ Uploaded receipt files and generated invoice documents are stored in the private
 
 Conversation memory is user scoped. For production WhatsApp and web requests, the agent loads memory from `conversations` and `messages` by the resolved internal `users.id`; caller-supplied history is ignored unless it comes from an internal trusted workflow path.
 
-Receipt extraction uses a human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web Saved history view, but invoice rows, line items, embeddings, and analytics are created only after approval. The same linked user can approve/reject from the website or reply on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
+Receipt extraction uses a human-in-the-loop gate by default. Valid uploads are saved privately in Supabase Storage and shown as pending in the web Saved history view, but invoice rows, line items, embeddings, and analytics are created only after WhatsApp approval. The same linked user must reply on WhatsApp with `APPROVE <upload_id>` / `REJECT <upload_id>`. Deletes are also guarded by exact confirmation commands such as `CONFIRM DELETE RECEIPT <id>` or `CONFIRM DELETE ALL`.
 
 ## Why Supabase Storage Instead Of S3
 
@@ -287,8 +287,8 @@ make test                # Run the pytest suite
 4. Sign in with Clerk on the website.
 5. Use **Link WhatsApp** and enter the WhatsApp number that will message the Twilio sender.
 6. Send `Hi` on WhatsApp and confirm the assistant responds.
-7. Send a receipt image or PDF and confirm it appears in Saved history as a pending upload with Approve and Reject actions.
-8. Approve the upload and confirm the receipt moves into saved analytics.
+7. Send a receipt image or PDF and confirm WhatsApp returns `APPROVE <upload_id>` / `REJECT <upload_id>` commands and Saved history shows the upload as pending.
+8. Reply `APPROVE <upload_id>` in WhatsApp and confirm the receipt moves into saved analytics.
 9. Ask a question over the stored data, such as `What did I spend this month?`.
 10. Generate an outgoing invoice and confirm it appears in generated invoices and analytics.
 

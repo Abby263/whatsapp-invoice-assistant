@@ -347,6 +347,12 @@ def _serialize_media_document(media: Any) -> Dict[str, Any]:
     if not isinstance(review_summary, dict):
         review_summary = {}
     access_url = _media_access_url(media)
+    hitl_status = metadata.get("hitl_status")
+    approval_command = metadata.get("hitl_approval_command")
+    rejection_command = metadata.get("hitl_rejection_command")
+    if hitl_status == "awaiting_confirmation":
+        approval_command = approval_command or f"APPROVE {media.id}"
+        rejection_command = rejection_command or f"REJECT {media.id}"
     return {
         "kind": "media",
         "id": str(media.id),
@@ -360,10 +366,10 @@ def _serialize_media_document(media: Any) -> Dict[str, Any]:
         "item_count": int(review_summary.get("item_count") or 0),
         "status": media.status or "uploaded",
         "processing_status": metadata.get("processing_status"),
-        "hitl_status": metadata.get("hitl_status"),
+        "hitl_status": hitl_status,
         "hitl_action": metadata.get("hitl_action"),
-        "approval_command": metadata.get("hitl_approval_command"),
-        "rejection_command": metadata.get("hitl_rejection_command"),
+        "approval_command": approval_command,
+        "rejection_command": rejection_command,
         "review_summary": review_summary,
         "created_at": _iso(media.created_at),
         "file_path": media.file_path,
