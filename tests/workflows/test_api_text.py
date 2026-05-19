@@ -186,9 +186,9 @@ async def test_process_whatsapp_message_returns_greeting_content(monkeypatch):
 
     result = await api.process_whatsapp_message({
         "From": "whatsapp:+15551234567",
-        "Body": "Hey",
+        "Body": "How are you?",
         "NumMedia": "0",
-        "MessageSid": "SM_HEY",
+        "MessageSid": "SM_HOW_ARE_YOU",
     })
 
     assert result["status"] == "success"
