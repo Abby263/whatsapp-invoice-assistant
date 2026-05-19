@@ -25,7 +25,6 @@ images/
 scripts/
 /templates/
 tests/
-workflows/
 
 docs/assets/
 poetry.lock
