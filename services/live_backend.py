@@ -495,6 +495,22 @@ def delete_history(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]
     return delete_user_history(int(user["id"]), payload)
 
 
+async def review_history_upload(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
+    from services.hitl_service import review_pending_upload_from_web
+
+    user, needs_link = resolve_request_user(auth_context, payload)
+    if needs_link:
+        return {"status": "error", "message": "Link your WhatsApp number first", "needs_link": True}
+    media_id = payload.get("media_id") or payload.get("id")
+    if not media_id:
+        return {"status": "error", "message": "Media ID is required"}
+    return await review_pending_upload_from_web(
+        int(user["id"]),
+        int(media_id),
+        payload.get("action"),
+    )
+
+
 def database_status(auth_context: Any = None) -> Dict[str, Any]:
     from sqlalchemy import func, text
 

@@ -81,14 +81,18 @@ def off_topic_response() -> str:
 
 
 def media_processing_ack(media_count: int) -> str:
-    if media_count == 1:
-        return (
-            "Received a file. I am processing it now and will send a final status for this file. "
-            "If you forwarded multiple images, WhatsApp may deliver them one at a time."
-        )
+    try:
+        media_count = max(1, int(media_count or 1))
+    except (TypeError, ValueError):
+        media_count = 1
     noun = "file" if media_count == 1 else "files"
     pronoun = "it" if media_count == 1 else "them"
-    return f"Received {media_count} {noun}. I am processing {pronoun} now and will send a short summary when done."
+    article_or_count = "a" if media_count == 1 else str(media_count)
+    final_status = "for this file" if media_count == 1 else "when all files are done"
+    return (
+        f"Received {article_or_count} {noun}. I am processing {pronoun} now "
+        f"and will send a final status {final_status}."
+    )
 
 
 def compact_whatsapp_message(message: str, max_chars: int | None = None) -> str:

@@ -97,6 +97,37 @@ async def test_format_invoice_query_response(response_formatter_agent):
     
     logger.info(f"Invoice query format result: {result.content}")
 
+
+@pytest.mark.asyncio
+async def test_format_agentic_rag_query_result(response_formatter_agent):
+    """Agentic RAG responses should be grounded in approved receipt rows."""
+
+    result = await response_formatter_agent.process(
+        {
+            "type": "query_result",
+            "content": {
+                "query": "Find printing expenses",
+                "source": "agentic_rag",
+                "count": 1,
+                "results": [
+                    {
+                        "vendor": "Acme Office",
+                        "date": "2026-05-01T00:00:00",
+                        "description": "Printer ink cartridge",
+                        "total_price": 33.0,
+                        "currency": "USD",
+                        "match_types": ["item_vector", "keyword"],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert "Acme Office" in result.content
+    assert "Printer ink cartridge" in result.content
+    assert "33 USD" in result.content
+    assert "approved saved receipts" in result.content
+
 @pytest.mark.asyncio
 async def test_format_invoice_creation_response(response_formatter_agent):
     """Test formatting an invoice creation response."""

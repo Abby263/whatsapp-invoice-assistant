@@ -1989,6 +1989,7 @@ function renderHistory(records) {
         const isGenerated = record.kind === 'generated_invoice';
         const fileUrl = record.file_url || record.signed_url || record.url || '';
         const contentType = (record.content_type || '').toLowerCase();
+        const reviewSummary = record.review_summary || {};
         const title = isGenerated
             ? (record.invoice_number || `Generated invoice #${record.id}`)
             : (record.title || record.filename || `Receipt #${record.id}`);
@@ -1996,16 +1997,18 @@ function renderHistory(records) {
         const recordStatus = pendingApproval
             ? `Awaiting WhatsApp approval${record.approval_command ? ` (${record.approval_command})` : ''}`
             : record.status;
+        const itemLabel = reviewSummary.item_label || (record.item_count === 1 ? 'item' : 'items');
         const subtitle = isGenerated
             ? (record.client_name || record.client_company || 'Generated invoice')
             : [
                 record.filename,
+                pendingApproval ? reviewSummary.vendor_name : null,
                 recordStatus,
-                record.item_count != null ? `${record.item_count} items` : null
+                record.item_count ? `${record.item_count} ${itemLabel}` : null
             ].filter(Boolean).join(' · ');
         const amount = record.total_amount != null
             ? formatGeneratedCurrency(record.total_amount, record.currency || 'USD')
-            : 'No total';
+            : pendingApproval ? 'Pending review' : 'No total';
         const created = record.created_at ? new Date(record.created_at).toLocaleDateString() : 'Recent';
         const filenameExtension = String(record.filename || '').split('.').pop().toLowerCase();
         const isImage = (
@@ -2021,6 +2024,18 @@ function renderHistory(records) {
             : `<span class="history-file-icon"><i class="fas fa-file-lines"></i></span>`;
         const viewMarkup = fileUrl
             ? `<a href="${escapeAttribute(fileUrl)}" target="_blank" rel="noopener" title="Open uploaded file"><i class="fas fa-arrow-up-right-from-square"></i><span>View</span></a>`
+            : '';
+        const approvalMarkup = pendingApproval
+            ? `
+                <button type="button" class="btn btn-primary btn-small history-approve-btn" title="Approve this upload">
+                    <i class="fas fa-check"></i>
+                    <span>Approve</span>
+                </button>
+                <button type="button" class="btn btn-secondary btn-small history-reject-btn" title="Reject this upload">
+                    <i class="fas fa-xmark"></i>
+                    <span>Reject</span>
+                </button>
+            `
             : '';
 
         row.innerHTML = `
@@ -2038,15 +2053,66 @@ function renderHistory(records) {
                 <span>${escapeHtml(created)}</span>
             </div>
             <div class="history-actions">
+                ${approvalMarkup}
                 ${viewMarkup}
-                <button type="button" class="icon-btn danger" title="Delete" aria-label="Delete saved history">
+                <button type="button" class="icon-btn danger history-delete-btn" title="Delete" aria-label="Delete saved history">
                     <i class="fas fa-trash-can"></i>
                 </button>
             </div>
         `;
-        row.querySelector('button').addEventListener('click', () => deleteHistoryRecord(record));
+        const approveButton = row.querySelector('.history-approve-btn');
+        if (approveButton) {
+            approveButton.addEventListener('click', () => reviewPendingUpload(record, 'approve'));
+        }
+        const rejectButton = row.querySelector('.history-reject-btn');
+        if (rejectButton) {
+            rejectButton.addEventListener('click', () => reviewPendingUpload(record, 'reject'));
+        }
+        const deleteButton = row.querySelector('.history-delete-btn');
+        if (deleteButton) {
+            deleteButton.addEventListener('click', () => deleteHistoryRecord(record));
+        }
         historyList.appendChild(row);
     });
+}
+
+function reviewPendingUpload(record, action) {
+    const mediaId = record.media_id || record.id;
+    if (!mediaId) {
+        addSystemMessage('Could not find the upload id for this pending file.');
+        return;
+    }
+    if (action === 'reject' && !confirm(`Reject ${record.filename || `upload #${mediaId}`}? No analytics rows will be created.`)) {
+        return;
+    }
+
+    showLoading(action === 'approve' ? 'Approving upload...' : 'Rejecting upload...');
+    fetch('/api/history/approval', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            user_id: userId,
+            media_id: mediaId,
+            action
+        })
+    })
+        .then(response => response.json().then(data => ({ok: response.ok, data})))
+        .then(({ok, data}) => {
+            if (!ok || data.status !== 'success') {
+                throw new Error(data.message || 'Upload review failed');
+            }
+            addSystemMessage(escapeHtml(data.message || 'Upload review completed.'));
+            loadHistory();
+            loadGeneratedInvoices();
+            updateDatabaseCounts();
+        })
+        .catch(error => {
+            console.error('Error reviewing upload:', error);
+            addSystemMessage(`Could not review upload: ${escapeHtml(error.message)}`);
+        })
+        .finally(() => {
+            hideLoading();
+        });
 }
 
 function deleteHistoryRecord(record) {

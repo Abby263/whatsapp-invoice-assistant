@@ -828,6 +828,37 @@ def history_delete():
     )
 
 
+@app.post("/api/history/approval")
+def history_approval():
+    auth_context = _require_demo_auth()
+    if _is_auth_response(auth_context):
+        return auth_context
+    payload = request.get_json(silent=True) or {}
+    if _live_backend_enabled():
+        try:
+            result = live_backend.run_async(live_backend.review_history_upload(auth_context, payload))
+            if result.get("needs_link"):
+                return jsonify(result), 403
+            if result.get("metadata", {}).get("hitl_status") == "not_found":
+                return jsonify(result), 404
+            if result.get("metadata", {}).get("hitl_status") == "invalid_action":
+                return jsonify(result), 400
+            if result.get("status") == "error":
+                return jsonify(result), 409
+            return jsonify(result)
+        except ValueError as exc:
+            return _live_error(exc, 400)
+        except Exception as exc:
+            return _live_error(exc)
+    return jsonify(
+        {
+            "status": "error",
+            "message": "Pending upload approval requires the live Supabase backend.",
+            "degraded": True,
+        }
+    ), 409
+
+
 @app.get("/api/generated-invoices/demo-invoice.txt")
 def generated_invoice_demo_download():
     return Response(

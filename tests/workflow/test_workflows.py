@@ -226,6 +226,56 @@ async def test_invoice_query_workflow():
 
 
 @pytest.mark.asyncio
+async def test_invoice_query_uses_agentic_rag_after_empty_sql():
+    """Empty SQL paths should fall back to the guarded agentic RAG retriever."""
+
+    captured_format = {}
+
+    async def fake_format(**kwargs):
+        captured_format.update(kwargs)
+        return {"content": "RAG found printer ink.", "confidence": 0.88}
+
+    rag_agent = MagicMock()
+    rag_agent.process = AsyncMock(
+        return_value={
+            "success": True,
+            "results": [
+                {
+                    "vendor": "Acme Office",
+                    "description": "Printer ink",
+                    "result_type": "item_vector",
+                }
+            ],
+            "source": "agentic_rag",
+            "retrieval_plan": {"branches": ["invoice_vector", "item_vector", "keyword"]},
+            "checks": {"approved_data_only": True, "uses_pending_uploads": False},
+        }
+    )
+
+    with patch("langchain_app.invoice_query_workflow.convert_to_sql") as mock_convert, \
+         patch("langchain_app.invoice_query_workflow.execute_query") as mock_execute, \
+         patch("langchain_app.invoice_query_workflow.InvoiceRAGAgent", return_value=rag_agent), \
+         patch("langchain_app.invoice_query_workflow.format_query_response", side_effect=fake_format):
+        mock_convert.side_effect = [
+            {"sql_query": "SELECT * FROM invoices WHERE user_id = :user_id"},
+            {"sql_query": "SELECT * FROM items WHERE user_id = :user_id"},
+        ]
+        mock_execute.return_value = {"success": True, "results": [], "row_count": 0}
+
+        result = await process_invoice_query(
+            "Find printing expenses",
+            user_id="7",
+            db_session=MagicMock(),
+        )
+
+    assert result["content"] == "RAG found printer ink."
+    assert captured_format["source"] == "agentic_rag"
+    assert captured_format["results"][0]["description"] == "Printer ink"
+    assert result["metadata"]["source"] == "agentic_rag"
+    assert result["metadata"]["retrieval_checks"]["approved_data_only"] is True
+
+
+@pytest.mark.asyncio
 async def test_convert_to_sql_ignores_readonly_debug_log():
     """Debug SQL logging must not break query conversion on Vercel."""
 
