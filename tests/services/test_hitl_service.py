@@ -1,5 +1,6 @@
 """Tests for WhatsApp human-in-the-loop approval commands."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -199,7 +200,110 @@ async def test_confirm_delete_executes_with_confirmation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_approve_pending_extraction_downloads_and_reprocesses(monkeypatch):
+async def test_approve_pending_extraction_uses_cached_payload_for_stored_file(monkeypatch):
+    captured = {}
+
+    class FakeStorage:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+        def download_file(self, file_key):
+            raise AssertionError("cached approval must not download or re-run vision")
+
+    class FakeStorageAgent:
+        async def process(self, agent_input, context):
+            captured["payload"] = json.loads(agent_input.content)
+            captured["metadata"] = agent_input.metadata
+            captured["user_id"] = context.user_id
+
+            class Output:
+                status = "success"
+                error = None
+                content = {
+                    "status": "success",
+                    "invoice_id": "101",
+                    "item_ids": ["1", "2"],
+                    "media_id": "77",
+                }
+
+            return Output()
+
+    async def fail_process_invoice_file(*_args, **_kwargs):
+        raise AssertionError("cached approval must not call process_invoice_file")
+
+    marked = []
+
+    monkeypatch.setattr(hitl_service, "SupabaseStorageHandler", FakeStorage)
+    monkeypatch.setattr("agents.database_storage_agent.DatabaseStorageAgent", FakeStorageAgent)
+    monkeypatch.setattr(file_processing_workflow, "process_invoice_file", fail_process_invoice_file)
+    monkeypatch.setattr(
+        hitl_service,
+        "_mark_media_approved_from_cache",
+        lambda user_id, media_id: marked.append((user_id, media_id)),
+    )
+    monkeypatch.setattr(
+        hitl_service,
+        "_load_user_media",
+        lambda user_id, media_id: {
+            "status": "success",
+            "media_id": media_id,
+            "invoice_id": None,
+            "filename": "receipt.jpg",
+            "original_filename": "receipt.jpg",
+            "file_path": "users/1/invoices/aa/checksum",
+            "content_type": "image/jpeg",
+            "content_hash": "checksum",
+            "file_storage": {
+                "bucket": "receipts",
+                "file_key": "users/1/invoices/aa/checksum",
+                "path": "users/1/invoices/aa/checksum",
+                "content_type": "image/jpeg",
+                "original_filename": "receipt.jpg",
+                "checksum_sha256": "checksum",
+                "media_id": "77",
+            },
+            "metadata": {
+                "pending_extraction_result": {
+                    "data": {
+                        "vendor": {"name": "Office Store"},
+                        "financial": {"total": 100, "currency": "INR"},
+                        "items": [{"description": "Paper", "total_price": 100}],
+                    },
+                    "metadata": {
+                        "checksum_sha256": "checksum",
+                        "file_storage": {
+                            "bucket": "receipts",
+                            "file_key": "users/1/invoices/aa/checksum",
+                            "path": "users/1/invoices/aa/checksum",
+                            "content_type": "image/jpeg",
+                            "original_filename": "receipt.jpg",
+                            "checksum_sha256": "checksum",
+                            "media_id": "77",
+                        },
+                        "file_metadata": {
+                            "checksum_sha256": "checksum",
+                            "original_filename": "receipt.jpg",
+                            "content_type": "image/jpeg",
+                        },
+                    },
+                }
+            },
+        },
+    )
+
+    result = await hitl_service.approve_pending_extraction("1", 77)
+
+    assert result["metadata"]["hitl_status"] == "confirmed"
+    assert result["metadata"]["stored_from_pending_extraction"] is True
+    assert result["metadata"]["approved_from_cache"] is True
+    assert captured["payload"]["metadata"]["approved_from_cache"] is True
+    assert captured["metadata"]["hitl_confirmed"] is True
+    assert captured["user_id"] == "1"
+    assert marked == [("1", "77")]
+
+
+@pytest.mark.asyncio
+async def test_approve_pending_extraction_reprocesses_when_cache_is_missing(monkeypatch):
     class FakeStorage:
         def __init__(self, bucket_name=None):
             self.bucket_name = bucket_name
@@ -267,8 +371,84 @@ async def test_approve_pending_extraction_downloads_and_reprocesses(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_approve_pending_extraction_reprocesses_when_cache_hash_mismatches(monkeypatch):
+    downloads = []
+    processed = []
+
+    class FakeStorage:
+        def __init__(self, bucket_name=None):
+            self.bucket_name = bucket_name
+
+        def download_file(self, file_key):
+            downloads.append(file_key)
+            return b"receipt-image"
+
+    async def fake_process_invoice_file(
+        file_path,
+        file_type,
+        file_name,
+        user_id,
+        conversation_history,
+        validation_result=None,
+        file_metadata=None,
+        hitl_confirmed=False,
+    ):
+        processed.append(file_metadata)
+        return {
+            "content": "✅ *Document Saved*",
+            "metadata": {"stored_in_database": True, "invoice_id": "101"},
+            "confidence": 0.85,
+        }
+
+    monkeypatch.setattr(hitl_service, "SupabaseStorageHandler", FakeStorage)
+    monkeypatch.setattr(
+        hitl_service,
+        "_load_user_media",
+        lambda user_id, media_id: {
+            "status": "success",
+            "media_id": media_id,
+            "invoice_id": None,
+            "filename": "receipt.jpg",
+            "original_filename": "receipt.jpg",
+            "file_path": "users/1/invoices/aa/checksum",
+            "content_type": "image/jpeg",
+            "content_hash": "checksum",
+            "file_storage": {
+                "bucket": "receipts",
+                "file_key": "users/1/invoices/aa/checksum",
+                "content_type": "image/jpeg",
+                "media_id": "77",
+            },
+            "metadata": {
+                "pending_extraction_result": {
+                    "data": {"vendor": {"name": "Old vendor"}},
+                    "metadata": {
+                        "checksum_sha256": "oldchecksum",
+                        "file_storage": {
+                            "file_key": "users/1/invoices/aa/checksum",
+                            "media_id": "77",
+                        },
+                    },
+                }
+            },
+        },
+    )
+    monkeypatch.setattr(file_processing_workflow, "detect_file_type", lambda *args: "image")
+    monkeypatch.setattr(file_processing_workflow, "process_invoice_file", fake_process_invoice_file)
+
+    result = await hitl_service.approve_pending_extraction("1", 77)
+
+    assert downloads == ["users/1/invoices/aa/checksum"]
+    assert len(processed) == 1
+    assert result["metadata"]["hitl_status"] == "confirmed"
+    assert result["metadata"]["approved_media_id"] == "77"
+    assert "approved_from_cache" not in result["metadata"]
+
+
+@pytest.mark.asyncio
 async def test_approve_pending_extraction_uses_metadata_payload_when_file_is_not_stored(monkeypatch):
     captured = {}
+    marked = []
 
     class FakeStorage:
         def __init__(self, bucket_name=None):
@@ -297,6 +477,11 @@ async def test_approve_pending_extraction_uses_metadata_payload_when_file_is_not
 
     monkeypatch.setattr(hitl_service, "SupabaseStorageHandler", FakeStorage)
     monkeypatch.setattr("agents.database_storage_agent.DatabaseStorageAgent", FakeStorageAgent)
+    monkeypatch.setattr(
+        hitl_service,
+        "_mark_media_approved_from_cache",
+        lambda user_id, media_id: marked.append((user_id, media_id)),
+    )
     monkeypatch.setattr(
         hitl_service,
         "_load_user_media",
@@ -343,13 +528,16 @@ async def test_approve_pending_extraction_uses_metadata_payload_when_file_is_not
 
     assert result["metadata"]["hitl_status"] == "confirmed"
     assert result["metadata"]["stored_from_pending_extraction"] is True
+    assert result["metadata"]["approved_from_cache"] is True
     assert result["metadata"]["invoice_id"] == "101"
     assert "Document Saved" in result["content"]
     assert "*Upload:* #77" in result["content"]
     assert "*Status:* Analytics updated." in result["content"]
     assert '"hitl_confirmed": true' in captured["payload"]
+    assert '"approved_from_cache": true' in captured["payload"]
     assert captured["metadata"]["hitl_confirmed"] is True
     assert captured["user_id"] == "1"
+    assert marked == [("1", "77")]
 
 
 @pytest.mark.asyncio
