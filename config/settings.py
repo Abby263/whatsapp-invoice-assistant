@@ -67,6 +67,9 @@ class AppSettings(BaseSettings):
     twilio_text_final_reply_enabled: bool = Field(
         default=True, alias="TWILIO_TEXT_FINAL_REPLY_ENABLED"
     )
+    twilio_text_router_timeout_seconds: float = Field(
+        default=1.5, alias="TWILIO_TEXT_ROUTER_TIMEOUT_SECONDS"
+    )
 
     clerk_publishable_key: Optional[str] = Field(
         default=None, alias="CLERK_PUBLISHABLE_KEY"

@@ -80,6 +80,7 @@ TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED=true
 TWILIO_MEDIA_FINAL_REPLY_ENABLED=true
 TWILIO_TEXT_ACK_ENABLED=true
 TWILIO_TEXT_FINAL_REPLY_ENABLED=true
+TWILIO_TEXT_ROUTER_TIMEOUT_SECONDS=1.5
 
 HITL_CONFIRMATION_REQUIRED=true
 CLERK_STEP_UP_MAX_AGE_SECONDS=300
@@ -117,6 +118,7 @@ Notes:
 - `TWILIO_MEDIA_FINAL_REPLY_ENABLED` sends the final media processing summary as an outbound Twilio message, which is more reliable than waiting for a long-running webhook response.
 - `TWILIO_TEXT_ACK_ENABLED` sends an immediate "message received" acknowledgement for slower text requests before agent, SQL, or RAG work starts.
 - `TWILIO_TEXT_FINAL_REPLY_ENABLED` sends the final text answer as an outbound WhatsApp message after an early acknowledgement or queued job.
+- `TWILIO_TEXT_ROUTER_TIMEOUT_SECONDS` gives the text intent router a short budget before falling back to acknowledgement-first processing. This keeps casual greetings/general messages from getting unnecessary processing acknowledgements without blocking slow business queries.
 - `HITL_CONFIRMATION_REQUIRED=true` keeps extracted receipt rows out of `invoices`, `items`, and embeddings until the user replies on WhatsApp with `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Delete requests require exact `CONFIRM DELETE ...` commands.
 - `CLERK_STEP_UP_MAX_AGE_SECONDS` controls how fresh the Clerk session token must be before optional browser approval can finalize a pending upload.
 - `CONVERSATION_MEMORY_WINDOW_MESSAGES` controls how many recent user/assistant messages are passed back into the agent for multi-turn context.

@@ -6,6 +6,7 @@ agent workflows, handling request parsing and response formatting.
 """
 
 import logging
+import asyncio
 import os
 import hashlib
 import io
@@ -20,7 +21,10 @@ import mimetypes
 import httpx
 from sqlalchemy.orm import Session
 
-from workflows.text_processing_workflow import process_text_message as process_text
+from workflows.text_processing_workflow import (
+    classify_intent,
+    process_text_message as process_text,
+)
 from workflows.file_processing_workflow import process_file_message as process_file
 from workflows.state import IntentType
 from constants.fallback_messages import GENERAL_FALLBACKS, STORAGE_FALLBACKS
@@ -48,7 +52,11 @@ from services.rate_limit_service import (
 )
 from services.hitl_service import parse_hitl_command
 from services.twilio_messaging import send_processing_ack, send_whatsapp_message
-from services.whatsapp_copy import build_help_message, is_help_message, is_status_message
+from services.whatsapp_copy import (
+    build_help_message,
+    is_help_message,
+    is_status_message,
+)
 from schemas.llm_outputs import is_ledger_document
 from utils import observability
 from utils.phone_numbers import normalize_whatsapp_number
@@ -78,6 +86,18 @@ MEDIA_CONTENT_TYPE_EXTENSIONS = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
 
+FAST_TEXT_INTENTS = {
+    IntentType.GREETING.value,
+    IntentType.GENERAL.value,
+    IntentType.HELP.value,
+}
+
+SLOW_TEXT_INTENTS = {
+    IntentType.INVOICE_QUERY.value,
+    IntentType.INVOICE_CREATOR.value,
+    IntentType.CREATE_INVOICE.value,
+}
+
 
 async def process_text_message(
     message: str,
@@ -88,6 +108,7 @@ async def process_text_message(
     db_session: Optional[Session] = None,
     whatsapp_message_sid: Optional[str] = None,
     conversation_history_trusted: bool = False,
+    preclassified_intent: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Process a text message through the text processing workflow.
@@ -149,11 +170,14 @@ async def process_text_message(
         )
 
         # Process the text message through the specialized workflow
-        result = await process_text(
-            text_content=message,
-            user_id=user_id,
-            conversation_history=active_history or [],
-        )
+        process_kwargs = {
+            "text_content": message,
+            "user_id": user_id,
+            "conversation_history": active_history or [],
+        }
+        if preclassified_intent:
+            process_kwargs["preclassified_intent"] = preclassified_intent
+        result = await process_text(**process_kwargs)
 
         # Update the result processing to handle cases where content is missing.
         # AgentOutput dictionaries include ``error: None`` on successful local
@@ -434,11 +458,15 @@ async def _process_claimed_whatsapp_message(
 
         skip_processing_ack = _truthy_payload_flag(message_data, "SkipProcessingAck")
         force_text_final_reply = _truthy_payload_flag(message_data, "SendFinalReply")
+        routed_text_intent = _normalize_text_intent(message_data.get("RoutedIntent"))
 
         if has_text and is_help_message(message_text):
             result = _deterministic_help_result(sender)
             _mark_webhook_event_processed(message_sid, result)
             return result
+
+        if has_text and routed_text_intent is None and not skip_processing_ack:
+            routed_text_intent = await _route_text_intent_for_ack(message_text)
 
         if has_media and not skip_processing_ack:
             send_processing_ack(
@@ -452,7 +480,7 @@ async def _process_claimed_whatsapp_message(
         elif (
             has_text
             and not skip_processing_ack
-            and _should_send_text_processing_ack(message_text)
+            and _should_send_text_processing_ack(message_text, routed_text_intent)
         ):
             text_ack_sent = send_processing_ack(
                 to_number=sender,
@@ -465,12 +493,17 @@ async def _process_claimed_whatsapp_message(
         user_id = extract_user_id_from_sender(sender)
         observability.bind_context(user_id=user_id)
 
-        if has_text and allow_queue and _should_queue_text_message(message_text):
+        if (
+            has_text
+            and allow_queue
+            and _should_queue_text_message(message_text, routed_text_intent)
+        ):
             queued_result = _enqueue_text_message_job(
                 message_data=message_data,
                 message_sid=message_sid,
                 user_id=user_id,
                 ack_sent=text_ack_sent,
+                routed_intent=routed_text_intent,
             )
             if queued_result is not None:
                 _mark_webhook_event_processed(message_sid, queued_result)
@@ -515,6 +548,7 @@ async def _process_claimed_whatsapp_message(
                 user_id,
                 whatsapp_message_sid=message_sid,
                 conversation_history_trusted=True,
+                preclassified_intent=routed_text_intent,
             )
             text_final_outbound = text_ack_sent or force_text_final_reply
             if text_ack_sent:
@@ -747,13 +781,60 @@ def _deterministic_help_result(sender: str) -> Dict[str, Any]:
     }
 
 
-def _should_queue_text_message(message_text: str) -> bool:
+def _normalize_text_intent(intent: Any) -> Optional[str]:
+    if isinstance(intent, IntentType):
+        return intent.value
+    if intent in (None, ""):
+        return None
+    value = str(intent).strip().lower()
+    if not value:
+        return None
+    try:
+        return IntentType(value).value
+    except ValueError:
+        return value
+
+
+async def _route_text_intent_for_ack(message_text: str) -> Optional[str]:
+    text = (message_text or "").strip()
+    if not text:
+        return None
+    if is_help_message(text) or is_status_message(text) or parse_hitl_command(text):
+        return None
+
+    timeout_seconds = max(0.1, float(get_settings().twilio_text_router_timeout_seconds))
+    try:
+        intent = await asyncio.wait_for(
+            classify_intent(text, conversation_history=[]),
+            timeout=timeout_seconds,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "WhatsApp text router timed out after %.2fs; using ack-first fallback",
+            timeout_seconds,
+        )
+        return None
+    except Exception as exc:
+        logger.warning("WhatsApp text router failed; using ack-first fallback: %s", exc)
+        return None
+    return _normalize_text_intent(intent)
+
+
+def _should_queue_text_message(
+    message_text: str, routed_intent: Optional[str] = None
+) -> bool:
     text = (message_text or "").strip()
     if not queue_enabled_for_text_message(text):
         return False
     if is_help_message(text) or is_status_message(text):
         return False
     if parse_hitl_command(text):
+        return False
+    if routed_intent in FAST_TEXT_INTENTS:
+        return False
+    if routed_intent in SLOW_TEXT_INTENTS:
+        return True
+    if routed_intent:
         return False
     return True
 
@@ -764,16 +845,21 @@ def _enqueue_text_message_job(
     message_sid: Optional[str],
     user_id: Optional[Union[str, UUID]],
     ack_sent: bool,
+    routed_intent: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
+    payload = {
+        **message_data,
+        "RequestId": observability.current_context().get("request_id"),
+        "SkipProcessingAck": True,
+        "SendFinalReply": True,
+    }
+    if routed_intent:
+        payload["RoutedIntent"] = routed_intent
+
     try:
         job = enqueue_job(
             JOB_TYPE_TWILIO_TEXT_MESSAGE,
-            {
-                **message_data,
-                "RequestId": observability.current_context().get("request_id"),
-                "SkipProcessingAck": True,
-                "SendFinalReply": True,
-            },
+            payload,
             user_id=user_id,
             idempotency_key=f"twilio:{message_sid}:text" if message_sid else None,
         )
@@ -1262,7 +1348,9 @@ def _send_media_final_reply(
     )
 
 
-def _should_send_text_processing_ack(message_text: str) -> bool:
+def _should_send_text_processing_ack(
+    message_text: str, routed_intent: Optional[str] = None
+) -> bool:
     """Return whether a text message should use ack-first processing."""
 
     text = (message_text or "").strip()
@@ -1272,6 +1360,12 @@ def _should_send_text_processing_ack(message_text: str) -> bool:
     if not settings.twilio_text_ack_enabled:
         return False
     if is_help_message(text) or is_status_message(text):
+        return False
+    if routed_intent in FAST_TEXT_INTENTS:
+        return False
+    if routed_intent in SLOW_TEXT_INTENTS:
+        return True
+    if routed_intent:
         return False
     return True
 
