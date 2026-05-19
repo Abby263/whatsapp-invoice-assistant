@@ -3,14 +3,14 @@ Tests for the FileValidatorAgent.
 """
 
 import pytest
-import os
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from agents.file_validator import FileValidatorAgent
+from constants.llm_configs import Models, TokenLimits
 from services.llm_factory import LLMFactory
 from utils.base_agent import AgentInput, AgentContext
-from langchain_app.state import InputType
 
 # Import test data paths
 from tests.fixtures.test_data import (
@@ -35,6 +35,55 @@ def test_init_file_validator(llm_factory):
     agent = FileValidatorAgent(llm_factory=llm_factory)
     assert agent is not None
     assert isinstance(agent.llm_factory, LLMFactory)
+
+
+@pytest.mark.asyncio
+async def test_image_validation_uses_gpt5_token_parameter(monkeypatch, llm_factory):
+    """Image validation should use the shared OpenAI helper for GPT-5 token params."""
+    llm_factory.config["model"] = Models.GPT_5_4_MINI
+    agent = FileValidatorAgent(llm_factory=llm_factory)
+
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps(
+        {
+            "is_valid_invoice": True,
+            "confidence_score": 0.91,
+            "missing_elements": [],
+            "reasons": "Looks like a receipt",
+        }
+    )
+    mock_response.choices = [mock_choice]
+    mock_client.chat.completions.create.return_value = mock_response
+
+    monkeypatch.setattr(
+        llm_factory,
+        "_create_openai_instance",
+        lambda config: mock_client,
+    )
+    monkeypatch.setattr(
+        llm_factory,
+        "load_prompt_template",
+        lambda name: "Validate this image",
+    )
+
+    result = await agent.process(
+        AgentInput(
+            content=b"not-a-real-image-but-llm-is-mocked",
+            file_path="receipt.jpg",
+            file_name="receipt.jpg",
+            content_type="image/jpeg",
+        ),
+        AgentContext(),
+    )
+
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert result.content is True
+    assert call_kwargs["model"] == Models.GPT_5_4_MINI
+    assert call_kwargs["max_completion_tokens"] == TokenLimits.MAX_OUTPUT_TOKENS_SHORT
+    assert "max_tokens" not in call_kwargs
+
 
 @pytest.mark.asyncio
 async def test_validate_valid_invoice_image(file_validator):
@@ -185,4 +234,4 @@ async def test_invalid_llm_response(llm_factory, monkeypatch):
     assert result.status == "invalid_invoice"
     
     # Log the result for verification
-    print(f"Invalid response result: {result}") 
+    print(f"Invalid response result: {result}")

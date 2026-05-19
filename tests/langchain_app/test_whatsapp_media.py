@@ -40,6 +40,56 @@ def _image_bytes(image_format: str = "PNG") -> bytes:
 
 
 @pytest.mark.asyncio
+async def test_process_whatsapp_media_sends_ack_before_user_lookup(monkeypatch):
+    _FakeAsyncClient.payloads = {
+        "https://api.twilio.com/media/receipt": b"receipt-image",
+    }
+    events = []
+
+    def fake_send_processing_ack(**kwargs):
+        events.append("ack")
+        return True
+
+    def fake_extract_user_id_from_sender(sender):
+        events.append("user_lookup")
+        return "1"
+
+    async def fake_load_conversation_history(user_id):
+        events.append("history")
+        return []
+
+    async def fake_process_file_message(*args, **kwargs):
+        events.append("process_file")
+        return {
+            "status": "success",
+            "message": "saved",
+            "metadata": {"stored_in_database": True, "invoice_id": "1"},
+        }
+
+    monkeypatch.setattr(api.httpx, "AsyncClient", _FakeAsyncClient, raising=False)
+    monkeypatch.setattr(api, "send_processing_ack", fake_send_processing_ack)
+    monkeypatch.setattr(api, "extract_user_id_from_sender", fake_extract_user_id_from_sender)
+    monkeypatch.setattr(api, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(api, "process_file_message", fake_process_file_message)
+    monkeypatch.setenv("TWILIO_MEDIA_FINAL_REPLY_ENABLED", "false")
+
+    result = await api.process_whatsapp_message(
+        {
+            "From": "whatsapp:+15551234567",
+            "To": "whatsapp:+16473628073",
+            "NumMedia": "1",
+            "MessageSid": "SM123",
+            "MediaUrl0": "https://api.twilio.com/media/receipt",
+            "MediaContentType0": "image/jpeg",
+        }
+    )
+
+    assert result["status"] == "success"
+    assert events[:3] == ["ack", "user_lookup", "history"]
+    assert events.index("ack") < events.index("process_file")
+
+
+@pytest.mark.asyncio
 async def test_process_whatsapp_message_handles_multiple_media_and_batch_duplicates(monkeypatch):
     _FakeAsyncClient.payloads = {
         "https://api.twilio.com/media/one": b"same-image",
