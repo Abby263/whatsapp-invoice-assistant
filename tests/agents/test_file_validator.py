@@ -18,6 +18,18 @@ from tests.fixtures.test_data import (
     INVALID_INVOICE_PATH
 )
 
+
+def _digital_pdf_bytes(text: str = "Acme Supplies Invoice Total 123.45 INR") -> bytes:
+    import fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text, fontsize=12)
+    data = document.tobytes()
+    document.close()
+    return data
+
+
 @pytest.fixture
 def llm_factory():
     """Create a real LLM factory instance for testing."""
@@ -176,6 +188,41 @@ async def test_process_unsupported_file_type(file_validator):
     
     # Log the result for verification
     print(f"Unsupported file type result: {result}")
+
+
+@pytest.mark.asyncio
+async def test_validate_digital_pdf_uses_text_layer_not_placeholder(llm_factory, monkeypatch):
+    """PDF validation should inspect extracted PDF text when a text layer exists."""
+
+    captured = {}
+
+    async def mock_validate_invoice_file(content):
+        captured["content"] = content
+        return json.dumps({
+            "is_valid_invoice": True,
+            "confidence_score": 0.9,
+            "missing_elements": [],
+            "reasons": "Digital PDF invoice text found",
+        })
+
+    monkeypatch.setattr(llm_factory, "validate_invoice_file", mock_validate_invoice_file)
+    agent = FileValidatorAgent(llm_factory=llm_factory)
+
+    result = await agent.process(
+        AgentInput(
+            content=_digital_pdf_bytes(),
+            file_path="digital_invoice.pdf",
+            file_name="digital_invoice.pdf",
+            content_type="application/pdf",
+        ),
+        AgentContext(),
+    )
+
+    assert result.status == "success"
+    assert result.content is True
+    assert "PDF text layer" in captured["content"]
+    assert "Acme Supplies" in captured["content"]
+    assert "Binary file:" not in captured["content"]
 
 @pytest.mark.asyncio
 async def test_error_handling(llm_factory, monkeypatch):

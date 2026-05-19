@@ -329,6 +329,7 @@ make test                # Run the pytest suite
 - [docs/TECH_STACK.md](docs/TECH_STACK.md): Current runtime stack and repository map.
 - [docs/PRODUCTION_BACKLOG.md](docs/PRODUCTION_BACKLOG.md): Next production hardening items.
 - [docs/WHATSAPP_UX.md](docs/WHATSAPP_UX.md): WhatsApp chat UX improvement plan.
+- [docs/OCR_IMPROVEMENTS.md](docs/OCR_IMPROVEMENTS.md): OCR, PDF ingestion, and extraction quality roadmap.
 - [CONTRIBUTING.md](CONTRIBUTING.md): Contribution workflow.
 
 ## License

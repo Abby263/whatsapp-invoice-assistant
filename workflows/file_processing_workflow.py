@@ -768,6 +768,11 @@ def _mark_media_awaiting_approval(
         "processing_status": "awaiting_human_confirmation",
         "pending_extraction_summary": _pending_extraction_summary(extraction_result),
         "pending_extraction_result": _pending_extraction_payload(extraction_result),
+        "ingest_kind": metadata.get("ingest_kind"),
+        "page_count": metadata.get("page_count"),
+        "pages_processed": metadata.get("pages_processed"),
+        "pdf_pages_processed": metadata.get("pdf_pages_processed"),
+        "ocr_sources": metadata.get("ocr_sources"),
         "extraction_quality": (
             extraction_result.get("data", {}).get("extraction_quality")
             if isinstance(extraction_result.get("data"), dict)
@@ -907,6 +912,11 @@ def _pending_extraction_summary(extraction_result: Dict[str, Any]) -> Dict[str, 
     """Store a compact review summary without finalizing analytics rows."""
 
     data = extraction_result.get("data") if isinstance(extraction_result, dict) else {}
+    metadata = (
+        extraction_result.get("metadata")
+        if isinstance(extraction_result.get("metadata"), dict)
+        else {}
+    )
     fields = _document_response_fields(data if isinstance(data, dict) else {})
     items = [item for item in fields["items"] if isinstance(item, dict)]
     return {
@@ -920,6 +930,10 @@ def _pending_extraction_summary(extraction_result: Dict[str, Any]) -> Dict[str, 
         "needs_review": bool(
             (fields.get("extraction_quality") or {}).get("needs_review")
         ),
+        "ingest_kind": metadata.get("ingest_kind"),
+        "page_count": metadata.get("page_count"),
+        "pages_processed": metadata.get("pages_processed"),
+        "pdf_pages_processed": metadata.get("pdf_pages_processed"),
         "sample_items": [
             _format_item_line(item, fields["currency"], fields["is_ledger"])
             for item in items[:4]
@@ -1465,6 +1479,12 @@ async def format_extraction_response(
             f"*{item_label_title}:* {len(items)} extracted",
         ]
     )
+    pages_processed = metadata.get("pdf_pages_processed") or metadata.get(
+        "pages_processed"
+    )
+    page_count = metadata.get("page_count")
+    if pages_processed and page_count:
+        lines.append(f"*Pages read:* {pages_processed}/{page_count}")
     if quality_summary:
         lines.append(f"*Quality:* {quality_summary}")
     if fields["invoice_number"]:

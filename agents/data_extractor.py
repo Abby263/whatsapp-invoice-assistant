@@ -9,11 +9,49 @@ from utils.base_agent import BaseAgent, AgentInput, AgentOutput, AgentContext
 from services.llm_factory import LLMFactory
 from constants.prompt_mappings import AgentType
 from schemas.llm_outputs import is_ledger_document, normalize_document_extraction
+from utils.document_ingest import (
+    IngestedDocument,
+    IngestedPage,
+    format_pdf_text_for_llm,
+    ingest_document,
+)
 from utils.extraction_checks import apply_extraction_checks
 from utils.image_preprocess import preprocess_image_bytes
 
 # Configure logger for this module
 logger = logging.getLogger(__name__)
+
+
+def _ingest_metadata(document: IngestedDocument) -> Dict[str, Any]:
+    metadata = {
+        "ingest_kind": document.kind,
+        "page_count": document.page_count,
+        "pages_processed": document.pages_processed,
+    }
+    metadata.update(document.metadata or {})
+    if document.kind in {"digital_pdf", "scanned_pdf"}:
+        metadata["pdf_pages_processed"] = document.pages_processed
+    return metadata
+
+
+def _image_page_payload(page: IngestedPage) -> Dict[str, Any]:
+    image_content = page.image_bytes or b""
+    preprocessed_image = preprocess_image_bytes(image_content, page.mime_type)
+    base64_image = base64.b64encode(preprocessed_image.content).decode("utf-8")
+    logger.info(
+        "Prepared page %s image for extraction: %s bytes, %s, %s",
+        page.page_number,
+        len(preprocessed_image.content),
+        preprocessed_image.dimensions,
+        preprocessed_image.mime_type,
+    )
+    return {
+        "page_number": page.page_number,
+        "type": "image",
+        "content": base64_image,
+        "mime_type": preprocessed_image.mime_type,
+        "dimensions": preprocessed_image.dimensions,
+    }
 
 
 class DataExtractorAgent(BaseAgent):
@@ -60,6 +98,8 @@ class DataExtractorAgent(BaseAgent):
             )
             content_type = agent_input.content_type or file_type
             storage_metadata = agent_input.metadata.get("file_storage")
+            file_name = agent_input.file_name or os.path.basename(file_path) or ""
+            ingest_metadata: Dict[str, Any] = {}
 
             # Check if file content is empty
             if not file_content:
@@ -81,83 +121,44 @@ class DataExtractorAgent(BaseAgent):
 
             # For binary content like images, we need special handling
             if isinstance(file_content, bytes):
-                # For images, encode as base64 for vision models
-                if content_type and (
-                    "image" in content_type.lower()
-                    or content_type.lower() in ["png", "jpg", "jpeg"]
-                ):
-                    # Get additional file info
-                    preprocessed_image = preprocess_image_bytes(
-                        file_content, content_type
+                ingested = ingest_document(
+                    file_content,
+                    content_type=content_type,
+                    file_name=file_name or file_path,
+                )
+                ingest_metadata = _ingest_metadata(ingested)
+
+                if ingested.kind == "digital_pdf":
+                    content_for_llm = format_pdf_text_for_llm(
+                        ingested,
+                        file_name=file_name or file_path,
                     )
-                    file_content = preprocessed_image.content
-                    file_size = len(file_content)
-
-                    # Try to get image dimensions if possible
-                    dimensions = preprocessed_image.dimensions
-                    mime_type = preprocessed_image.mime_type
-
-                    if dimensions == "unknown":
-                        try:
-                            from PIL import Image
-                            import io
-
-                            img = Image.open(io.BytesIO(file_content))
-                            dimensions = f"{img.width}x{img.height}"
-                            logger.info(f"Image dimensions: {dimensions}")
-
-                            # Get the actual format from PIL and convert to MIME type
-                            img_format = img.format.lower() if img.format else "jpeg"
-                            if img_format == "jpeg" or img_format == "jpg":
-                                mime_type = "image/jpeg"
-                            elif img_format == "png":
-                                mime_type = "image/png"
-                            elif img_format == "gif":
-                                mime_type = "image/gif"
-                            elif img_format == "webp":
-                                mime_type = "image/webp"
-                            else:
-                                mime_type = f"image/{img_format}"
-
-                            logger.info(
-                                f"Detected image format: {img_format}, using MIME type: {mime_type}"
-                            )
-                        except Exception as e:
-                            logger.warning(
-                                f"Could not determine image dimensions or format: {str(e)}"
-                            )
-
-                            # Try to determine MIME type from content_type if possible
-                            if (
-                                "jpeg" in content_type.lower()
-                                or "jpg" in content_type.lower()
-                            ):
-                                mime_type = "image/jpeg"
-                            elif "png" in content_type.lower():
-                                mime_type = "image/png"
-                            elif "gif" in content_type.lower():
-                                mime_type = "image/gif"
-                            elif "webp" in content_type.lower():
-                                mime_type = "image/webp"
-                    else:
-                        logger.info(
-                            "Preprocessed image for extraction: %s, mime type: %s",
-                            dimensions,
-                            mime_type,
-                        )
-                    # Encode image as base64 for GPT-4o-mini vision processing
-                    base64_image = base64.b64encode(file_content).decode("utf-8")
-                    content_for_llm = {
-                        "type": "image",
-                        "content": base64_image,
-                        "mime_type": mime_type,
-                        "dimensions": dimensions,
-                    }
                     logger.info(
-                        "Prepared image for configured vision model: %s bytes, mime type: %s",
-                        file_size,
-                        mime_type,
+                        "Prepared digital PDF text for extraction: %s chars across %s/%s pages",
+                        len(content_for_llm),
+                        ingested.pages_processed,
+                        ingested.page_count,
                     )
+                elif ingested.kind in {"image", "scanned_pdf"}:
+                    visual_pages = [
+                        _image_page_payload(page)
+                        for page in ingested.pages
+                        if page.image_bytes
+                    ]
+                    if len(visual_pages) == 1:
+                        content_for_llm = visual_pages[0]
+                    elif visual_pages:
+                        content_for_llm = {
+                            "type": "document_images",
+                            "pages": visual_pages,
+                            "page_count": ingested.page_count,
+                            "pages_processed": ingested.pages_processed,
+                        }
+                    else:
+                        content_for_llm = (
+                            f"Unreadable document: {file_path}, type: {content_type}, "
+                            f"size: {len(file_content)} bytes"
+                        )
                 else:
                     # For other binary files, create a descriptive message
                     content_for_llm = f"Binary file: {file_path}, type: {content_type}, size: {len(file_content)} bytes"
@@ -227,6 +228,7 @@ class DataExtractorAgent(BaseAgent):
                 "extraction_status": status,
                 "extraction_confidence": confidence,
             }
+            metadata.update(ingest_metadata)
             if isinstance(normalized_data, dict) and isinstance(
                 normalized_data.get("extraction_quality"), dict
             ):

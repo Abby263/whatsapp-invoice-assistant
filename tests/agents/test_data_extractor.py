@@ -7,6 +7,9 @@ import json
 import logging
 import os
 from pathlib import Path
+from io import BytesIO
+
+from PIL import Image, ImageDraw
 
 from agents.data_extractor import DataExtractorAgent
 from services.llm_factory import LLMFactory
@@ -18,6 +21,36 @@ from tests.fixtures.test_data import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _digital_pdf_bytes(text: str = "Acme Supplies Invoice Total 123.45 INR") -> bytes:
+    import fitz
+
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text, fontsize=12)
+    data = document.tobytes()
+    document.close()
+    return data
+
+
+def _scanned_pdf_bytes(page_count: int = 2) -> bytes:
+    import fitz
+
+    image = Image.new("RGB", (480, 240), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((40, 80), "Receipt scan page", fill="black")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    image_bytes = output.getvalue()
+
+    document = fitz.open()
+    for _ in range(page_count):
+        page = document.new_page(width=480, height=240)
+        page.insert_image(page.rect, stream=image_bytes)
+    data = document.tobytes()
+    document.close()
+    return data
 
 @pytest.fixture
 def llm_factory():
@@ -225,6 +258,82 @@ async def test_handle_different_file_types(data_extractor_agent, monkeypatch):
         assert result.metadata["file_type"] == file_type
         
         logger.info(f"Processed {file_type} file, vendor: {result.content.get('vendor')}")
+
+
+@pytest.mark.asyncio
+async def test_extract_digital_pdf_uses_text_layer_not_placeholder(data_extractor_agent, monkeypatch):
+    """Digital PDFs should send extracted text to the LLM, not a binary placeholder."""
+
+    captured = {}
+
+    async def mock_extract_invoice_data(content, *args, **kwargs):
+        captured["content"] = content
+        return json.dumps({
+            "vendor": "Acme Supplies",
+            "date": "2026-05-19",
+            "total_amount": 123.45,
+            "currency": "INR",
+            "invoice_number": "PDF-1",
+            "items": [],
+        })
+
+    monkeypatch.setattr(data_extractor_agent.llm_factory, "extract_invoice_data", mock_extract_invoice_data)
+
+    result = await data_extractor_agent.process(
+        AgentInput(
+            content=_digital_pdf_bytes(),
+            file_path="digital_invoice.pdf",
+            file_name="digital_invoice.pdf",
+            content_type="application/pdf",
+            metadata={"input_type": "pdf"},
+        )
+    )
+
+    assert result.status == "success"
+    assert isinstance(captured["content"], str)
+    assert "PDF text layer" in captured["content"]
+    assert "Acme Supplies" in captured["content"]
+    assert "Binary file:" not in captured["content"]
+    assert result.metadata["ingest_kind"] == "digital_pdf"
+    assert result.metadata["pdf_pages_processed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_extract_scanned_pdf_uses_rendered_page_images(data_extractor_agent, monkeypatch):
+    """Scanned PDFs should render pages and pass visual page payloads to extraction."""
+
+    captured = {}
+
+    async def mock_extract_invoice_data(content, *args, **kwargs):
+        captured["content"] = content
+        return json.dumps({
+            "vendor": "Scanned Vendor",
+            "date": "2026-05-19",
+            "total_amount": 75.0,
+            "currency": "INR",
+            "invoice_number": "SCAN-1",
+            "items": [],
+        })
+
+    monkeypatch.setattr(data_extractor_agent.llm_factory, "extract_invoice_data", mock_extract_invoice_data)
+
+    result = await data_extractor_agent.process(
+        AgentInput(
+            content=_scanned_pdf_bytes(page_count=2),
+            file_path="scanned_invoice.pdf",
+            file_name="scanned_invoice.pdf",
+            content_type="application/pdf",
+            metadata={"input_type": "pdf"},
+        )
+    )
+
+    assert result.status == "success"
+    assert captured["content"]["type"] == "document_images"
+    assert len(captured["content"]["pages"]) == 2
+    assert captured["content"]["pages"][0]["mime_type"] == "image/jpeg"
+    assert captured["content"]["pages"][0]["content"]
+    assert result.metadata["ingest_kind"] == "scanned_pdf"
+    assert result.metadata["pdf_pages_processed"] == 2
 
 @pytest.mark.asyncio
 async def test_handle_missing_file(data_extractor_agent):
