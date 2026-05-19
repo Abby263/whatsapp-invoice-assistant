@@ -202,12 +202,12 @@ def test_twilio_webhook_hides_internal_exception_details(monkeypatch):
     assert response.headers["X-Request-ID"]
 
 
-def test_twilio_webhook_hey_returns_help_without_user_lookup(monkeypatch):
+def test_twilio_webhook_help_returns_menu_without_user_lookup(monkeypatch):
     def fail_user_lookup(sender):
-        raise AssertionError("greeting webhook should not wait on user lookup")
+        raise AssertionError("help webhook should not wait on user lookup")
 
     def fail_enqueue(*args, **kwargs):
-        raise AssertionError("greeting webhook should not be queued")
+        raise AssertionError("help webhook should not be queued")
 
     monkeypatch.setenv("TWILIO_VALIDATE_REQUESTS", "false")
     monkeypatch.setenv("ASYNC_WORK_QUEUE_ENABLED", "true")
@@ -222,9 +222,9 @@ def test_twilio_webhook_hey_returns_help_without_user_lookup(monkeypatch):
         data={
             "From": "whatsapp:+15551234567",
             "To": "whatsapp:+16473628073",
-            "Body": "Hey",
+            "Body": "help",
             "NumMedia": "0",
-            "MessageSid": "SM-hey-fast",
+            "MessageSid": "SM-help-fast",
         },
     )
 

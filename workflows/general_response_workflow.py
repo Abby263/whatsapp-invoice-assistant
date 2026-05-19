@@ -13,6 +13,7 @@ from agents.response_formatter import ResponseFormatterAgent
 from services.llm_factory import LLMFactory
 from workflows.state import IntentType as StateIntentType
 from constants.fallback_messages import get_intent_fallback, GENERAL_FALLBACKS
+from services.whatsapp_copy import build_greeting_message
 
 logger = logging.getLogger(__name__)
 
@@ -119,12 +120,15 @@ async def process_greeting(
     Returns:
         Dict containing the formatted greeting response and confidence
     """
-    return await process_general_response(
-        text_content,
-        intent=StateIntentType.GREETING.value,
-        user_id=user_id,
-        conversation_history=conversation_history
-    )
+    return {
+        "content": build_greeting_message(),
+        "confidence": 0.95,
+        "metadata": {
+            "intent": StateIntentType.GREETING.value,
+            "user_id": user_id,
+            "source": "deterministic_greeting",
+        },
+    }
 
 
 async def generate_general_response(

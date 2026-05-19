@@ -172,12 +172,12 @@ async def test_process_file_message_ignores_untrusted_supplied_history_for_user(
 
 
 @pytest.mark.asyncio
-async def test_process_whatsapp_message_returns_greeting_content(monkeypatch):
+async def test_process_whatsapp_message_returns_help_command_without_user_lookup(monkeypatch):
     def fail_user_lookup(sender):
-        raise AssertionError("greetings must not wait on user lookup")
+        raise AssertionError("help command must not wait on user lookup")
 
     def fail_enqueue(*args, **kwargs):
-        raise AssertionError("greetings must not be queued")
+        raise AssertionError("help command must not be queued")
 
     monkeypatch.setenv("ASYNC_WORK_QUEUE_ENABLED", "true")
     monkeypatch.setenv("ASYNC_TEXT_QUEUE_ENABLED", "true")
@@ -186,9 +186,9 @@ async def test_process_whatsapp_message_returns_greeting_content(monkeypatch):
 
     result = await api.process_whatsapp_message({
         "From": "whatsapp:+15551234567",
-        "Body": "How are you?",
+        "Body": "help",
         "NumMedia": "0",
-        "MessageSid": "SM_HOW_ARE_YOU",
+        "MessageSid": "SM_HELP_FAST",
     })
 
     assert result["status"] == "success"
