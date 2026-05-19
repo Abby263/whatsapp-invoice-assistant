@@ -610,6 +610,66 @@ def test_supabase_upload_is_idempotent_for_existing_content_addressed_object(mon
     assert result["user_scope_prefix"] == "users/1/invoices"
 
 
+def test_supabase_upload_creates_missing_private_bucket_and_retries(monkeypatch):
+    class _FakeSyncResponse:
+        def __init__(self, status_code=200, text="", payload=None):
+            self.status_code = status_code
+            self.text = text
+            self._payload = payload or {}
+
+        def json(self):
+            return self._payload
+
+    class _FakeSyncClient:
+        requests = []
+        object_attempts = 0
+
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, url, **kwargs):
+            self.__class__.requests.append((url, kwargs))
+            if "/storage/v1/object/sign/" in url:
+                return _FakeSyncResponse(200, payload={"signedURL": "/signed/receipt.jpg"})
+            if url.endswith("/storage/v1/bucket"):
+                return _FakeSyncResponse(200)
+
+            self.__class__.object_attempts += 1
+            if self.__class__.object_attempts == 1:
+                return _FakeSyncResponse(
+                    400,
+                    text='{"statusCode":"404","error":"Bucket not found","message":"Bucket not found"}',
+                )
+            return _FakeSyncResponse(200)
+
+    monkeypatch.setattr("storage.supabase_storage_handler.httpx.Client", _FakeSyncClient)
+
+    handler = SupabaseStorageHandler(
+        supabase_url="https://example.supabase.co",
+        api_key="service-role-key",
+        bucket_name="receipts",
+    )
+
+    result = handler.upload_file(
+        file_content=b"receipt-bytes",
+        file_name="receipt.jpg",
+        user_id=1,
+        content_type="image/jpeg",
+    )
+
+    assert result["bucket"] == "receipts"
+    assert result["url"] == "https://example.supabase.co/signed/receipt.jpg"
+    assert _FakeSyncClient.object_attempts == 2
+    bucket_request = next(request for request in _FakeSyncClient.requests if request[0].endswith("/storage/v1/bucket"))
+    assert bucket_request[1]["json"] == {"id": "receipts", "name": "receipts", "public": False}
+
+
 def test_supabase_user_path_sanitizes_segments():
     handler = SupabaseStorageHandler(
         supabase_url="https://example.supabase.co",

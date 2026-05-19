@@ -127,6 +127,13 @@ class SupabaseStorageHandler:
 
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(url, content=file_bytes, headers=headers)
+            if self._is_missing_bucket_response(response):
+                logger.warning(
+                    "Supabase Storage bucket %s was missing; creating it and retrying upload",
+                    self.bucket_name,
+                )
+                self._create_bucket(client)
+                response = client.post(url, content=file_bytes, headers=headers)
 
         if response.status_code >= 400:
             response_text = response.text or ""
@@ -286,6 +293,34 @@ class SupabaseStorageHandler:
             f"{self.supabase_url}/storage/v1/object/"
             f"{quote(self.bucket_name, safe='')}/{quote(object_path, safe='/')}"
         )
+
+    def _bucket_url(self) -> str:
+        return f"{self.supabase_url}/storage/v1/bucket"
+
+    def _create_bucket(self, client: httpx.Client) -> None:
+        """Create the private storage bucket expected by the app."""
+
+        payload = {
+            "id": self.bucket_name,
+            "name": self.bucket_name,
+            "public": False,
+        }
+        response = client.post(
+            self._bucket_url(),
+            json=payload,
+            headers=self._headers(content_type="application/json"),
+        )
+        if response.status_code in {200, 201, 409}:
+            return
+        raise RuntimeError(
+            f"Supabase Storage bucket creation failed ({response.status_code}): {response.text}"
+        )
+
+    def _is_missing_bucket_response(self, response: httpx.Response) -> bool:
+        if response.status_code not in {400, 404}:
+            return False
+        text = (response.text or "").lower()
+        return "bucket not found" in text
 
     def _sign_url(self, object_path: str) -> str:
         return (
