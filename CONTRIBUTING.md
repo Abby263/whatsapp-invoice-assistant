@@ -88,7 +88,6 @@ Run `make format` to automatically format your code.
 - For testing specific components:
   - `make test-db` for database tests
   - `make test-sql` for SQL generation tests
-  - `make ui-test` for UI tests
 
 ## Documentation
 
@@ -140,4 +139,4 @@ The review process for Pull Requests:
 
 ## License
 
-By contributing to this project, you agree that your contributions will be licensed under the project's license. 
+By contributing to this project, you agree that your contributions will be licensed under the project's license.

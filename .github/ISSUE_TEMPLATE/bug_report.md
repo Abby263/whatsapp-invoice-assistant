@@ -28,7 +28,6 @@ If applicable, add screenshots to help explain your problem.
 - OS: [e.g. macOS 12.0.1, Windows 11, Ubuntu 22.04]
 - Python Version: [e.g. 3.9.10]
 - Database Version: [e.g. PostgreSQL 14.5]
-- MongoDB Version: [e.g. 5.0.9]
 - Browser (if UI-related): [e.g. Chrome 108.0.5359.124]
 - Environment: [e.g. Vercel production, local development]
 

@@ -25,7 +25,6 @@ psycopg2-binary = "^2.9.10"
 pyyaml = "^6.0.2"
 pgvector = "^0.3.6"
 numpy = "^1.26.0"
-pymongo = "^4.6.1"
 openpyxl = "^3.1.5"
 python-docx = "^1.1.2"
 pyjwt = {extras = ["crypto"], version = "^2.10.1"}
