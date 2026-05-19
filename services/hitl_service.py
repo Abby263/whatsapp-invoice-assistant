@@ -109,8 +109,22 @@ async def approve_pending_extraction(
         )
 
     file_storage = dict(media_info.get("file_storage") or {})
+    pending_extraction_result = _pending_extraction_from_media(media_info)
+    if _is_metadata_only_pending(file_storage) and pending_extraction_result:
+        return await _approve_pending_extraction_payload(
+            user_id=user_id,
+            media_id=media_id,
+            extraction_result=pending_extraction_result,
+        )
+
     file_key = file_storage.get("file_key") or file_storage.get("path") or media_info.get("file_path")
     if not file_key:
+        if pending_extraction_result:
+            return await _approve_pending_extraction_payload(
+                user_id=user_id,
+                media_id=media_id,
+                extraction_result=pending_extraction_result,
+            )
         return _response(
             f"I could not find the stored file path for upload #{media_id}. Please upload it again.",
             {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "missing_storage", "media_id": str(media_id)},
@@ -126,6 +140,12 @@ async def approve_pending_extraction(
         )
     except Exception as exc:
         logger.exception("Could not download pending upload %s for approval: %s", media_id, exc)
+        if pending_extraction_result:
+            return await _approve_pending_extraction_payload(
+                user_id=user_id,
+                media_id=media_id,
+                extraction_result=pending_extraction_result,
+            )
         return _response(
             f"I could not reopen upload #{media_id}. Please resend the file.",
             {"intent": IntentType.FILE_PROCESSING.value, "hitl_status": "download_failed", "media_id": str(media_id)},
@@ -176,6 +196,98 @@ async def approve_pending_extraction(
                 os.unlink(temp_path)
             except OSError:
                 logger.debug("Temporary HITL file already removed: %s", temp_path)
+
+
+async def _approve_pending_extraction_payload(
+    user_id: Union[str, UUID, int],
+    media_id: int,
+    extraction_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Finalize a pending extraction saved in media metadata."""
+
+    from agents.database_storage_agent import DatabaseStorageAgent
+    from utils.base_agent import AgentContext, AgentInput
+
+    payload = _json_safe_dict(extraction_result)
+    payload.setdefault("metadata", {})
+    if not isinstance(payload["metadata"], dict):
+        payload["metadata"] = {}
+    payload["metadata"].update({
+        "hitl_confirmed": True,
+        "hitl_status": "confirmed",
+        "hitl_action": "store_extraction",
+        "approved_media_id": str(media_id),
+    })
+    file_storage = payload["metadata"].get("file_storage")
+    if isinstance(file_storage, dict):
+        file_storage["media_id"] = str(media_id)
+
+    storage_agent = DatabaseStorageAgent()
+    storage_result = await storage_agent.process(
+        AgentInput(
+            content=json.dumps(payload),
+            metadata={"user_id": str(user_id), "hitl_confirmed": True},
+        ),
+        AgentContext(user_id=str(user_id)),
+    )
+    content = storage_result.content if isinstance(storage_result.content, dict) else {}
+    if storage_result.status == "success" and content.get("status") in {"success", "duplicate"}:
+        invoice_id = content.get("invoice_id")
+        item_count = len(content.get("item_ids") or [])
+        lines = [
+            f"Upload #{media_id} approved and saved.",
+            f"receipt.id: {invoice_id or 'existing'}",
+            f"items.count: {item_count}",
+            "analytics: updated",
+        ]
+        return _response(
+            "\n".join(lines),
+            {
+                "intent": IntentType.FILE_PROCESSING.value,
+                "hitl_status": "confirmed",
+                "hitl_action": "store_extraction",
+                "approved_media_id": str(media_id),
+                "invoice_id": str(invoice_id) if invoice_id else None,
+                "item_ids": content.get("item_ids") or [],
+                "media_id": str(content.get("media_id") or media_id),
+                "stored_from_pending_extraction": True,
+            },
+        )
+
+    error_message = storage_result.error or content.get("error") or "Could not save the pending extraction."
+    return _response(
+        f"I could not approve upload #{media_id}: {error_message}",
+        {
+            "intent": IntentType.FILE_PROCESSING.value,
+            "hitl_status": "store_failed",
+            "media_id": str(media_id),
+            "stored_from_pending_extraction": True,
+        },
+        confidence=0.5,
+    )
+
+
+def _pending_extraction_from_media(media_info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    metadata = media_info.get("metadata") if isinstance(media_info.get("metadata"), dict) else {}
+    value = metadata.get("pending_extraction_result")
+    return value if isinstance(value, dict) else None
+
+
+def _is_metadata_only_pending(file_storage: Dict[str, Any]) -> bool:
+    file_key = str(file_storage.get("file_key") or file_storage.get("path") or "")
+    return (
+        file_storage.get("storage_class") == "pending_extraction"
+        or file_storage.get("access_scope") == "metadata_only"
+        or file_key.startswith("pending://")
+    )
+
+
+def _json_safe_dict(value: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        safe_value = json.loads(json.dumps(value, default=str))
+        return safe_value if isinstance(safe_value, dict) else {}
+    except (TypeError, ValueError):
+        return {}
 
 
 async def review_pending_upload_from_web(

@@ -8,17 +8,12 @@ validating invoice files, extracting data, and formatting responses.
 import logging
 import os
 import hashlib
-from typing import Dict, Any, Optional, List, Union, BinaryIO
+from typing import Dict, Any, Optional, List, Union
 from uuid import UUID
 from pathlib import Path
 from datetime import datetime
-import uuid
 import json
-import tempfile
-import asyncio
 import mimetypes
-
-from sqlalchemy.orm import Session
 
 from agents.file_validator import FileValidatorAgent
 from agents.data_extractor import DataExtractorAgent
@@ -680,6 +675,14 @@ def _mark_media_awaiting_approval(
     file_storage = metadata.get("file_storage") if isinstance(metadata.get("file_storage"), dict) else {}
     if file_storage and not isinstance(file_metadata.get("file_storage"), dict):
         file_metadata["file_storage"] = file_storage
+    if not file_storage and not isinstance(file_metadata.get("file_storage"), dict):
+        file_storage = _build_pending_extraction_file_storage(
+            user_id=user_id,
+            file_metadata=file_metadata,
+            extraction_result=extraction_result,
+        )
+        file_metadata["file_storage"] = file_storage
+        extraction_result.setdefault("metadata", {})["file_storage"] = file_storage
     media_id = (
         file_storage.get("media_id")
         or (file_metadata.get("media_record") or {}).get("media_id")
@@ -703,6 +706,7 @@ def _mark_media_awaiting_approval(
         **hitl_metadata,
         "processing_status": "awaiting_human_confirmation",
         "pending_extraction_summary": _pending_extraction_summary(extraction_result),
+        "pending_extraction_result": _pending_extraction_payload(extraction_result),
         "extraction_quality": (
             extraction_result.get("data", {}).get("extraction_quality")
             if isinstance(extraction_result.get("data"), dict)
@@ -721,6 +725,26 @@ def _mark_media_awaiting_approval(
         or (media_record or {}).get("media_id")
         or (file_metadata.get("media_record") or {}).get("media_id")
     )
+    if not media_id:
+        fallback_storage = _build_pending_extraction_file_storage(
+            user_id=user_id,
+            file_metadata=file_metadata,
+            extraction_result=extraction_result,
+        )
+        file_metadata["file_storage"] = fallback_storage
+        extraction_result.setdefault("metadata", {})["file_storage"] = fallback_storage
+        processing_metadata["pending_extraction_result"] = _pending_extraction_payload(extraction_result)
+        media_record = _update_media_status(
+            user_id=user_id,
+            file_metadata=file_metadata,
+            status="uploaded",
+            processing_metadata=processing_metadata,
+        )
+        media_id = (
+            (media_record or {}).get("media_id")
+            or (file_metadata.get("media_record") or {}).get("media_id")
+            or fallback_storage.get("media_id")
+        )
     if media_id and not hitl_metadata.get("hitl_approval_command"):
         hitl_metadata["media_id"] = str(media_id)
         hitl_metadata["hitl_approval_command"] = f"APPROVE {media_id}"
@@ -734,9 +758,72 @@ def _mark_media_awaiting_approval(
             processing_metadata={
                 **processing_metadata,
                 **hitl_metadata,
+                "pending_extraction_result": _pending_extraction_payload(extraction_result),
             },
         )
     return hitl_metadata
+
+
+def _build_pending_extraction_file_storage(
+    user_id: Union[str, UUID],
+    file_metadata: Dict[str, Any],
+    extraction_result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build a registry-only file reference when private file storage failed."""
+
+    metadata = extraction_result.get("metadata") if isinstance(extraction_result, dict) else {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+    nested_file_metadata = metadata.get("file_metadata") if isinstance(metadata.get("file_metadata"), dict) else {}
+    checksum = (
+        file_metadata.get("checksum_sha256")
+        or metadata.get("checksum_sha256")
+        or nested_file_metadata.get("checksum_sha256")
+    )
+    filename = (
+        file_metadata.get("original_filename")
+        or nested_file_metadata.get("original_filename")
+        or os.path.basename(str(extraction_result.get("file_path") or "pending_upload"))
+    )
+    token = checksum or hashlib.sha256(
+        f"{user_id}:{filename}:{datetime.utcnow().isoformat()}".encode("utf-8")
+    ).hexdigest()
+    content_type = (
+        file_metadata.get("content_type")
+        or nested_file_metadata.get("content_type")
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+    storage_error = (
+        file_metadata.get("storage_error")
+        or metadata.get("storage_error")
+        or nested_file_metadata.get("storage_error")
+    )
+    return {
+        "provider": "metadata",
+        "file_key": f"pending://{user_id}/{token}",
+        "path": f"pending://{user_id}/{token}",
+        "url": "",
+        "content_type": content_type,
+        "file_size": file_metadata.get("file_size") or nested_file_metadata.get("file_size"),
+        "checksum_sha256": checksum,
+        "original_filename": filename,
+        "storage_class": "pending_extraction",
+        "access_scope": "metadata_only",
+        "storage_error": storage_error,
+    }
+
+
+def _pending_extraction_payload(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a JSON-safe extraction payload that can be finalized after approval."""
+
+    try:
+        return json.loads(json.dumps(extraction_result, default=str))
+    except (TypeError, ValueError):
+        return {
+            "data": extraction_result.get("data", {}) if isinstance(extraction_result, dict) else {},
+            "metadata": {},
+        }
 
 
 def _pending_extraction_summary(extraction_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1160,11 +1247,12 @@ async def format_extraction_response(
     fields = _document_response_fields(invoice_data)
     metadata = extraction_result.get("metadata", {}) if isinstance(extraction_result.get("metadata"), dict) else {}
     hitl_pending = metadata.get("hitl_status") == "awaiting_confirmation"
+    private_file_saved = _is_private_file_storage(file_storage)
     status = (
         "awaiting WhatsApp approval"
         if hitl_pending
         else "saved"
-        if metadata.get("invoice_id") or file_storage
+        if metadata.get("invoice_id") or private_file_saved
         else "processed"
     )
     items = [item for item in fields["items"] if isinstance(item, dict)]
@@ -1208,7 +1296,7 @@ async def format_extraction_response(
             item_state = "extracted" if hitl_pending else "saved"
             lines.append(f"... {remaining} more {item_label} {item_state}")
 
-    if file_storage:
+    if private_file_saved:
         lines.append("")
         lines.append("storage: original file saved privately")
 
@@ -1228,6 +1316,18 @@ async def format_extraction_response(
         "content": response,
         "confidence": 0.85,
     }
+
+
+def _is_private_file_storage(file_storage: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(file_storage, dict):
+        return False
+    file_key = str(file_storage.get("file_key") or file_storage.get("path") or "")
+    return not (
+        file_storage.get("provider") == "metadata"
+        or file_storage.get("storage_class") == "pending_extraction"
+        or file_storage.get("access_scope") == "metadata_only"
+        or file_key.startswith("pending://")
+    )
 
 
 async def format_invalid_file_response(
