@@ -87,3 +87,27 @@ def check_embeddings():
             },
         }
     )
+
+
+@bp.post("/api/jobs/run")
+def jobs_run():
+    payload = request.get_json(silent=True) or {}
+    settings = shared.get_settings()
+    auth_context = None
+    if not (settings.async_job_secret and payload.get("secret") == settings.async_job_secret):
+        auth_context = shared._require_demo_auth()
+        if shared._is_auth_response(auth_context):
+            return auth_context
+    if not shared._live_backend_enabled():
+        return jsonify(
+            {
+                "status": "success",
+                "message": "No queued production jobs run in hosted UI demo.",
+                "processed": [],
+                "count": 0,
+                "degraded": True,
+            }
+        )
+    result = shared.live_backend.run_async_jobs(auth_context, payload)
+    status_code = 403 if result.get("status") == "error" else 200
+    return jsonify(result), status_code

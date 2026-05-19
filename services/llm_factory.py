@@ -40,6 +40,7 @@ from constants.prompt_mappings import AgentType, get_prompt_for_agent
 from constants.fallback_messages import GENERAL_FALLBACKS, QUERY_FALLBACKS
 from constants.invoice_processing_messages import get_invoice_processing_message
 from schemas.llm_outputs import DOCUMENT_EXTRACTION_PROMPT_CONTRACT
+from config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,8 @@ class LLMFactory:
         self.prompt_cache = {}
         self.config = DEFAULT_LLM_CONFIG.copy()
 
-        env_model = os.environ.get("OPENAI_API_MODEL")
+        settings = get_settings()
+        env_model = settings.openai_api_model
         if env_model:
             self.config["model"] = env_model
 
@@ -83,7 +85,7 @@ class LLMFactory:
         try:
             self.api_keys[ModelProvider.OPENAI] = config.get("openai", "api_key")
         except KeyError:
-            self.api_keys[ModelProvider.OPENAI] = os.environ.get("OPENAI_API_KEY")
+            self.api_keys[ModelProvider.OPENAI] = settings.openai_api_key
 
         # Anthropic API key
         try:

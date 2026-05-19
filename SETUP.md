@@ -80,8 +80,23 @@ TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED=true
 TWILIO_MEDIA_FINAL_REPLY_ENABLED=true
 
 HITL_CONFIRMATION_REQUIRED=true
+CLERK_STEP_UP_MAX_AGE_SECONDS=300
 CONVERSATION_MEMORY_WINDOW_MESSAGES=12
 CONVERSATION_MEMORY_MAX_STORED_MESSAGES=200
+
+RATE_LIMITS_ENABLED=true
+RATE_LIMIT_WINDOW_SECONDS=86400
+RATE_LIMIT_TEXT_TURNS_PER_WINDOW=500
+RATE_LIMIT_MEDIA_UPLOADS_PER_WINDOW=100
+RATE_LIMIT_APPROVALS_PER_WINDOW=200
+RATE_LIMIT_EMBEDDINGS_PER_WINDOW=1000
+
+ASYNC_WORK_QUEUE_ENABLED=false
+ASYNC_INLINE_MEDIA_LIMIT=3
+ASYNC_JOB_SECRET=<long-random-secret-for-job-runner>
+
+DEPLOYMENT_SMOKE_BASE_URL=https://whatsapp-invoice-assistant.vercel.app
+DEPLOYMENT_SMOKE_TIMEOUT_SECONDS=10
 ```
 
 Notes:
@@ -97,9 +112,13 @@ Notes:
 - `TWILIO_PROCESSING_ACK_DATABASE_DEDUPE_ENABLED` stores that acknowledgement claim in Postgres so the cooldown still works when Vercel handles the rapid webhooks on different function instances.
 - `TWILIO_MEDIA_FINAL_REPLY_ENABLED` sends the final media processing summary as an outbound Twilio message, which is more reliable than waiting for a long-running webhook response.
 - `HITL_CONFIRMATION_REQUIRED=true` keeps extracted receipt rows out of `invoices`, `items`, and embeddings until the user replies on WhatsApp with `APPROVE <upload_id>`. `REJECT <upload_id>` discards the pending upload. Delete requests require exact `CONFIRM DELETE ...` commands.
+- `CLERK_STEP_UP_MAX_AGE_SECONDS` controls how fresh the Clerk session token must be before optional browser approval can finalize a pending upload.
 - `CONVERSATION_MEMORY_WINDOW_MESSAGES` controls how many recent user/assistant messages are passed back into the agent for multi-turn context.
 - `CONVERSATION_MEMORY_MAX_STORED_MESSAGES` caps stored messages per active user conversation before older messages are pruned.
 - Conversation memory is always loaded by internal `users.id` for production user-scoped requests. Do not send browser/client-provided conversation history to the backend as a source of truth.
+- `RATE_LIMIT_*` settings enforce per-user rolling-window limits for text turns, media uploads, approval finalization, and embeddings.
+- `ASYNC_WORK_QUEUE_ENABLED=true` queues large media batches instead of processing every attachment inside the Twilio webhook. Run queued jobs through `POST /api/jobs/run` with `ASYNC_JOB_SECRET`.
+- `DEPLOYMENT_SMOKE_*` settings are used by `scripts/deployment_smoke.py`.
 
 Optional local-only variables:
 
@@ -382,6 +401,8 @@ cp .env.example .env
 poetry install
 ```
 
+The repository targets Python 3.12 for Vercel/local development and also tests Python 3.10 and 3.11 in CI for compatibility.
+
 Run the local UI:
 
 ```bash
@@ -409,6 +430,12 @@ Expected:
 - `status=ok`
 - `backend_enabled=true`
 - `runtime=vercel-production`
+
+You can run the automated post-deploy smoke checks with:
+
+```bash
+python3 scripts/deployment_smoke.py --base-url https://whatsapp-invoice-assistant.vercel.app
+```
 
 ### 2. Webhook Smoke Test
 

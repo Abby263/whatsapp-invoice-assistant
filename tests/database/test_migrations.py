@@ -173,7 +173,8 @@ def test_run_migration(test_alembic_ini):
         # Check for expected tables
         expected_tables = [
             "users", "invoices", "items", "conversations", 
-            "messages", "whatsapp_messages", "webhook_events", "media", "usage"
+            "messages", "whatsapp_messages", "webhook_events", "media", "usage",
+            "rate_limit_events", "async_jobs"
         ]
         for table in expected_tables:
             assert table in tables, f"Table {table} was not created"

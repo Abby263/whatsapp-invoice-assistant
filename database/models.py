@@ -304,6 +304,9 @@ class UsageBase(BaseModel):
     tokens_in: int = 0
     tokens_out: int = 0
     cost: float = 0.0
+    operation_type: Optional[str] = None
+    request_id: Optional[str] = None
+    usage_metadata: Optional[Dict[str, Any]] = None
 
     class Config:
         from_attributes = True
@@ -319,3 +322,51 @@ class UsageResponse(UsageBase):
     id: int
     user_id: int
     created_at: datetime
+
+
+class RateLimitEventBase(BaseModel):
+    """Base persisted rate-limit event model."""
+    scope: str
+    request_id: Optional[str] = None
+    units: int = 1
+    status: str = "allowed"
+    event_metadata: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RateLimitEventCreate(RateLimitEventBase):
+    user_id: int
+
+
+class RateLimitEventResponse(RateLimitEventBase):
+    id: int
+    user_id: int
+    created_at: datetime
+
+
+class AsyncJobBase(BaseModel):
+    """Base durable async job model."""
+    job_type: str
+    idempotency_key: Optional[str] = None
+    status: str = "queued"
+    payload: Dict[str, Any] = Field(default_factory=dict)
+    result: Optional[Dict[str, Any]] = None
+    attempts: int = 0
+    max_attempts: int = 3
+    error_message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AsyncJobCreate(AsyncJobBase):
+    user_id: Optional[int] = None
+
+
+class AsyncJobResponse(AsyncJobBase):
+    id: int
+    user_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime

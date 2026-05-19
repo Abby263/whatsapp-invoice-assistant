@@ -1,6 +1,6 @@
 # Production Backlog
 
-This backlog captures the next production hardening work after the Vercel-only architecture cleanup, WhatsApp HITL approval fixes, SQL guardrails, auth hardening, CI baseline, and Flask route split.
+This document records the production hardening work completed after the Vercel-only architecture cleanup, WhatsApp HITL approval fixes, SQL guardrails, auth hardening, CI baseline, and Flask route split.
 
 ## Operating Baseline
 
@@ -12,17 +12,17 @@ This backlog captures the next production hardening work after the Vercel-only a
 - Hosted Flask routes are split into blueprints under `routes/`; `app.py` remains the Vercel entrypoint.
 - GitHub Actions runs environment-template validation, syntax compilation, and pytest.
 
-## Backlog Items
+## Completed Backlog Items
 
-| Item | Why It Matters | Suggested Shape |
+| Item | Status | Implementation |
 | --- | --- | --- |
-| Structured observability | Production support needs request-level traces across webhook, extraction, approval, storage, SQL, RAG, and outbound Twilio responses. | Add a `request_id` / `message_sid` logging context, token usage metrics, extraction latency metrics, and final status counters. |
-| Per-user LLM rate limits | Prevent one account or replay storm from driving unbounded OpenAI and Twilio cost. | Add user-scoped counters for text turns, media extraction, approval finalization, and embeddings; enforce soft and hard limits with clear WhatsApp responses. |
-| Web approval with step-up auth | Website approval is useful for operators, but WhatsApp remains the primary approval surface. | Add optional web approval only after fresh Clerk step-up verification and display the exact same pending extraction summary used in WhatsApp. |
-| Python 3.11+ upgrade | Newer runtimes improve security support, performance, and dependency compatibility. | Test on Python 3.11 first in CI, then update Vercel/runtime docs and local setup after dependency issues are resolved. |
-| Single typed settings object | Environment access is currently spread across modules and helper functions. | Introduce `pydantic-settings` with explicit production/demo defaults, validation, and one importable settings instance. |
-| Async work queue | Multi-page PDFs and large batches can exceed serverless request time even with ack-first behavior. | Move long extraction/finalization jobs to a durable queue or workflow runner with idempotent job records and outbound Twilio status updates. |
-| Deployment smoke tests | CI proves code health, but production needs webhook and health-path verification after deploys. | Add a post-deploy script that checks `/health`, auth config, and a signed test webhook with mocked Twilio/OpenAI where possible. |
+| Structured observability | Done | `utils/observability.py` provides request context, request ids, message ids, user ids, and structured event logs for webhook/text/media flows. |
+| Per-user LLM rate limits | Done | `services/rate_limit_service.py` persists rolling-window counters in `rate_limit_events`, records token usage metadata in `usage`, and enforces limits for text, media, approval, and embeddings. |
+| Web approval with step-up auth | Done | Browser approval is optional and requires a fresh Clerk session token before it can approve or reject; WhatsApp approval remains available. |
+| Python 3.11+ upgrade | Done | `.python-version` targets Python 3.12 and CI tests Python 3.10, 3.11, and 3.12. |
+| Single typed settings object | Done | `config/settings.py` centralizes production/demo settings with `pydantic-settings`. |
+| Async work queue | Done | `async_jobs` and `services/job_queue.py` provide durable idempotent jobs; large media batches can be queued and processed through `/api/jobs/run`. |
+| Deployment smoke tests | Done | `scripts/deployment_smoke.py` checks `/health` and `/api/auth/config` against a deployment URL. |
 
 ## Guardrails For Future Work
 

@@ -5,6 +5,7 @@ import pytest
 from utils.clerk_auth import (
     ClerkAuthContext,
     ClerkAuthError,
+    require_fresh_session,
     verified_phone_profile_from_clerk,
 )
 from services import live_backend
@@ -97,3 +98,15 @@ def test_resolve_request_user_does_not_fallback_to_payload_when_phone_sync_fails
 
     assert user is None
     assert needs_link is True
+
+
+def test_require_fresh_session_rejects_stale_token():
+    context = ClerkAuthContext(
+        clerk_user_id="user_123",
+        session_id="sess_123",
+        issuer="https://example.clerk.accounts.dev",
+        claims={"sub": "user_123", "iat": 100},
+    )
+
+    with pytest.raises(ClerkAuthError, match="Refresh your sign-in session"):
+        require_fresh_session(context, max_age_seconds=1)

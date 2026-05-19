@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import mimetypes
-import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 from werkzeug.utils import secure_filename
+from config.settings import get_settings
 from utils.clerk_auth import is_auth_required
 from utils.phone_numbers import normalize_whatsapp_number as normalize_phone_number
 
@@ -34,13 +34,14 @@ def is_live_backend_enabled() -> bool:
 def backend_configuration_status() -> Dict[str, Any]:
     """Return sanitized readiness status for live backend configuration."""
 
-    if os.getenv("APP_MODE", "").strip().lower() in {"demo", "ui-demo"}:
+    settings = get_settings()
+    if settings.app_forces_demo_mode:
         return {"enabled": False, "reason": "APP_MODE forces demo mode"}
 
-    database_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DATABASE_URL")
-    supabase_url = os.getenv("NEXT_PUBLIC_SUPABASE_URL") or os.getenv("SUPABASE_URL")
+    database_url = settings.database_url or settings.supabase_database_url
+    supabase_url = settings.effective_supabase_url
     has_component_db = bool(
-        os.getenv("SUPABASE_DB_PASSWORD")
+        settings.supabase_db_password
         and supabase_url
     )
     if not database_url and not has_component_db:
@@ -50,15 +51,15 @@ def backend_configuration_status() -> Dict[str, Any]:
     database_url_error = _database_url_error(database_url)
     if database_url_error and not has_component_db:
         return {"enabled": False, "reason": database_url_error}
-    if os.getenv("SUPABASE_DB_PASSWORD") and _has_placeholder(os.getenv("SUPABASE_DB_PASSWORD", "")):
+    if settings.supabase_db_password and _has_placeholder(settings.supabase_db_password):
         return {"enabled": False, "reason": "SUPABASE_DB_PASSWORD contains a placeholder"}
 
     missing_optional = []
-    if not os.getenv("OPENAI_API_KEY"):
+    if not settings.openai_api_key:
         missing_optional.append("OPENAI_API_KEY")
     if not supabase_url:
         missing_optional.append("NEXT_PUBLIC_SUPABASE_URL")
-    if not (os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")):
+    if not settings.effective_supabase_secret_key:
         missing_optional.append("SUPABASE_SECRET_KEY")
     if database_url_error and has_component_db:
         missing_optional.append(f"DATABASE_URL ignored: {database_url_error}")
@@ -446,6 +447,29 @@ def process_twilio_webhook(form: Dict[str, Any]) -> Dict[str, Any]:
     return run_async(process_whatsapp_message(form))
 
 
+def run_async_jobs(auth_context: Any, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    from config.settings import get_settings
+    from services.job_queue import JOB_TYPE_TWILIO_MEDIA_BATCH, run_ready_jobs
+    from workflows.api import process_queued_whatsapp_message
+
+    payload = payload or {}
+    settings = get_settings()
+    if settings.async_job_secret:
+        supplied_secret = payload.get("secret") or payload.get("job_secret")
+        if supplied_secret != settings.async_job_secret:
+            return {"status": "error", "message": "Invalid job secret"}
+    elif is_auth_required() and not auth_context:
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True}
+
+    def process_twilio_media_batch(job_payload: Dict[str, Any]) -> Dict[str, Any]:
+        return run_async(process_queued_whatsapp_message(job_payload))
+
+    return run_ready_jobs(
+        {JOB_TYPE_TWILIO_MEDIA_BATCH: process_twilio_media_batch},
+        limit=int(payload.get("limit") or 5),
+    )
+
+
 def get_company_profile(user_id: Optional[str], auth_context: Any = None) -> Dict[str, Any]:
     from database.connection import get_db_session
     from database.schemas import User
@@ -562,10 +586,17 @@ def delete_history(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]
 
 async def review_history_upload(auth_context: Any, payload: Dict[str, Any]) -> Dict[str, Any]:
     from services.hitl_service import review_pending_upload_from_web
+    from utils.clerk_auth import ClerkAuthError, require_fresh_session
 
     user, needs_link = resolve_request_user(auth_context, payload)
     if needs_link:
         return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
+    if not auth_context:
+        return {"status": "error", "message": VERIFIED_PHONE_REQUIRED_MESSAGE, "needs_link": True, "needs_phone": True}
+    try:
+        require_fresh_session(auth_context)
+    except ClerkAuthError as exc:
+        return {"status": "error", "message": str(exc), "needs_step_up": True}
     media_id = payload.get("media_id") or payload.get("id")
     if not media_id:
         return {"status": "error", "message": "Media ID is required"}
@@ -573,6 +604,7 @@ async def review_history_upload(auth_context: Any, payload: Dict[str, Any]) -> D
         int(user["id"]),
         int(media_id),
         payload.get("action"),
+        allow_web_approval=bool(payload.get("step_up_confirmed")),
     )
 
 
