@@ -96,6 +96,7 @@ def run_migrations_online() -> None:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
             connection.commit()
         except OperationalError as e:
+            connection.rollback()
             print(f"Warning: Could not create pgvector extension: {e}")
         
         context.configure(

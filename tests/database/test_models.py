@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from database.schemas import (
     Base, User, Invoice, Item, Conversation,
-    Message, WhatsAppMessage, Media, Usage,
+    Message, WhatsAppMessage, WebhookEvent, Media, Usage,
     GeneratedInvoice, GeneratedInvoiceItem,
     MessageRole, WhatsAppMessageStatus
 )
@@ -264,6 +264,29 @@ def test_whatsapp_message(test_db):
     # Verify relationship with message
     assert saved_whatsapp_message.message.content == "Test message"
     assert saved_whatsapp_message.message.role == MessageRole.USER
+
+
+def test_webhook_event_model(test_db):
+    """Test WebhookEvent model for webhook replay tracking."""
+    event = WebhookEvent(
+        event_id="SM123",
+        source="twilio_whatsapp",
+        status="processed",
+        response_payload={"status": "success", "message": "ok"},
+        response_hash="abc123",
+    )
+    test_db.add(event)
+    test_db.commit()
+
+    saved_event = (
+        test_db.query(WebhookEvent)
+        .filter(WebhookEvent.event_id == "SM123")
+        .first()
+    )
+
+    assert saved_event is not None
+    assert saved_event.status == "processed"
+    assert saved_event.response_payload["message"] == "ok"
 
 
 def test_media_model(test_db):

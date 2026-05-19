@@ -271,6 +271,21 @@ class WhatsAppMessage(Base):
     message = relationship("Message", back_populates="whatsapp_messages")
 
 
+class WebhookEvent(Base):
+    """Webhook event claim used to prevent duplicate external processing."""
+    __tablename__ = "webhook_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    event_id = Column(String(120), unique=True, nullable=False, index=True)
+    source = Column(String(50), nullable=False, default="twilio_whatsapp")
+    status = Column(String(20), nullable=False, default="processing", index=True)
+    response_payload = Column(JSON, nullable=True)
+    response_hash = Column(String(64), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Media(Base):
     """Media model for storing files related to invoices."""
     __tablename__ = "media"

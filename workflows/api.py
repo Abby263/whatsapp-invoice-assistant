@@ -9,6 +9,7 @@ import logging
 import os
 import hashlib
 import io
+import json
 import tempfile
 import shutil
 from typing import Dict, Any, List, Optional, Union
@@ -273,6 +274,10 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
         The formatted response
     """
     logger.info("Processing WhatsApp message")
+    message_sid = _message_sid_from_payload(message_data)
+    webhook_claim = _claim_webhook_event(message_sid)
+    if not webhook_claim.get("claimed", True):
+        return _duplicate_webhook_response(message_sid, webhook_claim)
     
     try:
         # Extract message information
@@ -300,14 +305,16 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
             conversation_history = await load_conversation_history(user_id)
             
             # Process the text message
-            return await process_text_message(
+            result = await process_text_message(
                 message_text, 
                 sender, 
                 conversation_history,
                 user_id,
-                whatsapp_message_sid=_message_sid_from_payload(message_data),
+                whatsapp_message_sid=message_sid,
                 conversation_history_trusted=True,
             )
+            _mark_webhook_event_processed(message_sid, result)
+            return result
             
         elif has_media:
             # This is a media message. Twilio indexes media fields as
@@ -417,7 +424,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                     user_id,
                     user_message=_media_memory_user_message(message_data, media_count),
                     assistant_message=combined_result.get("message") or combined_result.get("content"),
-                    whatsapp_message_sid=_message_sid_from_payload(message_data),
+                    whatsapp_message_sid=message_sid,
                 )
                 if saved_conversation_id is not None:
                     combined_result["conversation_id"] = str(saved_conversation_id)
@@ -428,6 +435,7 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
                 ):
                     combined_result["suppress_twiml_response"] = True
                     combined_result.setdefault("metadata", {})["twilio_final_reply_sent"] = True
+                _mark_webhook_event_processed(message_sid, combined_result)
                 return combined_result
             finally:
                 try:
@@ -437,13 +445,16 @@ async def process_whatsapp_message(message_data: Dict[str, Any]) -> Dict[str, An
         
         else:
             logger.error("Unknown message type")
-            return {
+            result = {
                 "status": "error",
                 "message": GENERAL_FALLBACKS["no_response"]
             }
+            _mark_webhook_event_processed(message_sid, result)
+            return result
     
     except Exception as e:
         logger.exception(f"Error processing WhatsApp message: {str(e)}")
+        _mark_webhook_event_failed(message_sid, str(e))
         return {
             "status": "error",
             "message": GENERAL_FALLBACKS["no_response"]
@@ -473,6 +484,144 @@ def _message_sid_from_payload(message_data: Optional[Dict[str, Any]]) -> Optiona
     if not isinstance(message_data, dict):
         return None
     return message_data.get("MessageSid") or message_data.get("SmsMessageSid")
+
+
+def _claim_webhook_event(message_sid: Optional[str]) -> Dict[str, Any]:
+    """Claim a Twilio webhook event before running side-effectful processing."""
+
+    if not message_sid:
+        return {"claimed": True, "status": "untracked"}
+
+    try:
+        from sqlalchemy.exc import IntegrityError
+
+        from database.connection import ensure_application_schema, get_db_session
+        from database.schemas import WebhookEvent
+
+        ensure_application_schema()
+        session = get_db_session()
+        try:
+            event = WebhookEvent(
+                event_id=message_sid,
+                source="twilio_whatsapp",
+                status="processing",
+            )
+            session.add(event)
+            try:
+                session.commit()
+                return {"claimed": True, "status": "processing"}
+            except IntegrityError:
+                session.rollback()
+
+            existing = (
+                session.query(WebhookEvent)
+                .filter(WebhookEvent.event_id == message_sid)
+                .first()
+            )
+            if existing is None:
+                return {"claimed": True, "status": "untracked"}
+            if existing.status == "failed":
+                existing.status = "processing"
+                existing.error_message = None
+                existing.response_payload = None
+                session.commit()
+                return {"claimed": True, "status": "processing_retry"}
+            return {
+                "claimed": False,
+                "status": existing.status,
+                "response_payload": existing.response_payload if isinstance(existing.response_payload, dict) else None,
+            }
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning("Could not claim webhook event %s; continuing without replay protection: %s", message_sid, exc)
+        return {"claimed": True, "status": "unavailable"}
+
+
+def _mark_webhook_event_processed(message_sid: Optional[str], result: Dict[str, Any]) -> None:
+    _update_webhook_event(message_sid, "processed", response_payload=_webhook_response_payload(result))
+
+
+def _mark_webhook_event_failed(message_sid: Optional[str], error_message: str) -> None:
+    _update_webhook_event(message_sid, "failed", error_message=error_message)
+
+
+def _update_webhook_event(
+    message_sid: Optional[str],
+    status: str,
+    *,
+    response_payload: Optional[Dict[str, Any]] = None,
+    error_message: Optional[str] = None,
+) -> None:
+    if not message_sid:
+        return
+
+    try:
+        from database.connection import ensure_application_schema, get_db_session
+        from database.schemas import WebhookEvent
+
+        ensure_application_schema()
+        session = get_db_session()
+        try:
+            event = (
+                session.query(WebhookEvent)
+                .filter(WebhookEvent.event_id == message_sid)
+                .first()
+            )
+            if event is None:
+                return
+            event.status = status
+            event.error_message = error_message
+            if response_payload is not None:
+                event.response_payload = response_payload
+                event.response_hash = hashlib.sha256(
+                    json.dumps(response_payload, sort_keys=True, default=str).encode("utf-8")
+                ).hexdigest()
+            session.commit()
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.warning("Could not update webhook event %s to %s: %s", message_sid, status, exc)
+
+
+def _webhook_response_payload(result: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+    return {
+        "status": result.get("status"),
+        "message": result.get("message") or result.get("content"),
+        "suppress_twiml_response": bool(
+            result.get("suppress_twiml_response") or metadata.get("twilio_final_reply_sent")
+        ),
+        "metadata": {
+            key: metadata.get(key)
+            for key in (
+                "intent",
+                "twilio_final_reply_sent",
+                "media_count",
+                "saved_count",
+                "pending_approval_count",
+                "duplicate_count",
+                "failed_count",
+            )
+            if key in metadata
+        },
+    }
+
+
+def _duplicate_webhook_response(message_sid: Optional[str], claim: Dict[str, Any]) -> Dict[str, Any]:
+    """Return an empty response for Twilio webhook replays without repeating side effects."""
+
+    return {
+        "status": "duplicate",
+        "message": "",
+        "suppress_twiml_response": True,
+        "metadata": {
+            "webhook_duplicate": True,
+            "twilio_message_sid": message_sid,
+            "webhook_event_status": claim.get("status"),
+            "cached_response": claim.get("response_payload"),
+        },
+    }
 
 
 async def _resolve_user_scoped_history(

@@ -145,6 +145,76 @@ async def test_process_whatsapp_message_handles_multiple_media_and_batch_duplica
 
 
 @pytest.mark.asyncio
+async def test_process_whatsapp_message_replay_short_circuits_media_processing(monkeypatch):
+    _FakeAsyncClient.payloads = {
+        "https://api.twilio.com/media/receipt": b"receipt-image",
+    }
+    claimed_sids = set()
+    processed = []
+    acknowledgements = []
+    completed = []
+
+    def fake_claim(message_sid):
+        if message_sid in claimed_sids:
+            return {
+                "claimed": False,
+                "status": "processed",
+                "response_payload": {"status": "success", "message": "saved"},
+            }
+        claimed_sids.add(message_sid)
+        return {"claimed": True, "status": "processing"}
+
+    async def fake_process_file_message(*args, **kwargs):
+        processed.append(kwargs)
+        return {
+            "status": "success",
+            "message": "saved",
+            "metadata": {"stored_in_database": True, "invoice_id": "1"},
+        }
+
+    async def fake_load_conversation_history(user_id):
+        return []
+
+    monkeypatch.setattr(api, "_claim_webhook_event", fake_claim)
+    monkeypatch.setattr(
+        api,
+        "_mark_webhook_event_processed",
+        lambda sid, result: completed.append((sid, result)),
+    )
+    monkeypatch.setattr(api, "_mark_webhook_event_failed", lambda sid, error: None)
+    monkeypatch.setattr(api.httpx, "AsyncClient", _FakeAsyncClient, raising=False)
+    monkeypatch.setattr(
+        api,
+        "send_processing_ack",
+        lambda **kwargs: acknowledgements.append(kwargs) or True,
+    )
+    monkeypatch.setattr(api, "extract_user_id_from_sender", lambda sender: "1")
+    monkeypatch.setattr(api, "load_conversation_history", fake_load_conversation_history)
+    monkeypatch.setattr(api, "process_file_message", fake_process_file_message)
+    monkeypatch.setenv("TWILIO_MEDIA_FINAL_REPLY_ENABLED", "false")
+
+    payload = {
+        "From": "whatsapp:+15551234567",
+        "To": "whatsapp:+16473628073",
+        "NumMedia": "1",
+        "MessageSid": "SM-replay",
+        "MediaUrl0": "https://api.twilio.com/media/receipt",
+        "MediaContentType0": "image/jpeg",
+    }
+
+    first = await api.process_whatsapp_message(payload)
+    second = await api.process_whatsapp_message(payload)
+
+    assert first["status"] == "success"
+    assert second["status"] == "duplicate"
+    assert second["suppress_twiml_response"] is True
+    assert second["metadata"]["webhook_duplicate"] is True
+    assert len(processed) == 1
+    assert len(acknowledgements) == 1
+    assert completed[0][0] == "SM-replay"
+
+
+@pytest.mark.asyncio
 async def test_process_whatsapp_message_sniffs_extensionless_twilio_images(monkeypatch):
     _FakeAsyncClient.payloads = {
         "https://api.twilio.com/2010-04-01/Accounts/AC/Messages/SM123/Media/ME123": _image_bytes("PNG"),
