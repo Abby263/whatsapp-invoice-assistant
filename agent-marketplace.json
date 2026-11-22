@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "whatsapp-invoice-assistant",
+  "repository": "Abby263/whatsapp-invoice-assistant",
+  "catalog": "listed",
+  "availability": "sandbox",
+  "name": "Invoice Exception Review",
+  "category": "Finance operations",
+  "description": "Compare invoice and purchase order totals and flag discrepancies for review.",
+  "request": "Extracted invoice fields and a purchase order reference.",
+  "response": "Matched fields, mismatches, and a review decision.",
+  "integration": {
+    "operation": "Review extracted invoice fields against an authorized purchase order.",
+    "readiness": "The public sandbox uses synthetic totals. A separately authenticated connector accepts caller-provided totals after deployment and configuration."
+  },
+  "scenarios": [
+    {
+      "id": "invoice-mismatch",
+      "label": "Invoice total differs from purchase order"
+    },
+    {
+      "id": "invoice-match",
+      "label": "Invoice matches the purchase order"
+    }
+  ]
+}
