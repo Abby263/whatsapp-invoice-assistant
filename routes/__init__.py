@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from flask import Flask
 
-from . import auth, debug, web, webhook, workspace
+from . import assistgenai, auth, debug, web, webhook, workspace
 
 
 def register_blueprints(app: Flask) -> None:
@@ -13,3 +13,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(auth.bp)
     app.register_blueprint(workspace.bp)
     app.register_blueprint(debug.bp)
+    app.register_blueprint(assistgenai.bp)

@@ -11,7 +11,7 @@
   "response": "Matched fields, mismatches, and a review decision.",
   "integration": {
     "operation": "Review extracted invoice fields against an authorized purchase order.",
-    "readiness": "The marketplace sandbox compares predefined totals. The repository’s live intake and approval flow needs an account-scoped adapter and a purchase order integration."
+    "readiness": "The public sandbox uses synthetic totals. A separately authenticated connector accepts caller-provided totals after deployment and configuration."
   },
   "scenarios": [
     {
